@@ -1,0 +1,44 @@
+# Core Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+python-dotenv==1.0.0
+
+# AI/LLM
+langchain==0.1.5
+langchain-openai==0.0.5
+langchain-community==0.0.16
+langgraph==0.0.20
+openai==1.10.0
+
+# Vector Database
+chromadb==0.4.22
+qdrant-client==1.7.0
+
+# Document Processing
+unstructured==0.12.0
+unstructured[all-docs]==0.12.0
+python-magic==0.4.27
+pillow==10.2.0
+pytesseract==0.3.10
+pypandoc==1.12
+
+# File Processing
+PyPDF2==3.0.1
+python-docx==1.1.0
+openpyxl==3.1.2
+pandas==2.2.0
+python-pptx==0.6.23
+beautifulsoup4==4.12.3
+lxml==5.1.0
+
+# Utilities
+pydantic==2.5.3
+pydantic-settings==2.1.0
+aiofiles==23.2.1
+httpx==0.26.0
+
+# Security
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+
