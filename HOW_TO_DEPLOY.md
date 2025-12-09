@@ -78,7 +78,7 @@ Sign up/Login (free)
 #### Step 3: Add Environment Variables
 In Railway dashboard, add:
 ```
-OPENAI_API_KEY = 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
+OPENAI_API_KEY = your-openai-api-key-here
 API_KEY = ai-coworker-secret-key-2024
 ```
 
@@ -112,7 +112,7 @@ Sign up/Login
 #### Step 3: Add Environment Variables
 Same as Railway:
 ```
-OPENAI_API_KEY = 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
+OPENAI_API_KEY = your-openai-api-key-here
 API_KEY = ai-coworker-secret-key-2024
 ```
 
