@@ -120,3 +120,4 @@ Install Tesseract:
 
 For issues or questions, check the API documentation at http://localhost:8000/docs
 
+

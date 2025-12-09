@@ -300,3 +300,4 @@ MIT License - Free for commercial use. See [LICENSE](LICENSE) file.
 
 **You're all set! Start by opening http://localhost:8501 and creating your first business.** 🎉
 
+

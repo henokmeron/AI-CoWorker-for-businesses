@@ -70,3 +70,4 @@ async def chat_stream(
         logger.error(f"Error processing streaming chat request: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to process query: {str(e)}")
 
+

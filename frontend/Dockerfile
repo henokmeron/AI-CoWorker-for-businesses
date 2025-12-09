@@ -15,3 +15,4 @@ EXPOSE 8501
 # Run the application
 CMD ["streamlit", "run", "streamlit_app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]
 
+

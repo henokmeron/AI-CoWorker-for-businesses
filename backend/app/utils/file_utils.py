@@ -94,3 +94,4 @@ def is_file_allowed(filename: str, max_size_mb: int, file_size: int) -> tuple[bo
     
     return True, ""
 
+

@@ -39,3 +39,4 @@ class ChatResponse(BaseModel):
     response_time: Optional[float] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
+

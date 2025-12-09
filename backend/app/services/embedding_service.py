@@ -103,3 +103,4 @@ def get_embedding_service() -> EmbeddingService:
         _embedding_service = EmbeddingService()
     return _embedding_service
 
+

@@ -251,3 +251,4 @@ def get_document_processor() -> DocumentProcessor:
         _processor = DocumentProcessor()
     return _processor
 
+

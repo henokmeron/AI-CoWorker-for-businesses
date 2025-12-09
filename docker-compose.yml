@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build:
@@ -15,9 +13,6 @@ services:
       - .env
     volumes:
       - ./data:/app/data
-      - ./backend/app:/app/app
-    depends_on:
-      - chromadb
     restart: unless-stopped
 
   frontend:
@@ -35,19 +30,8 @@ services:
       - backend
     restart: unless-stopped
 
-  chromadb:
-    image: chromadb/chroma:latest
-    container_name: ai_assistant_chromadb
-    ports:
-      - "8001:8000"
-    volumes:
-      - ./data/chromadb:/chroma/chroma
-    environment:
-      - IS_PERSISTENT=TRUE
-      - ANONYMIZED_TELEMETRY=FALSE
-    restart: unless-stopped
-
 networks:
   default:
     name: ai_assistant_network
+
 

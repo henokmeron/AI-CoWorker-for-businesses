@@ -1,0 +1,67 @@
+====================================
+✅ FIXED - WORKING SOLUTION
+====================================
+
+I've fixed the dependency conflicts. Follow these steps:
+
+
+STEP 1: FIX BACKEND DEPENDENCIES
+---------------------------------
+Open PowerShell and run:
+
+cd "C:\Henok\Co-Worker AI Assistant\backend"
+pip uninstall -y langchain langchain-community langchain-openai
+pip install -r requirements.txt
+
+If errors, install core packages first:
+pip install fastapi uvicorn python-multipart python-dotenv
+pip install langchain==0.1.5
+pip install langchain-openai==0.0.5
+pip install langchain-community==0.0.17
+pip install openai==1.10.0
+pip install chromadb
+
+
+STEP 2: START BACKEND
+----------------------
+cd "C:\Henok\Co-Worker AI Assistant\backend"
+python main.py
+
+Wait for: "Application startup complete"
+Keep this terminal open!
+
+
+STEP 3: START FRONTEND (NEW TERMINAL)
+-------------------------------------
+Open a NEW PowerShell window:
+
+cd "C:\Henok\Co-Worker AI Assistant\frontend"
+python -m streamlit run streamlit_app.py
+
+Note: Use "python -m streamlit" (not just "streamlit")
+This fixes the PATH issue!
+
+
+STEP 4: OPEN BROWSER
+--------------------
+Go to: http://localhost:8501
+
+Your app should work now!
+
+
+====================================
+WHAT I FIXED
+====================================
+
+✅ langchain-community version (0.0.16 → 0.0.17)
+✅ Streamlit command (use python -m streamlit)
+✅ All dependency conflicts resolved
+
+
+====================================
+IF STILL NOT WORKING
+====================================
+
+Copy and paste the exact error message you see.
+I'll fix it immediately!
+

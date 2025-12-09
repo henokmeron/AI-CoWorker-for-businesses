@@ -159,3 +159,4 @@ async def delete_business(
     
     raise HTTPException(status_code=404, detail="Business not found")
 
+

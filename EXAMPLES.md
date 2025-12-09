@@ -545,3 +545,4 @@ chat_stream("my_business", "What are the payment terms?")
    - GPT-3.5: Faster, cheaper, good for simple queries
    - GPT-4: Slower, better for complex analysis
 
+

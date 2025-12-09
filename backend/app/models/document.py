@@ -42,3 +42,4 @@ class DocumentUploadResponse(BaseModel):
     status: str
     message: str
 
+

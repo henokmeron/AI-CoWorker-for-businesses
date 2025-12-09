@@ -20,3 +20,4 @@ def get_rag():
     """Get RAG service instance."""
     return get_rag_service()
 
+

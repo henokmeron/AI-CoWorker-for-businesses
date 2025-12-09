@@ -85,3 +85,4 @@ class BaseFileHandler(ABC):
             "modified": path.stat().st_mtime,
         }
 
+

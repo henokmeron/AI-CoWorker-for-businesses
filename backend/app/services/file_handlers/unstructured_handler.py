@@ -192,3 +192,4 @@ class UnstructuredFileHandler(BaseFileHandler):
             full_text = "\n\n".join([str(elem) for elem in elements])
             return [{"text": full_text, "metadata": {}}]
 
+
