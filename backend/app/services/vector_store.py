@@ -66,15 +66,29 @@ class VectorStore:
         elif self.db_type == "qdrant":
             try:
                 from qdrant_client import QdrantClient
-                logger.info(f"Initializing Qdrant at {settings.QDRANT_URL}")
+                
+                # If Qdrant URL is localhost and we're in production, fall back to ChromaDB
+                if settings.QDRANT_URL and "localhost" in settings.QDRANT_URL:
+                    logger.warning("Qdrant URL is localhost, but we're in production. Falling back to ChromaDB.")
+                    self.db_type = "chromadb"
+                    return self._initialize_client()  # Recursive call with chromadb
+                
+                qdrant_url = settings.QDRANT_URL or "http://localhost:6333"
+                logger.info(f"Initializing Qdrant at {qdrant_url}")
                 
                 client = QdrantClient(
-                    url=settings.QDRANT_URL,
+                    url=qdrant_url,
                     api_key=settings.QDRANT_API_KEY
                 )
                 return client
             except ImportError:
-                raise ImportError("qdrant-client not installed. Run: pip install qdrant-client")
+                logger.warning("qdrant-client not installed. Falling back to ChromaDB.")
+                self.db_type = "chromadb"
+                return self._initialize_client()  # Recursive call with chromadb
+            except Exception as e:
+                logger.warning(f"Failed to connect to Qdrant: {e}. Falling back to ChromaDB.")
+                self.db_type = "chromadb"
+                return self._initialize_client()  # Recursive call with chromadb
         
         else:
             raise ValueError(f"Unsupported vector DB type: {self.db_type}")

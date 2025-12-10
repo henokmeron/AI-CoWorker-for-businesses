@@ -34,9 +34,9 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "openai"
     
     # Vector Database
-    # Use qdrant for production (cloud-native, no binary dependencies)
-    # Use chromadb for local development only
-    VECTOR_DB_TYPE: str = "qdrant"  # chromadb, qdrant, or pinecone
+    # Use chromadb by default (works everywhere)
+    # Use qdrant for production if configured
+    VECTOR_DB_TYPE: str = "chromadb"  # chromadb, qdrant, or pinecone
     CHROMA_PERSIST_DIR: str = "./data/chromadb"
     
     # Qdrant settings (use Qdrant Cloud free tier or self-hosted)
