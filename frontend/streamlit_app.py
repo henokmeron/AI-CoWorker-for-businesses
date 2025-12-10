@@ -8,8 +8,9 @@ from typing import List, Dict, Any
 from datetime import datetime
 
 # Configuration
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
-API_KEY = os.getenv("API_KEY", "change-this-in-production")
+# Use deployed backend by default (production URL)
+BACKEND_URL = os.getenv("BACKEND_URL", "https://ai-coworker-for-businesses.onrender.com")
+API_KEY = os.getenv("API_KEY", "ai-coworker-secret-key-2024")
 
 # Set page config
 st.set_page_config(
