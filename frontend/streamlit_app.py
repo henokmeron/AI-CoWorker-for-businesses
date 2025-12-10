@@ -42,10 +42,21 @@ st.markdown("""
         border-left: 3px solid #1f77b4;
     }
     .stat-box {
-        background-color: #e8f4f8;
-        padding: 1rem;
+        background-color: #1e1e1e;
+        border: 2px solid #4a4a4a;
+        padding: 1.5rem;
         border-radius: 0.5rem;
         text-align: center;
+        color: #ffffff;
+    }
+    .stat-box h3 {
+        color: #ffffff;
+        margin-bottom: 0.5rem;
+    }
+    .stat-box p {
+        color: #a0a0a0;
+        font-size: 1.2rem;
+        font-weight: bold;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -56,22 +67,37 @@ def api_request(method: str, endpoint: str, **kwargs) -> requests.Response:
     """Make API request with authentication."""
     headers = kwargs.pop("headers", {})
     headers["X-API-Key"] = API_KEY
+    headers["Content-Type"] = "application/json"
     
     url = f"{BACKEND_URL}{endpoint}"
-    response = requests.request(method, url, headers=headers, **kwargs)
-    
-    if response.status_code >= 400:
-        st.error(f"API Error: {response.text}")
-    
-    return response
+    try:
+        response = requests.request(method, url, headers=headers, timeout=30, **kwargs)
+        
+        if response.status_code >= 400:
+            error_text = response.text
+            try:
+                error_json = response.json()
+                error_text = error_json.get("detail", error_text)
+            except:
+                pass
+            st.error(f"API Error: {error_text}")
+        
+        return response
+    except requests.exceptions.ConnectionError:
+        st.error(f"❌ Cannot connect to backend at {BACKEND_URL}. Is it running?")
+        return None
+    except Exception as e:
+        st.error(f"❌ Request failed: {str(e)}")
+        return None
 
 
 def get_businesses() -> List[Dict[str, Any]]:
     """Get list of businesses."""
     try:
         response = api_request("GET", "/api/v1/businesses")
-        if response.status_code == 200:
-            return response.json()
+        if response and response.status_code == 200:
+            businesses = response.json()
+            return businesses if isinstance(businesses, list) else []
         return []
     except Exception as e:
         st.error(f"Error fetching businesses: {str(e)}")
@@ -86,7 +112,9 @@ def create_business(name: str, description: str = "") -> bool:
             "/api/v1/businesses",
             json={"name": name, "description": description}
         )
-        return response.status_code == 200
+        if response and response.status_code == 200:
+            return True
+        return False
     except Exception as e:
         st.error(f"Error creating business: {str(e)}")
         return False
@@ -193,21 +221,23 @@ with st.sidebar:
     st.markdown("### Select Business")
     businesses = get_businesses()
     
-    if businesses:
+    if businesses and len(businesses) > 0:
         business_options = {b["name"]: b["id"] for b in businesses}
         selected_name = st.selectbox(
             "Active Business",
             options=list(business_options.keys()),
             key="business_select"
         )
-        st.session_state.selected_business = business_options[selected_name]
-        
-        # Show business stats
-        selected_biz = next(b for b in businesses if b["id"] == st.session_state.selected_business)
-        st.markdown("#### Stats")
-        st.metric("Documents", selected_biz.get("document_count", 0))
+        if selected_name:
+            st.session_state.selected_business = business_options[selected_name]
+            
+            # Show business stats
+            selected_biz = next((b for b in businesses if b["id"] == st.session_state.selected_business), None)
+            if selected_biz:
+                st.markdown("#### Stats")
+                st.metric("Documents", selected_biz.get("document_count", 0))
     else:
-        st.warning("No businesses found. Create one in Business Settings.")
+        st.info("No businesses found. Create one below or in Business Settings.")
         st.session_state.selected_business = None
     
     st.markdown("---")
@@ -261,10 +291,13 @@ if st.session_state.current_page == "Chat":
                                     </div>
                                     """, unsafe_allow_html=True)
         
-        # Chat input
-        user_query = st.chat_input("Ask a question about your documents...")
+        # Chat input (always show, but disabled if no business)
+        if st.session_state.selected_business:
+            user_query = st.chat_input("Ask a question about your documents...")
+        else:
+            user_query = st.chat_input("Please select a business first...", disabled=True)
         
-        if user_query:
+        if user_query and st.session_state.selected_business:
             # Add user message
             st.session_state.chat_history.append({
                 "role": "user",
@@ -386,18 +419,22 @@ elif st.session_state.current_page == "Business Settings":
     st.markdown("### Existing Businesses")
     businesses = get_businesses()
     
-    if businesses:
+    if businesses and len(businesses) > 0:
         for biz in businesses:
-            with st.expander(f"🏢 {biz['name']}"):
+            with st.expander(f"🏢 {biz.get('name', 'Unknown')} (ID: {biz.get('id', 'N/A')})"):
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.write(f"**ID:** {biz['id']}")
+                    st.write(f"**ID:** `{biz.get('id', 'N/A')}`")
                     st.write(f"**Description:** {biz.get('description', 'N/A')}")
                 
                 with col2:
                     st.write(f"**Documents:** {biz.get('document_count', 0)}")
-                    st.write(f"**Created:** {biz.get('created_at', 'N/A')[:10]}")
+                    created = biz.get('created_at', 'N/A')
+                    if created != 'N/A' and len(str(created)) > 10:
+                        st.write(f"**Created:** {str(created)[:10]}")
+                    else:
+                        st.write(f"**Created:** {created}")
     else:
         st.info("No businesses found. Create one above to get started!")
     
