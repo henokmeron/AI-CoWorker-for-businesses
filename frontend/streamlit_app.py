@@ -390,74 +390,122 @@ elif st.session_state.current_page == "Documents":
 
 elif st.session_state.current_page == "Business Settings":
     st.markdown('<div class="main-header">⚙️ Business Settings</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Manage businesses and configurations</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Manage businesses, conversations, and configurations</div>', unsafe_allow_html=True)
     
-    # Create new business
-    st.markdown("### Create New Business")
-    with st.form("create_business_form"):
-        biz_name = st.text_input("Business Name *")
-        biz_desc = st.text_area("Description (optional)")
+    # Create tabs for different settings
+    tab1, tab2, tab3 = st.tabs(["📊 Businesses", "💬 Conversations", "⚙️ System"])
+    
+    with tab1:
+        # Create new business
+        st.markdown("### Create New Business")
+        with st.form("create_business_form"):
+            biz_name = st.text_input("Business Name *")
+            biz_desc = st.text_area("Description (optional)")
+            
+            submitted = st.form_submit_button("Create Business")
+            
+            if submitted:
+                if biz_name:
+                    if create_business(biz_name, biz_desc):
+                        st.success(f"✅ Successfully created: {biz_name}")
+                        st.rerun()
+                else:
+                    st.error("Please enter a business name")
         
-        submitted = st.form_submit_button("Create Business")
+        st.markdown("---")
         
-        if submitted:
-            if biz_name:
-                if create_business(biz_name, biz_desc):
-                    st.success(f"✅ Successfully created: {biz_name}")
-                    st.rerun()
-            else:
-                st.error("Please enter a business name")
+        # List existing businesses
+        st.markdown("### Existing Businesses")
+        businesses = get_businesses()
+        
+        if businesses and len(businesses) > 0:
+            for biz in businesses:
+                with st.expander(f"🏢 {biz.get('name', 'Unknown')} (ID: {biz.get('id', 'N/A')})"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write(f"**ID:** `{biz.get('id', 'N/A')}`")
+                        st.write(f"**Description:** {biz.get('description', 'N/A')}")
+                    
+                    with col2:
+                        st.write(f"**Documents:** {biz.get('document_count', 0)}")
+                        created = biz.get('created_at', 'N/A')
+                        if created != 'N/A' and len(str(created)) > 10:
+                            st.write(f"**Created:** {str(created)[:10]}")
+                        else:
+                            st.write(f"**Created:** {created}")
+        else:
+            st.info("No businesses found. Create one above to get started!")
     
-    st.markdown("---")
-    
-    # List existing businesses
-    st.markdown("### Existing Businesses")
-    businesses = get_businesses()
-    
-    if businesses and len(businesses) > 0:
-        for biz in businesses:
-            with st.expander(f"🏢 {biz.get('name', 'Unknown')} (ID: {biz.get('id', 'N/A')})"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.write(f"**ID:** `{biz.get('id', 'N/A')}`")
-                    st.write(f"**Description:** {biz.get('description', 'N/A')}")
-                
-                with col2:
-                    st.write(f"**Documents:** {biz.get('document_count', 0)}")
-                    created = biz.get('created_at', 'N/A')
-                    if created != 'N/A' and len(str(created)) > 10:
-                        st.write(f"**Created:** {str(created)[:10]}")
-                    else:
-                        st.write(f"**Created:** {created}")
-    else:
-        st.info("No businesses found. Create one above to get started!")
-    
-    st.markdown("---")
-    
-    # System info
-    st.markdown("### System Information")
-    try:
-        response = api_request("GET", "/health")
-        if response.status_code == 200:
-            health = response.json()
+    with tab2:
+        st.markdown("### Conversation Management")
+        
+        # Show current chat history
+        if st.session_state.chat_history:
+            st.markdown(f"**Current Chat History:** {len(st.session_state.chat_history)} messages")
+            
+            # Archive chat
+            if st.button("📦 Archive Current Chat", help="Save current chat to history"):
+                # TODO: Implement archive functionality
+                st.info("Archive functionality coming soon!")
+            
+            # Clear chat history
             col1, col2 = st.columns(2)
             with col1:
-                st.markdown(f"""
-                <div class="stat-box">
-                    <h3>✅ Status</h3>
-                    <p>{health.get('status', 'unknown')}</p>
-                </div>
-                """, unsafe_allow_html=True)
+                if st.button("🗑️ Clear Chat History", type="secondary"):
+                    st.session_state.chat_history = []
+                    st.success("Chat history cleared!")
+                    st.rerun()
+            
             with col2:
-                st.markdown(f"""
-                <div class="stat-box">
-                    <h3>🔢 Version</h3>
-                    <p>{health.get('version', 'unknown')}</p>
-                </div>
-                """, unsafe_allow_html=True)
-    except:
-        st.error("Backend not accessible")
+                if st.button("💾 Export Chat", help="Download chat as JSON"):
+                    import json
+                    chat_json = json.dumps(st.session_state.chat_history, indent=2)
+                    st.download_button(
+                        label="Download JSON",
+                        data=chat_json,
+                        file_name=f"chat_{st.session_state.selected_business}_{datetime.now().strftime('%Y%m%d')}.json",
+                        mime="application/json"
+                    )
+            
+            # Show chat preview
+            st.markdown("---")
+            st.markdown("#### Chat Preview")
+            for i, msg in enumerate(st.session_state.chat_history[-5:], 1):  # Show last 5 messages
+                role_icon = "👤" if msg["role"] == "user" else "🤖"
+                st.markdown(f"{role_icon} **{msg['role'].title()}:** {msg['content'][:100]}...")
+        else:
+            st.info("No chat history. Start chatting in the Chat tab!")
+    
+    with tab3:
+        st.markdown("### System Information")
+        try:
+            response = api_request("GET", "/health")
+            if response and response.status_code == 200:
+                health = response.json()
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"""
+                    <div class="stat-box">
+                        <h3>✅ Status</h3>
+                        <p>{health.get('status', 'unknown')}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col2:
+                    st.markdown(f"""
+                    <div class="stat-box">
+                        <h3>🔢 Version</h3>
+                        <p>{health.get('version', 'unknown')}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown("---")
+                st.markdown("#### Backend Connection")
+                st.success(f"✅ Connected to: {BACKEND_URL}")
+            else:
+                st.error("Backend not accessible")
+        except Exception as e:
+            st.error(f"Backend not accessible: {str(e)}")
 
 
 # Footer
