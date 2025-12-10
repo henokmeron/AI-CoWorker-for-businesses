@@ -49,30 +49,52 @@ async def create_business(
     api_key: str = Depends(verify_api_key)
 ):
     """Create a new business."""
-    businesses = load_businesses()
-    
-    # Generate ID from name
-    business_id = business.name.lower().replace(' ', '_').replace('-', '_')
-    
-    # Check if already exists
-    if any(b.id == business_id for b in businesses):
-        raise HTTPException(status_code=400, detail="Business with this name already exists")
-    
-    # Create business
-    new_business = Business(
-        id=business_id,
-        **business.dict()
-    )
-    
-    businesses.append(new_business)
-    save_businesses(businesses)
-    
-    # Create business directory
-    business_dir = Path(settings.UPLOAD_DIR) / business_id
-    ensure_directory(str(business_dir))
-    
-    logger.info(f"Created business: {business_id}")
-    return new_business
+    try:
+        businesses = load_businesses()
+        
+        # Generate ID from name (sanitize)
+        business_id = business.name.lower().replace(' ', '_').replace('-', '_')
+        # Remove special characters
+        business_id = ''.join(c for c in business_id if c.isalnum() or c == '_')
+        if not business_id:
+            business_id = "business_" + str(len(businesses) + 1)
+        
+        # Check if already exists
+        if any(b.id == business_id for b in businesses):
+            raise HTTPException(status_code=400, detail="Business with this name already exists")
+        
+        # Create business
+        new_business = Business(
+            id=business_id,
+            **business.dict()
+        )
+        
+        businesses.append(new_business)
+        
+        # Ensure data directory exists before saving
+        try:
+            ensure_directory(str(BUSINESS_DB_PATH.parent))
+            save_businesses(businesses)
+        except Exception as e:
+            logger.error(f"Error saving businesses: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to save business: {str(e)}")
+        
+        # Create business directory
+        try:
+            business_dir = Path(settings.UPLOAD_DIR) / business_id
+            ensure_directory(str(business_dir))
+        except Exception as e:
+            logger.warning(f"Could not create business directory: {e}")
+            # Continue anyway - directory will be created when needed
+        
+        logger.info(f"Created business: {business_id}")
+        return new_business
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating business: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("", response_model=List[Business])
@@ -80,14 +102,19 @@ async def list_businesses(api_key: str = Depends(verify_api_key)):
     """List all businesses."""
     businesses = load_businesses()
     
-    # Update document counts
-    vector_db = get_vector_db()
-    for business in businesses:
-        try:
-            stats = vector_db.get_collection_stats(business.id)
-            business.document_count = stats.get("total_chunks", 0)
-        except Exception:
-            pass
+    # Update document counts (ignore errors if vector DB not available)
+    try:
+        vector_db = get_vector_db()
+        for business in businesses:
+            try:
+                stats = vector_db.get_collection_stats(business.id)
+                business.document_count = stats.get("total_chunks", 0)
+            except Exception as e:
+                logger.warning(f"Could not get stats for business {business.id}: {e}")
+                business.document_count = 0
+    except Exception as e:
+        logger.warning(f"Vector DB not available, skipping document counts: {e}")
+        # Continue without document counts
     
     return businesses
 

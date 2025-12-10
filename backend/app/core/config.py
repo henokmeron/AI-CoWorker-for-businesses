@@ -68,8 +68,8 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: List[str] = ["http://localhost:8501", "http://localhost:3000"]
     
     # Storage
-    DATA_DIR: str = "./data"
-    UPLOAD_DIR: str = "./data/businesses"
+    DATA_DIR: str = os.getenv("DATA_DIR", "/app/data")  # Use /app/data in production
+    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "/app/data/businesses")
     
     class Config:
         env_file = ".env"
