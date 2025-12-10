@@ -104,3 +104,16 @@ def get_embedding_service() -> EmbeddingService:
     return _embedding_service
 
 
+class ChromaEmbeddingFunction:
+    """
+    Wrapper for LangChain embeddings to work with ChromaDB.
+    This avoids ChromaDB's default onnxruntime dependency.
+    """
+    def __init__(self, embedding_service: EmbeddingService):
+        self.embedding_service = embedding_service
+    
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        """Generate embeddings for ChromaDB."""
+        return self.embedding_service.embed_documents(input)
+
+

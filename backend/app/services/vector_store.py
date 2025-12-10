@@ -8,7 +8,7 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 
 from ..core.config import settings
-from .embedding_service import get_embedding_service
+from .embedding_service import get_embedding_service, ChromaEmbeddingFunction
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,12 @@ class VectorStore:
             logger.info(f"Initializing ChromaDB at {settings.CHROMA_PERSIST_DIR}")
             
             # Create persistent ChromaDB client
+            # Disable default embedding function to avoid onnxruntime dependency
             client = chromadb.PersistentClient(
                 path=settings.CHROMA_PERSIST_DIR,
                 settings=ChromaSettings(
-                    anonymized_telemetry=False
+                    anonymized_telemetry=False,
+                    allow_reset=True
                 )
             )
             return client
@@ -76,17 +78,24 @@ class VectorStore:
         collection_name = f"business_{business_id}"
         
         if self.db_type == "chromadb":
+            # Create embedding function wrapper for ChromaDB
+            embedding_fn = ChromaEmbeddingFunction(self.embedding_service)
+            
             try:
                 # Try to get existing collection
-                collection = self.client.get_collection(name=collection_name)
+                collection = self.client.get_collection(
+                    name=collection_name,
+                    embedding_function=embedding_fn
+                )
                 logger.info(f"Retrieved existing collection: {collection_name}")
             except Exception:
-                # Create new collection
+                # Create new collection with OpenAI embeddings
                 collection = self.client.create_collection(
                     name=collection_name,
+                    embedding_function=embedding_fn,
                     metadata={"business_id": business_id}
                 )
-                logger.info(f"Created new collection: {collection_name}")
+                logger.info(f"Created new collection: {collection_name} with OpenAI embeddings")
             
             return collection
         

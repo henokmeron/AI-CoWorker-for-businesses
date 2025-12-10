@@ -13,8 +13,12 @@ openai==1.10.0
 
 # Vector Database
 chromadb==0.4.22
-onnxruntime>=1.14.1,<1.16
 qdrant-client==1.7.0
+
+# Database (PostgreSQL for conversation history)
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.25
+alembic==1.13.1
 
 # Document Processing
 unstructured==0.12.0
