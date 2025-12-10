@@ -4,8 +4,17 @@ Supports ChromaDB (local) and Qdrant (cloud).
 """
 import logging
 from typing import List, Dict, Any, Optional
-import chromadb
-from chromadb.config import Settings as ChromaSettings
+
+# Import ChromaDB with error handling
+try:
+    import chromadb
+    from chromadb.config import Settings as ChromaSettings
+    CHROMADB_AVAILABLE = True
+except Exception as e:
+    logging.warning(f"ChromaDB import failed: {e}. Some features may not work.")
+    CHROMADB_AVAILABLE = False
+    chromadb = None
+    ChromaSettings = None
 
 from ..core.config import settings
 from .embedding_service import get_embedding_service, ChromaEmbeddingFunction
@@ -36,10 +45,15 @@ class VectorStore:
     def _initialize_client(self):
         """Initialize vector database client."""
         if self.db_type == "chromadb":
+            if not CHROMADB_AVAILABLE:
+                raise RuntimeError(
+                    "ChromaDB is not available. Please install it or use Qdrant instead."
+                )
+            
             logger.info(f"Initializing ChromaDB at {settings.CHROMA_PERSIST_DIR}")
             
             # Create persistent ChromaDB client
-            # Disable default embedding function to avoid onnxruntime dependency
+            # We'll use OpenAI embeddings, not default onnxruntime
             client = chromadb.PersistentClient(
                 path=settings.CHROMA_PERSIST_DIR,
                 settings=ChromaSettings(

@@ -2,6 +2,11 @@
 FastAPI application entry point.
 """
 import logging
+
+# CRITICAL FIX: Import ChromaDB patch FIRST, before any other imports
+# This prevents ChromaDB from trying to load onnxruntime
+from app.utils.chromadb_patch import patch_chromadb
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
