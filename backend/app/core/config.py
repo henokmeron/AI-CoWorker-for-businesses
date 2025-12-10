@@ -33,10 +33,13 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "openai"
     
     # Vector Database
-    VECTOR_DB_TYPE: str = "chromadb"  # chromadb, qdrant, or pinecone
+    # Use qdrant for production (cloud-native, no binary dependencies)
+    # Use chromadb for local development only
+    VECTOR_DB_TYPE: str = "qdrant"  # chromadb, qdrant, or pinecone
     CHROMA_PERSIST_DIR: str = "./data/chromadb"
     
-    QDRANT_URL: Optional[str] = None
+    # Qdrant settings (use Qdrant Cloud free tier or self-hosted)
+    QDRANT_URL: Optional[str] = "http://localhost:6333"  # Default to local, override with env var
     QDRANT_API_KEY: Optional[str] = None
     
     PINECONE_API_KEY: Optional[str] = None
