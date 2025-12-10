@@ -321,11 +321,6 @@ if st.session_state.current_page == "Chat":
                     })
                     
                     st.rerun()
-        
-        # Clear chat button
-        if st.button("🗑️ Clear Chat History"):
-            st.session_state.chat_history = []
-            st.rerun()
 
 
 elif st.session_state.current_page == "Documents":

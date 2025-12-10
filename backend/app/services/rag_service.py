@@ -115,15 +115,19 @@ class RAGService:
         try:
             # 1. Retrieve relevant documents
             logger.info(f"Retrieving documents for query: {query[:100]}...")
-            retrieved_docs = self.vector_store.search(
-                business_id=business_id,
-                query=query,
-                k=max_sources
-            )
+            try:
+                retrieved_docs = self.vector_store.search(
+                    business_id=business_id,
+                    query=query,
+                    k=max_sources
+                )
+            except Exception as e:
+                logger.warning(f"Error searching vector store: {e}. Returning empty results.")
+                retrieved_docs = []
             
             if not retrieved_docs:
                 return {
-                    "answer": "I don't have any documents to answer this question. Please upload relevant documents first.",
+                    "answer": "I don't have any documents uploaded yet to answer this question. Please upload relevant documents first using the Documents tab.",
                     "sources": [],
                     "tokens_used": 0,
                     "response_time": time.time() - start_time
