@@ -7,6 +7,7 @@ import os
 import logging
 from typing import List, Dict, Any
 from datetime import datetime
+from requests.exceptions import ConnectionError, Timeout, RequestException, HTTPError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -446,67 +447,97 @@ with st.sidebar:
                 for conv in conversations[:20]:  # Show last 20
                     conv_title = conv.get('title', 'Untitled')
                     # Truncate long titles
-                    display_title = conv_title[:30] + "..." if len(conv_title) > 30 else conv_title
+                    display_title = conv_title[:25] + "..." if len(conv_title) > 25 else conv_title
                     
                     # Highlight current conversation
                     is_current = conv.get('id') == st.session_state.current_conversation_id
                     
-                    # Create columns for chat item and menu
-                    col1, col2 = st.columns([5, 1])
-                    
-                    with col1:
-                        button_label = f"💬 {display_title}" if not is_current else f"▶️ {display_title}"
-                        if st.button(button_label, key=f"conv_btn_{conv.get('id')}", use_container_width=True):
-                            # Load conversation
-                            try:
-                                response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
-                                if response and response.status_code == 200:
-                                    loaded_conv = response.json()
-                                    st.session_state.chat_history = [
-                                        {
-                                            "role": msg.get("role"),
-                                            "content": msg.get("content"),
-                                            "sources": msg.get("sources", [])
-                                        }
-                                        for msg in loaded_conv.get("messages", [])
-                                    ]
-                                    st.session_state.current_conversation_id = conv.get('id')
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"Error loading chat: {e}")
-                    
-                    with col2:
-                        # Three-dot menu
-                        menu_key = f"menu_{conv.get('id')}"
-                        if st.button("⋯", key=menu_key, help="Options"):
-                            st.session_state[f"show_menu_{conv.get('id')}"] = True
-                    
-                    # Show menu if clicked
-                    if st.session_state.get(f"show_menu_{conv.get('id')}", False):
-                        with st.expander("", expanded=True):
+                    # Create a container for each chat item
+                    with st.container():
+                        # Main chat button row
+                        col_main, col_menu = st.columns([8, 1])
+                        
+                        with col_main:
+                            button_label = f"💬 {display_title}" if not is_current else f"▶️ {display_title}"
+                            button_style = "primary" if is_current else "secondary"
+                            if st.button(button_label, key=f"conv_btn_{conv.get('id')}", use_container_width=True, type=button_style):
+                                # Load conversation
+                                try:
+                                    response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
+                                    if response and response.status_code == 200:
+                                        loaded_conv = response.json()
+                                        st.session_state.chat_history = [
+                                            {
+                                                "role": msg.get("role"),
+                                                "content": msg.get("content"),
+                                                "sources": msg.get("sources", [])
+                                            }
+                                            for msg in loaded_conv.get("messages", [])
+                                        ]
+                                        st.session_state.current_conversation_id = conv.get('id')
+                                        st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error loading chat: {e}")
+                        
+                        with col_menu:
+                            # Three-dot menu button
+                            menu_key = f"menu_{conv.get('id')}"
+                            if st.button("⋯", key=menu_key, help="More options", use_container_width=True):
+                                # Toggle menu
+                                current_state = st.session_state.get(f"show_menu_{conv.get('id')}", False)
+                                st.session_state[f"show_menu_{conv.get('id')}"] = not current_state
+                                st.rerun()
+                        
+                        # Show menu dropdown if active
+                        if st.session_state.get(f"show_menu_{conv.get('id')}", False):
+                            st.markdown("---")
                             st.markdown(f"**{conv_title}**")
                             
-                            # Rename
-                            new_title = st.text_input("Rename", value=conv_title, key=f"rename_{conv.get('id')}")
-                            if st.button("✓ Save", key=f"save_rename_{conv.get('id')}"):
-                                if rename_conversation(conv.get('id'), new_title):
-                                    st.success("Renamed!")
-                                    st.session_state[f"show_menu_{conv.get('id')}"] = False
+                            # Menu options
+                            menu_col1, menu_col2, menu_col3, menu_col4 = st.columns(4)
+                            
+                            with menu_col1:
+                                if st.button("✏️ Rename", key=f"rename_btn_{conv.get('id')}", use_container_width=True):
+                                    st.session_state[f"renaming_{conv.get('id')}"] = True
                                     st.rerun()
                             
-                            col_arch, col_del = st.columns(2)
-                            with col_arch:
-                                if st.button("📦 Archive", key=f"arch_{conv.get('id')}"):
+                            with menu_col2:
+                                if st.button("📦 Archive", key=f"arch_btn_{conv.get('id')}", use_container_width=True):
                                     if archive_conversation(conv.get('id')):
                                         st.success("Archived!")
                                         st.session_state[f"show_menu_{conv.get('id')}"] = False
                                         st.rerun()
-                            with col_del:
-                                if st.button("🗑️ Delete", key=f"del_{conv.get('id')}", type="secondary"):
+                            
+                            with menu_col3:
+                                if st.button("🗑️ Delete", key=f"del_btn_{conv.get('id')}", use_container_width=True, type="secondary"):
                                     if delete_conversation(conv.get('id')):
                                         st.success("Deleted!")
                                         st.session_state[f"show_menu_{conv.get('id')}"] = False
                                         st.rerun()
+                            
+                            with menu_col4:
+                                if st.button("✕ Close", key=f"close_menu_{conv.get('id')}", use_container_width=True):
+                                    st.session_state[f"show_menu_{conv.get('id')}"] = False
+                                    st.rerun()
+                            
+                            # Rename input (if rename button clicked)
+                            if st.session_state.get(f"renaming_{conv.get('id')}", False):
+                                rename_col1, rename_col2 = st.columns([3, 1])
+                                with rename_col1:
+                                    new_title = st.text_input("New name", value=conv_title, key=f"rename_input_{conv.get('id')}", label_visibility="collapsed")
+                                with rename_col2:
+                                    if st.button("✓", key=f"save_rename_{conv.get('id')}"):
+                                        if new_title and new_title.strip():
+                                            if rename_conversation(conv.get('id'), new_title.strip()):
+                                                st.success("Renamed!")
+                                                st.session_state[f"show_menu_{conv.get('id')}"] = False
+                                                st.session_state[f"renaming_{conv.get('id')}"] = False
+                                                st.rerun()
+                                    if st.button("✕", key=f"cancel_rename_{conv.get('id')}"):
+                                        st.session_state[f"renaming_{conv.get('id')}"] = False
+                                        st.rerun()
+                            
+                            st.markdown("---")
             else:
                 st.info("No previous chats. Start chatting to create one!")
         except Exception as e:
