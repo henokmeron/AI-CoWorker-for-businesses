@@ -11,6 +11,14 @@ import os
 from ..models.conversation import Conversation, Message, ConversationCreate
 from ..core.config import settings
 
+# Import psycopg2 for type hints
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+except ImportError:
+    psycopg2 = None
+    RealDictCursor = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,7 +34,7 @@ class ConversationService:
                 from psycopg2.extras import RealDictCursor
                 self.psycopg2 = psycopg2
                 self.RealDictCursor = RealDictCursor
-                db_url = os.getenv("DATABASE_URL")
+                db_url = os.getenv("DATABASE_URL") or settings.DATABASE_URL
                 if db_url:
                     self.conn = psycopg2.connect(db_url)
                     self._init_database()
@@ -145,7 +153,7 @@ class ConversationService:
     
     def get_conversation(self, conversation_id: str) -> Optional[Conversation]:
         """Get a conversation by ID."""
-        if self.use_database:
+        if self.use_database and self.RealDictCursor:
             try:
                 with self.conn.cursor(cursor_factory=self.RealDictCursor) as cur:
                     cur.execute("SELECT * FROM conversations WHERE id = %s", (conversation_id,))
@@ -189,7 +197,7 @@ class ConversationService:
     
     def list_conversations(self, business_id: str, archived: Optional[bool] = None) -> List[Conversation]:
         """List conversations for a business."""
-        if self.use_database:
+        if self.use_database and self.RealDictCursor:
             try:
                 with self.conn.cursor(cursor_factory=self.RealDictCursor) as cur:
                     if archived is not None:

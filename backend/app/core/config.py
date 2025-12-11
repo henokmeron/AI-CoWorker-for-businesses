@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     DATA_DIR: str = os.getenv("DATA_DIR", "/app/data")  # Use /app/data in production
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "/app/data/businesses")
     
+    # Database for conversation history (PostgreSQL/Neon)
+    DATABASE_URL: Optional[str] = None
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

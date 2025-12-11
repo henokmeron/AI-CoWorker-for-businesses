@@ -347,6 +347,66 @@ with st.sidebar:
     
     st.markdown("---")
     
+    # Chat Management (only show on Chat page)
+    if st.session_state.current_page == "Chat" and st.session_state.selected_business:
+        st.markdown("### 💬 Conversations")
+        
+        # New Chat button
+        if st.button("➕ New Chat", use_container_width=True, help="Start a new conversation"):
+            st.session_state.chat_history = []
+            st.session_state.current_conversation_id = None
+            st.rerun()
+        
+        # Load conversations list
+        try:
+            conversations = get_conversations(st.session_state.selected_business, archived=False)
+            if conversations:
+                st.markdown("#### Recent Chats")
+                for conv in conversations[:10]:  # Show last 10
+                    conv_title = conv.get('title', 'Untitled')
+                    # Truncate long titles
+                    if len(conv_title) > 25:
+                        conv_title = conv_title[:22] + "..."
+                    
+                    # Highlight current conversation
+                    is_current = conv.get('id') == st.session_state.current_conversation_id
+                    button_label = f"💬 {conv_title}" if not is_current else f"▶️ {conv_title}"
+                    
+                    if st.button(button_label, key=f"conv_{conv.get('id')}", use_container_width=True):
+                        # Load conversation
+                        try:
+                            response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
+                            if response and response.status_code == 200:
+                                loaded_conv = response.json()
+                                st.session_state.chat_history = [
+                                    {
+                                        "role": msg.get("role"),
+                                        "content": msg.get("content"),
+                                        "sources": msg.get("sources", [])
+                                    }
+                                    for msg in loaded_conv.get("messages", [])
+                                ]
+                                st.session_state.current_conversation_id = conv.get('id')
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Error loading chat: {e}")
+            else:
+                st.info("No previous chats. Start chatting to create one!")
+        except Exception as e:
+            logger.error(f"Error loading conversations: {e}")
+        
+        # Archive current chat button (if there's an active conversation)
+        if st.session_state.current_conversation_id and st.session_state.chat_history:
+            st.markdown("---")
+            if st.button("📦 Archive Current Chat", use_container_width=True, help="Archive the current conversation"):
+                if archive_conversation(st.session_state.current_conversation_id):
+                    st.success("Chat archived!")
+                    st.session_state.chat_history = []
+                    st.session_state.current_conversation_id = None
+                    st.rerun()
+    
+    st.markdown("---")
+    
     # Create new business (quick action)
     with st.expander("➕ Quick: Create Business"):
         new_biz_name = st.text_input("Business Name", key="quick_new_biz")
@@ -405,22 +465,6 @@ if st.session_state.current_page == "Chat":
                                         {source['chunk_text']}
                                     </div>
                                     """, unsafe_allow_html=True)
-        
-        # Chat management buttons
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("➕ New Chat", help="Start a new conversation"):
-                st.session_state.chat_history = []
-                st.session_state.current_conversation_id = None
-                st.rerun()
-        with col2:
-            if st.session_state.chat_history and st.session_state.current_conversation_id:
-                if st.button("📦 Archive Chat", help="Save and archive current chat"):
-                    if archive_conversation(st.session_state.current_conversation_id):
-                        st.success("Chat archived!")
-                        st.session_state.chat_history = []
-                        st.session_state.current_conversation_id = None
-                        st.rerun()
         
         # Chat input (always show, but disabled if no business)
         if st.session_state.selected_business:

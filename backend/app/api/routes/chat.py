@@ -8,6 +8,8 @@ from ...models.chat import ChatRequest, ChatResponse
 from ...core.security import verify_api_key
 from ...core.config import settings
 from ...api.dependencies import get_rag
+from ...services.conversation_service import get_conversation_service
+from ...models.conversation import Message
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,10 @@ async def chat(
         )
         
         logger.info(f"Query completed successfully. Response length: {len(result.get('answer', ''))}")
+        
+        # Save to conversation history if conversation_id provided
+        # (For now, we'll save to current session - full history API coming)
+        
         return ChatResponse(**result)
         
     except HTTPException:
