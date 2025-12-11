@@ -563,14 +563,35 @@ if st.session_state.current_page == "Chat":
     st.markdown('<div class="main-header">💬 Chat with Your Documents</div>', unsafe_allow_html=True)
     
     # Check backend connection first
+    backend_status = st.empty()
     try:
         health_response = api_request("GET", "/health")
-        if not health_response or health_response.status_code != 200:
-            st.error(f"⚠️ Backend is not responding. Check if it's running at {BACKEND_URL}")
-            st.info("The backend might be sleeping (Render free tier) or crashed. Check Render logs.")
+        if health_response and health_response.status_code == 200:
+            backend_status.success("✅ Backend connected")
+        else:
+            backend_status.error(f"⚠️ Backend is not responding. Check if it's running at {BACKEND_URL}")
+            st.warning("""
+            **Backend Connection Issue:**
+            - Check if the backend is deployed and running on Render
+            - Verify the BACKEND_URL is correct
+            - If using Render free tier, the backend may be sleeping (first request takes ~30 seconds)
+            - Check Render logs for errors
+            """)
+            st.stop()
+    except requests.exceptions.ConnectionError:
+        backend_status.error(f"⚠️ Cannot connect to backend at {BACKEND_URL}")
+        st.warning("""
+        **Backend Connection Issue:**
+        - Check if the backend is deployed and running on Render
+        - Verify the BACKEND_URL is correct
+        - If using Render free tier, the backend may be sleeping (first request takes ~30 seconds)
+        - Check Render logs for errors
+        """)
+        st.stop()
     except Exception as e:
-        st.error(f"⚠️ Cannot connect to backend: {str(e)}")
+        backend_status.error(f"⚠️ Backend error: {str(e)}")
         st.info(f"Backend URL: {BACKEND_URL}")
+        st.stop()
     
     if not st.session_state.selected_business:
         st.warning("Please select or create a business first.")
