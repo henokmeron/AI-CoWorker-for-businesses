@@ -53,6 +53,7 @@ class ConversationService:
         """Initialize PostgreSQL tables."""
         try:
             with self.conn.cursor() as cur:
+                # Create conversations table
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS conversations (
                         id VARCHAR(255) PRIMARY KEY,
@@ -65,10 +66,11 @@ class ConversationService:
                     )
                 """)
                 
+                # Create messages table
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS messages (
                         id SERIAL PRIMARY KEY,
-                        conversation_id VARCHAR(255) REFERENCES conversations(id) ON DELETE CASCADE,
+                        conversation_id VARCHAR(255) NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
                         role VARCHAR(20) NOT NULL,
                         content TEXT NOT NULL,
                         sources JSONB DEFAULT '[]'::jsonb,
@@ -77,15 +79,19 @@ class ConversationService:
                     )
                 """)
                 
+                # Create indexes for better performance
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_conversations_business ON conversations(business_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_conversations_archived ON conversations(archived)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)")
                 
                 self.conn.commit()
-                logger.info("Database tables initialized")
+                logger.info("✅ Database tables initialized successfully")
         except Exception as e:
-            logger.error(f"Error initializing database: {e}")
-            self.use_database = False
-            self._init_json_storage()
+            logger.error(f"❌ Error initializing database: {e}", exc_info=True)
+            # Don't fall back to JSON - raise the error so user knows
+            raise RuntimeError(f"Failed to initialize database. Please check your DATABASE_URL and run database_schema.sql in Neon SQL Editor. Error: {e}")
     
     def _init_json_storage(self):
         """Initialize JSON file storage."""

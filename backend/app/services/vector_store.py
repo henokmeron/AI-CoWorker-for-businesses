@@ -6,6 +6,13 @@ import logging
 from typing import List, Dict, Any, Optional
 
 # Import ChromaDB with error handling
+# Apply patch first if available
+try:
+    from ..utils.chromadb_patch import apply_patch
+    apply_patch()
+except ImportError:
+    pass  # Patch not available, continue
+
 try:
     import chromadb
     from chromadb.config import Settings as ChromaSettings
@@ -46,22 +53,36 @@ class VectorStore:
         """Initialize vector database client."""
         if self.db_type == "chromadb":
             if not CHROMADB_AVAILABLE:
-                raise RuntimeError(
-                    "ChromaDB is not available. Please install it or use Qdrant instead."
-                )
+                # Try to import again with patch
+                try:
+                    from ..utils.chromadb_patch import apply_patch
+                    apply_patch()
+                    import chromadb
+                    from chromadb.config import Settings as ChromaSettings
+                    logger.info("ChromaDB imported successfully after patch")
+                except Exception as e:
+                    logger.error(f"ChromaDB still not available after patch: {e}")
+                    # Don't fail - allow app to start without vector store
+                    # Vector operations will fail gracefully
+                    return None
             
-            logger.info(f"Initializing ChromaDB at {settings.CHROMA_PERSIST_DIR}")
-            
-            # Create persistent ChromaDB client
-            # We'll use OpenAI embeddings, not default onnxruntime
-            client = chromadb.PersistentClient(
-                path=settings.CHROMA_PERSIST_DIR,
-                settings=ChromaSettings(
-                    anonymized_telemetry=False,
-                    allow_reset=True
+            try:
+                logger.info(f"Initializing ChromaDB at {settings.CHROMA_PERSIST_DIR}")
+                
+                # Create persistent ChromaDB client
+                # We'll use OpenAI embeddings, not default onnxruntime
+                client = chromadb.PersistentClient(
+                    path=settings.CHROMA_PERSIST_DIR,
+                    settings=ChromaSettings(
+                        anonymized_telemetry=False,
+                        allow_reset=True
+                    )
                 )
-            )
-            return client
+                return client
+            except Exception as e:
+                logger.error(f"Failed to initialize ChromaDB client: {e}")
+                # Return None instead of raising - allows app to start
+                return None
         
         elif self.db_type == "qdrant":
             try:
@@ -99,10 +120,14 @@ class VectorStore:
         
         Args:
             business_id: Business identifier
-            
+        
         Returns:
             Collection object
         """
+        if self.client is None:
+            logger.warning("Vector store client not initialized. Vector operations will not work.")
+            return None
+        
         collection_name = f"business_{business_id}"
         
         if self.db_type == "chromadb":
