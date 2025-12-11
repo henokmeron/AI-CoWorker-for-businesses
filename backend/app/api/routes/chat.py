@@ -30,10 +30,13 @@ async def chat(
         
         # Validate OpenAI API key
         if not settings.OPENAI_API_KEY:
+            logger.error("OpenAI API key not configured")
             raise HTTPException(
                 status_code=500,
-                detail="OpenAI API key not configured. Please set OPENAI_API_KEY environment variable."
+                detail="OpenAI API key not configured. Please set OPENAI_API_KEY environment variable in Render settings."
             )
+        
+        logger.info(f"Processing query with OpenAI (model: {settings.OPENAI_MODEL})")
         
         result = rag_service.query(
             business_id=request.business_id,
@@ -42,6 +45,7 @@ async def chat(
             max_sources=request.max_sources
         )
         
+        logger.info(f"Query completed successfully. Response length: {len(result.get('answer', ''))}")
         return ChatResponse(**result)
         
     except HTTPException:
@@ -50,10 +54,13 @@ async def chat(
         logger.error(f"Error processing chat request: {str(e)}", exc_info=True)
         # Return a helpful error message
         error_detail = str(e)
-        if "api key" in error_detail.lower():
-            error_detail = "OpenAI API key not configured or invalid."
+        if "api key" in error_detail.lower() or "authentication" in error_detail.lower():
+            error_detail = "OpenAI API key not configured or invalid. Please check your OPENAI_API_KEY in Render environment variables."
+        elif "rate limit" in error_detail.lower():
+            error_detail = "OpenAI rate limit exceeded. Please try again in a moment."
         elif "vector" in error_detail.lower() or "collection" in error_detail.lower():
-            error_detail = "No documents uploaded yet. Please upload documents first."
+            # This shouldn't happen anymore, but just in case
+            error_detail = "Error accessing documents, but trying to answer anyway..."
         raise HTTPException(status_code=500, detail=f"Failed to process query: {error_detail}")
 
 

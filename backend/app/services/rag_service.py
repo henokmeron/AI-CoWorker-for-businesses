@@ -113,43 +113,38 @@ class RAGService:
         start_time = time.time()
         
         try:
-            # 1. Retrieve relevant documents
-            logger.info(f"Retrieving documents for query: {query[:100]}...")
+            # 1. Try to retrieve relevant documents (optional - not required)
+            retrieved_docs = []
+            context = ""
+            
             try:
+                logger.info(f"Retrieving documents for query: {query[:100]}...")
                 retrieved_docs = self.vector_store.search(
                     business_id=business_id,
                     query=query,
                     k=max_sources
                 )
+                if retrieved_docs:
+                    context = self._format_context(retrieved_docs)
+                    logger.info(f"Found {len(retrieved_docs)} relevant documents")
+                else:
+                    logger.info("No documents found - will answer as general AI")
             except Exception as e:
-                logger.warning(f"Error searching vector store: {e}. Returning empty results.")
-                retrieved_docs = []
+                logger.warning(f"Vector store search failed (this is OK if no documents): {e}")
+                # Continue without documents - can still answer general questions
             
-            if not retrieved_docs:
-                return {
-                    "answer": "I don't have any documents uploaded yet to answer this question. Please upload relevant documents first using the Documents tab.",
-                    "sources": [],
-                    "tokens_used": 0,
-                    "response_time": time.time() - start_time
-                }
+            # 2. Build prompt with or without context
+            messages = self._build_messages(query, context, conversation_history, has_documents=len(retrieved_docs) > 0)
             
-            # 2. Format context from retrieved documents
-            if retrieved_docs:
-                context = self._format_context(retrieved_docs)
-            else:
-                context = "No relevant documents found."
-            
-            # 3. Build prompt with context and conversation history
-            messages = self._build_messages(query, context, conversation_history)
-            
-            # 4. Generate response
+            # 3. Generate response with LLM (always call OpenAI, even without documents)
             logger.info("Generating response with LLM")
             try:
                 response = self.llm.invoke(messages)
                 answer = response.content if hasattr(response, 'content') else str(response)
+                logger.info(f"LLM response generated successfully: {len(answer)} characters")
             except Exception as e:
-                logger.error(f"LLM invocation failed: {e}")
-                raise RuntimeError(f"Failed to generate response: {str(e)}")
+                logger.error(f"LLM invocation failed: {e}", exc_info=True)
+                raise RuntimeError(f"Failed to generate response from OpenAI: {str(e)}")
             
             # 5. Format sources
             sources = self._format_sources(retrieved_docs)
