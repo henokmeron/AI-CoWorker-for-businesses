@@ -618,42 +618,82 @@ elif st.session_state.current_page == "Business Settings":
     with tab2:
         st.markdown("### Conversation Management")
         
-        # Show current chat history
-        if st.session_state.chat_history:
-            st.markdown(f"**Current Chat History:** {len(st.session_state.chat_history)} messages")
-            
-            # Archive chat
-            if st.button("📦 Archive Current Chat", help="Save current chat to history"):
-                # TODO: Implement archive functionality
-                st.info("Archive functionality coming soon!")
-            
-            # Clear chat history
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🗑️ Clear Chat History", type="secondary"):
-                    st.session_state.chat_history = []
-                    st.success("Chat history cleared!")
-                    st.rerun()
-            
-            with col2:
-                if st.button("💾 Export Chat", help="Download chat as JSON"):
-                    import json
-                    chat_json = json.dumps(st.session_state.chat_history, indent=2)
-                    st.download_button(
-                        label="Download JSON",
-                        data=chat_json,
-                        file_name=f"chat_{st.session_state.selected_business}_{datetime.now().strftime('%Y%m%d')}.json",
-                        mime="application/json"
-                    )
-            
-            # Show chat preview
-            st.markdown("---")
-            st.markdown("#### Chat Preview")
-            for i, msg in enumerate(st.session_state.chat_history[-5:], 1):  # Show last 5 messages
-                role_icon = "👤" if msg["role"] == "user" else "🤖"
-                st.markdown(f"{role_icon} **{msg['role'].title()}:** {msg['content'][:100]}...")
+        if not st.session_state.selected_business:
+            st.warning("Please select a business first to view conversations.")
         else:
-            st.info("No chat history. Start chatting in the Chat tab!")
+            # Load conversations
+            try:
+                all_conversations = get_conversations(st.session_state.selected_business, archived=False)
+                archived_conversations = get_conversations(st.session_state.selected_business, archived=True)
+            except Exception as e:
+                logger.error(f"Error loading conversations: {e}")
+                all_conversations = []
+                archived_conversations = []
+            
+            # Current chat
+            st.markdown("#### Current Chat")
+            if st.session_state.chat_history:
+                st.markdown(f"**Messages:** {len(st.session_state.chat_history)}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🗑️ Clear Chat", type="secondary"):
+                        st.session_state.chat_history = []
+                        st.session_state.current_conversation_id = None
+                        st.success("Chat cleared!")
+                        st.rerun()
+                with col2:
+                    if st.button("📦 Archive Current Chat"):
+                        if st.session_state.current_conversation_id:
+                            if archive_conversation(st.session_state.current_conversation_id):
+                                st.success("Chat archived!")
+                                st.session_state.chat_history = []
+                                st.session_state.current_conversation_id = None
+                                st.rerun()
+                        else:
+                            st.warning("No conversation to archive. Start chatting first!")
+            else:
+                st.info("No active chat. Start chatting in the Chat tab!")
+            
+            st.markdown("---")
+            
+            # Previous conversations
+            st.markdown("#### Previous Conversations")
+            if all_conversations:
+                for conv in all_conversations:
+                    with st.expander(f"💬 {conv.get('title', 'Untitled')} ({len(conv.get('messages', []))} messages)"):
+                        st.write(f"**ID:** `{conv.get('id')}`")
+                        st.write(f"**Created:** {conv.get('created_at', 'N/A')[:10] if conv.get('created_at') else 'N/A'}")
+                        if st.button(f"📂 Load Chat", key=f"load_{conv.get('id')}"):
+                            # Load conversation
+                            try:
+                                response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
+                                if response and response.status_code == 200:
+                                    loaded_conv = response.json()
+                                    st.session_state.chat_history = [
+                                        {
+                                            "role": msg.get("role"),
+                                            "content": msg.get("content"),
+                                            "sources": msg.get("sources", [])
+                                        }
+                                        for msg in loaded_conv.get("messages", [])
+                                    ]
+                                    st.session_state.current_conversation_id = conv.get('id')
+                                    st.success("Chat loaded!")
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Error loading chat: {e}")
+            else:
+                st.info("No previous conversations. Start chatting to create one!")
+            
+            # Archived conversations
+            if archived_conversations:
+                st.markdown("---")
+                st.markdown("#### Archived Conversations")
+                for conv in archived_conversations:
+                    with st.expander(f"📦 {conv.get('title', 'Untitled')} (Archived)"):
+                        st.write(f"**ID:** `{conv.get('id')}`")
+                        st.write(f"**Messages:** {len(conv.get('messages', []))}")
+                        st.write(f"**Archived:** {conv.get('created_at', 'N/A')[:10] if conv.get('created_at') else 'N/A'}")
     
     with tab3:
         st.markdown("### System Information")

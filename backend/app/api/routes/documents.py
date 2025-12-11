@@ -79,9 +79,20 @@ async def upload_document(
         # Save to temp file first (use /tmp in production, tempfile in local)
         import tempfile
         import os
-        temp_dir = os.getenv("TMPDIR", "/tmp")
+        from pathlib import Path
+        
+        # Use /tmp in Docker/production, system temp in local
+        if os.path.exists("/tmp"):
+            temp_dir = "/tmp"
+        else:
+            temp_dir = tempfile.gettempdir()
+        
         os.makedirs(temp_dir, exist_ok=True)
-        temp_path = os.path.join(temp_dir, file.filename)
+        # Sanitize filename for cross-platform compatibility
+        safe_filename = "".join(c for c in file.filename if c.isalnum() or c in "._- ")
+        temp_path = os.path.join(temp_dir, safe_filename)
+        
+        logger.info(f"Saving temp file to: {temp_path}")
         with open(temp_path, "wb") as f:
             f.write(contents)
         
