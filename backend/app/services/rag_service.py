@@ -199,49 +199,66 @@ class RAGService:
         self,
         query: str,
         context: str,
-        conversation_history: Optional[List[ChatMessage]] = None
+        conversation_history: Optional[List[ChatMessage]] = None,
+        has_documents: bool = False
     ) -> List:
         """
         Build message list for LLM.
         
         Args:
             query: User question
-            context: Retrieved context
+            context: Retrieved context (empty if no documents)
             conversation_history: Previous messages
+            has_documents: Whether documents were found
             
         Returns:
             List of messages for LLM
         """
-        system_prompt = """You are an AI assistant that helps answer questions based on business documents.
+        # System prompt adapts based on whether we have documents
+        if has_documents and context:
+            system_prompt = """You are a helpful AI assistant that answers questions based on provided documents.
 
-Your task is to:
-1. Answer questions accurately using ONLY the information in the provided context
-2. Cite your sources by mentioning the source number (e.g., "According to Source 1...")
-3. If the answer is not in the context, clearly state that you don't have that information
-4. Be concise and direct, but provide enough detail to be helpful
-5. If there are multiple relevant pieces of information, synthesize them into a coherent answer
-6. Maintain a professional and helpful tone
-
-Remember: Only use information from the provided sources. Do not make up information."""
+When answering:
+- Use information from the provided documents when available
+- Cite sources when referencing documents (e.g., "According to Source 1...")
+- If the question is not related to the documents, answer based on your general knowledge
+- Be concise and accurate"""
+        else:
+            system_prompt = """You are a helpful AI assistant. Answer questions clearly and accurately based on your knowledge.
+Be helpful, concise, and informative."""
 
         messages = [SystemMessage(content=system_prompt)]
         
         # Add conversation history if provided
         if conversation_history:
             for msg in conversation_history[-5:]:  # Last 5 messages for context
-                if msg.role == "user":
-                    messages.append(HumanMessage(content=msg.content))
-                elif msg.role == "assistant":
-                    messages.append(AIMessage(content=msg.content))
+                # Handle both dict and object formats
+                if isinstance(msg, dict):
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                elif hasattr(msg, 'role'):
+                    role = msg.role
+                    content = msg.content
+                else:
+                    continue
+                
+                if role == "user":
+                    messages.append(HumanMessage(content=content))
+                elif role == "assistant":
+                    messages.append(AIMessage(content=content))
         
-        # Add current query with context
-        user_message = f"""Context from business documents:
+        # Add current query with or without context
+        if has_documents and context:
+            user_message = f"""Context from business documents:
 
 {context}
 
 Question: {query}
 
-Please answer the question using the information from the context above. Cite your sources."""
+Please provide a helpful answer, citing sources when relevant."""
+        else:
+            # No documents - just answer the question directly
+            user_message = query
 
         messages.append(HumanMessage(content=user_message))
         
