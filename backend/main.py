@@ -64,6 +64,20 @@ async def health_check():
     }
 
 
+@app.get("/debug")
+async def debug_info():
+    """Debug endpoint to check configuration."""
+    return {
+        "openai_api_key_set": bool(settings.OPENAI_API_KEY),
+        "openai_api_key_length": len(settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else 0,
+        "openai_api_key_prefix": settings.OPENAI_API_KEY[:10] + "..." if settings.OPENAI_API_KEY else "None",
+        "llm_provider": settings.LLM_PROVIDER,
+        "openai_model": settings.OPENAI_MODEL,
+        "vector_db_type": settings.VECTOR_DB_TYPE,
+        "data_dir": settings.DATA_DIR
+    }
+
+
 @app.on_event("startup")
 async def startup_event():
     """Run on application startup."""
