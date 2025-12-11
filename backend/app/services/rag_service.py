@@ -134,15 +134,22 @@ class RAGService:
                 }
             
             # 2. Format context from retrieved documents
-            context = self._format_context(retrieved_docs)
+            if retrieved_docs:
+                context = self._format_context(retrieved_docs)
+            else:
+                context = "No relevant documents found."
             
             # 3. Build prompt with context and conversation history
             messages = self._build_messages(query, context, conversation_history)
             
             # 4. Generate response
             logger.info("Generating response with LLM")
-            response = self.llm.invoke(messages)
-            answer = response.content
+            try:
+                response = self.llm.invoke(messages)
+                answer = response.content if hasattr(response, 'content') else str(response)
+            except Exception as e:
+                logger.error(f"LLM invocation failed: {e}")
+                raise RuntimeError(f"Failed to generate response: {str(e)}")
             
             # 5. Format sources
             sources = self._format_sources(retrieved_docs)

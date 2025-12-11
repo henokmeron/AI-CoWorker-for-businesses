@@ -159,10 +159,19 @@ def get_documents(business_id: str) -> List[Dict[str, Any]]:
 def chat_query(business_id: str, query: str, history: List = None) -> Dict[str, Any]:
     """Send a chat query."""
     try:
+        # Convert history to proper format
+        formatted_history = []
+        if history:
+            for msg in history:
+                formatted_history.append({
+                    "role": msg.get("role", "user"),
+                    "content": msg.get("content", "")
+                })
+        
         payload = {
             "business_id": business_id,
             "query": query,
-            "conversation_history": history or [],
+            "conversation_history": formatted_history,
             "max_sources": 5
         }
         
@@ -172,8 +181,16 @@ def chat_query(business_id: str, query: str, history: List = None) -> Dict[str, 
             json=payload
         )
         
-        if response.status_code == 200:
+        if response and response.status_code == 200:
             return response.json()
+        elif response:
+            error_text = response.text
+            try:
+                error_json = response.json()
+                error_text = error_json.get("detail", error_text)
+            except:
+                pass
+            st.error(f"Chat error: {error_text}")
         return None
     except Exception as e:
         st.error(f"Error in chat query: {str(e)}")
@@ -298,29 +315,46 @@ if st.session_state.current_page == "Chat":
             user_query = st.chat_input("Please select a business first...", disabled=True)
         
         if user_query and st.session_state.selected_business:
-            # Add user message
-            st.session_state.chat_history.append({
+            # Add user message immediately
+            user_msg = {
                 "role": "user",
                 "content": user_query
-            })
+            }
+            st.session_state.chat_history.append(user_msg)
             
             # Get response
-            with st.spinner("Thinking..."):
-                response = chat_query(
-                    st.session_state.selected_business,
-                    user_query,
-                    st.session_state.chat_history
-                )
-                
-                if response:
-                    # Add assistant message
+            with st.spinner("🤔 Thinking..."):
+                try:
+                    response = chat_query(
+                        st.session_state.selected_business,
+                        user_query,
+                        st.session_state.chat_history[:-1]  # Exclude the message we just added
+                    )
+                    
+                    if response:
+                        # Add assistant message
+                        assistant_msg = {
+                            "role": "assistant",
+                            "content": response.get("answer", "I apologize, but I couldn't generate a response."),
+                            "sources": response.get("sources", [])
+                        }
+                        st.session_state.chat_history.append(assistant_msg)
+                    else:
+                        # Add error message
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": "Sorry, I encountered an error. Please try again or check if documents are uploaded.",
+                            "sources": []
+                        })
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
                     st.session_state.chat_history.append({
                         "role": "assistant",
-                        "content": response["answer"],
-                        "sources": response.get("sources", [])
+                        "content": f"Error: {str(e)}",
+                        "sources": []
                     })
-                    
-                    st.rerun()
+            
+            st.rerun()
 
 
 elif st.session_state.current_page == "Documents":

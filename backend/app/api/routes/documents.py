@@ -76,8 +76,12 @@ async def upload_document(
         if not is_allowed:
             raise HTTPException(status_code=400, detail=error_msg)
         
-        # Save to temp file first
-        temp_path = f"/tmp/{file.filename}"
+        # Save to temp file first (use /tmp in production, tempfile in local)
+        import tempfile
+        import os
+        temp_dir = os.getenv("TMPDIR", "/tmp")
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_path = os.path.join(temp_dir, file.filename)
         with open(temp_path, "wb") as f:
             f.write(contents)
         

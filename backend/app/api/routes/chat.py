@@ -28,20 +28,31 @@ async def chat(
     try:
         logger.info(f"Chat request for business {request.business_id}: {request.query[:100]}")
         
+        # Validate OpenAI API key
+        if not settings.OPENAI_API_KEY:
+            raise HTTPException(
+                status_code=500,
+                detail="OpenAI API key not configured. Please set OPENAI_API_KEY environment variable."
+            )
+        
         result = rag_service.query(
             business_id=request.business_id,
             query=request.query,
-            conversation_history=request.conversation_history,
+            conversation_history=request.conversation_history or [],
             max_sources=request.max_sources
         )
         
         return ChatResponse(**result)
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error processing chat request: {str(e)}", exc_info=True)
-        # Return a helpful error message instead of crashing
+        # Return a helpful error message
         error_detail = str(e)
-        if "vector" in error_detail.lower() or "collection" in error_detail.lower():
+        if "api key" in error_detail.lower():
+            error_detail = "OpenAI API key not configured or invalid."
+        elif "vector" in error_detail.lower() or "collection" in error_detail.lower():
             error_detail = "No documents uploaded yet. Please upload documents first."
         raise HTTPException(status_code=500, detail=f"Failed to process query: {error_detail}")
 
