@@ -191,7 +191,13 @@ class VectorStore:
         Returns:
             List of chunk IDs
         """
+        if self.client is None:
+            logger.warning("Vector store not available, skipping document addition")
+            return []
+        
         collection = self.get_collection(business_id)
+        if collection is None:
+            return []
         
         # Generate embeddings
         logger.info(f"Generating embeddings for {len(texts)} chunks")
