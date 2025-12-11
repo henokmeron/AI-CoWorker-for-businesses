@@ -27,14 +27,19 @@ class ConversationService:
     
     def __init__(self):
         """Initialize conversation service."""
-        self.use_database = bool(os.getenv("DATABASE_URL"))
+        # Always initialize JSON storage as fallback
+        self._init_json_storage()
+        
+        # Try to use database if DATABASE_URL is set
+        db_url = os.getenv("DATABASE_URL") or settings.DATABASE_URL
+        self.use_database = bool(db_url)
+        
         if self.use_database:
             try:
                 import psycopg2
                 from psycopg2.extras import RealDictCursor
                 self.psycopg2 = psycopg2
                 self.RealDictCursor = RealDictCursor
-                db_url = os.getenv("DATABASE_URL") or settings.DATABASE_URL
                 if db_url:
                     self.conn = psycopg2.connect(db_url)
                     self._init_database()
@@ -44,10 +49,9 @@ class ConversationService:
             except Exception as e:
                 logger.warning(f"PostgreSQL not available, using JSON fallback: {e}")
                 self.use_database = False
-                self._init_json_storage()
+                # JSON storage already initialized above
         else:
             logger.info("Using JSON file for conversation storage")
-            self._init_json_storage()
     
     def _init_database(self):
         """Initialize PostgreSQL tables."""
@@ -153,6 +157,8 @@ class ConversationService:
                     self.conn.commit()
             except Exception as e:
                 logger.error(f"Error adding message to database: {e}")
+                logger.info("Falling back to JSON storage")
+                self.use_database = False  # Switch to JSON for this session
                 self._add_json_message(conversation_id, message)
         else:
             self._add_json_message(conversation_id, message)
@@ -197,6 +203,8 @@ class ConversationService:
                     )
             except Exception as e:
                 logger.error(f"Error getting conversation from database: {e}")
+                logger.info("Falling back to JSON storage")
+                self.use_database = False  # Switch to JSON for this session
                 return self._get_json_conversation(conversation_id)
         else:
             return self._get_json_conversation(conversation_id)
@@ -243,6 +251,8 @@ class ConversationService:
                     return conversations
             except Exception as e:
                 logger.error(f"Error listing conversations from database: {e}")
+                logger.info("Falling back to JSON storage")
+                self.use_database = False  # Switch to JSON for this session
                 return self._list_json_conversations(business_id, archived)
         else:
             return self._list_json_conversations(business_id, archived)
