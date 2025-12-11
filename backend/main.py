@@ -79,6 +79,32 @@ async def debug_info():
     }
 
 
+@app.get("/test-openai")
+async def test_openai():
+    """Test OpenAI API connection."""
+    try:
+        if not settings.OPENAI_API_KEY:
+            return {"success": False, "error": "OPENAI_API_KEY not configured"}
+        
+        from openai import OpenAI
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": "Say 'Hello, OpenAI is working!'"}],
+            max_tokens=20
+        )
+        
+        return {
+            "success": True,
+            "message": response.choices[0].message.content,
+            "model": response.model
+        }
+    except Exception as e:
+        logger.error(f"OpenAI test failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 @app.on_event("startup")
 async def startup_event():
     """Run on application startup."""
