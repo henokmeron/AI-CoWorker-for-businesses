@@ -615,7 +615,7 @@ elif st.session_state.current_page == "Business Settings":
     st.markdown('<div class="sub-header">Manage businesses, conversations, and configurations</div>', unsafe_allow_html=True)
     
     # Create tabs for different settings
-    tab1, tab2, tab3 = st.tabs(["📊 Businesses", "💬 Conversations", "⚙️ System"])
+    tab1, tab2, tab3 = st.tabs(["📊 Businesses", "📦 Archived Chats", "⚙️ System"])
     
     with tab1:
         # Create new business
