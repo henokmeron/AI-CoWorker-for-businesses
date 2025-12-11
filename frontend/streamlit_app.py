@@ -4,8 +4,13 @@ Streamlit frontend for AI Assistant Coworker.
 import streamlit as st
 import requests
 import os
+import logging
 from typing import List, Dict, Any
 from datetime import datetime
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Configuration
 # Use deployed backend by default (production URL)
@@ -67,9 +72,13 @@ def api_request(method: str, endpoint: str, **kwargs) -> requests.Response:
     """Make API request with authentication."""
     headers = kwargs.pop("headers", {})
     headers["X-API-Key"] = API_KEY
-    headers["Content-Type"] = "application/json"
+    
+    # Only set Content-Type for JSON requests
+    if "json" in kwargs:
+        headers["Content-Type"] = "application/json"
     
     url = f"{BACKEND_URL}{endpoint}"
+    
     try:
         response = requests.request(method, url, headers=headers, timeout=30, **kwargs)
         
@@ -80,14 +89,27 @@ def api_request(method: str, endpoint: str, **kwargs) -> requests.Response:
                 error_text = error_json.get("detail", error_text)
             except:
                 pass
-            st.error(f"API Error: {error_text}")
+            # Don't show error for every request - only log it
+            logger.error(f"API Error {response.status_code}: {error_text}")
+            # Only show critical errors to user
+            if response.status_code >= 500:
+                st.error(f"API Error: {error_text}")
         
         return response
     except requests.exceptions.ConnectionError:
-        st.error(f"❌ Cannot connect to backend at {BACKEND_URL}. Is it running?")
+        error_msg = f"❌ Cannot connect to backend at {BACKEND_URL}. Is it running?"
+        st.error(error_msg)
+        logger.error(error_msg)
+        return None
+    except requests.exceptions.Timeout:
+        error_msg = f"❌ Backend timeout. The server is taking too long to respond."
+        st.error(error_msg)
+        logger.error(error_msg)
         return None
     except Exception as e:
-        st.error(f"❌ Request failed: {str(e)}")
+        error_msg = f"❌ Request failed: {str(e)}"
+        st.error(error_msg)
+        logger.error(error_msg)
         return None
 
 
@@ -175,6 +197,7 @@ def chat_query(business_id: str, query: str, history: List = None) -> Dict[str, 
             "max_sources": 5
         }
         
+        logger.info(f"Sending chat request to {BACKEND_URL}/api/v1/chat")
         response = api_request(
             "POST",
             "/api/v1/chat",
@@ -182,7 +205,9 @@ def chat_query(business_id: str, query: str, history: List = None) -> Dict[str, 
         )
         
         if response and response.status_code == 200:
-            return response.json()
+            result = response.json()
+            logger.info(f"Chat response received: {len(result.get('answer', ''))} chars")
+            return result
         elif response:
             error_text = response.text
             try:
@@ -190,11 +215,60 @@ def chat_query(business_id: str, query: str, history: List = None) -> Dict[str, 
                 error_text = error_json.get("detail", error_text)
             except:
                 pass
+            logger.error(f"Chat error {response.status_code}: {error_text}")
             st.error(f"Chat error: {error_text}")
+        else:
+            logger.error("No response from chat endpoint")
+            st.error("No response from backend. Check if backend is running.")
         return None
     except Exception as e:
+        logger.error(f"Error in chat query: {e}", exc_info=True)
         st.error(f"Error in chat query: {str(e)}")
         return None
+
+
+def get_conversations(business_id: str, archived: bool = False) -> List[Dict[str, Any]]:
+    """Get conversations for a business."""
+    try:
+        response = api_request(
+            "GET",
+            f"/api/v1/conversations?business_id={business_id}&archived={str(archived).lower()}"
+        )
+        if response and response.status_code == 200:
+            return response.json()
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching conversations: {e}")
+        return []
+
+
+def create_conversation(business_id: str, title: str = None) -> Dict[str, Any]:
+    """Create a new conversation."""
+    try:
+        response = api_request(
+            "POST",
+            "/api/v1/conversations",
+            json={"business_id": business_id, "title": title}
+        )
+        if response and response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        logger.error(f"Error creating conversation: {e}")
+        return None
+
+
+def archive_conversation(conversation_id: str) -> bool:
+    """Archive a conversation."""
+    try:
+        response = api_request(
+            "POST",
+            f"/api/v1/conversations/{conversation_id}/archive"
+        )
+        return response and response.status_code == 200
+    except Exception as e:
+        logger.error(f"Error archiving conversation: {e}")
+        return False
 
 
 def delete_document(document_id: str) -> bool:
@@ -217,6 +291,10 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "current_page" not in st.session_state:
     st.session_state.current_page = "Chat"
+if "current_conversation_id" not in st.session_state:
+    st.session_state.current_conversation_id = None
+if "conversations" not in st.session_state:
+    st.session_state.conversations = []
 
 
 # Sidebar
@@ -236,14 +314,22 @@ with st.sidebar:
     
     # Business selection
     st.markdown("### Select Business")
-    businesses = get_businesses()
+    
+    # Always try to get businesses, but handle errors gracefully
+    try:
+        businesses = get_businesses()
+    except Exception as e:
+        logger.error(f"Error loading businesses: {e}")
+        businesses = []
+        st.warning("Could not load businesses. Check backend connection.")
     
     if businesses and len(businesses) > 0:
         business_options = {b["name"]: b["id"] for b in businesses}
         selected_name = st.selectbox(
             "Active Business",
             options=list(business_options.keys()),
-            key="business_select"
+            key="business_select",
+            index=0 if business_options else None
         )
         if selected_name:
             st.session_state.selected_business = business_options[selected_name]
@@ -255,7 +341,9 @@ with st.sidebar:
                 st.metric("Documents", selected_biz.get("document_count", 0))
     else:
         st.info("No businesses found. Create one below or in Business Settings.")
-        st.session_state.selected_business = None
+        # Keep existing selection if available
+        if not st.session_state.selected_business:
+            st.session_state.selected_business = None
     
     st.markdown("---")
     
@@ -274,6 +362,16 @@ with st.sidebar:
 # Main content
 if st.session_state.current_page == "Chat":
     st.markdown('<div class="main-header">💬 Chat with Your Documents</div>', unsafe_allow_html=True)
+    
+    # Check backend connection first
+    try:
+        health_response = api_request("GET", "/health")
+        if not health_response or health_response.status_code != 200:
+            st.error(f"⚠️ Backend is not responding. Check if it's running at {BACKEND_URL}")
+            st.info("The backend might be sleeping (Render free tier) or crashed. Check Render logs.")
+    except Exception as e:
+        st.error(f"⚠️ Cannot connect to backend: {str(e)}")
+        st.info(f"Backend URL: {BACKEND_URL}")
     
     if not st.session_state.selected_business:
         st.warning("Please select or create a business first.")
@@ -308,6 +406,22 @@ if st.session_state.current_page == "Chat":
                                     </div>
                                     """, unsafe_allow_html=True)
         
+        # Chat management buttons
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("➕ New Chat", help="Start a new conversation"):
+                st.session_state.chat_history = []
+                st.session_state.current_conversation_id = None
+                st.rerun()
+        with col2:
+            if st.session_state.chat_history and st.session_state.current_conversation_id:
+                if st.button("📦 Archive Chat", help="Save and archive current chat"):
+                    if archive_conversation(st.session_state.current_conversation_id):
+                        st.success("Chat archived!")
+                        st.session_state.chat_history = []
+                        st.session_state.current_conversation_id = None
+                        st.rerun()
+        
         # Chat input (always show, but disabled if no business)
         if st.session_state.selected_business:
             user_query = st.chat_input("Ask a question about your documents...")
@@ -315,6 +429,15 @@ if st.session_state.current_page == "Chat":
             user_query = st.chat_input("Please select a business first...", disabled=True)
         
         if user_query and st.session_state.selected_business:
+            # Create conversation if needed
+            if not st.session_state.current_conversation_id:
+                conv = create_conversation(
+                    st.session_state.selected_business,
+                    title=user_query[:50] + "..." if len(user_query) > 50 else user_query
+                )
+                if conv:
+                    st.session_state.current_conversation_id = conv.get("id")
+            
             # Add user message immediately
             user_msg = {
                 "role": "user",
@@ -339,6 +462,22 @@ if st.session_state.current_page == "Chat":
                             "sources": response.get("sources", [])
                         }
                         st.session_state.chat_history.append(assistant_msg)
+                        
+                        # Save to conversation history
+                        if st.session_state.current_conversation_id:
+                            try:
+                                api_request(
+                                    "POST",
+                                    f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
+                                    json=user_msg
+                                )
+                                api_request(
+                                    "POST",
+                                    f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
+                                    json=assistant_msg
+                                )
+                            except:
+                                pass  # Don't fail if history save fails
                     else:
                         # Get actual error from response
                         error_msg = "Sorry, I encountered an error. Please check the backend logs or try again."
@@ -351,6 +490,7 @@ if st.session_state.current_page == "Chat":
                         })
                 except Exception as e:
                     error_detail = str(e)
+                    logger.error(f"Chat error: {error_detail}", exc_info=True)
                     st.error(f"Error: {error_detail}")
                     st.session_state.chat_history.append({
                         "role": "assistant",
