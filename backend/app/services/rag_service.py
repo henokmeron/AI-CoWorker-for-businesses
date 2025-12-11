@@ -137,13 +137,21 @@ class RAGService:
             messages = self._build_messages(query, context, conversation_history, has_documents=len(retrieved_docs) > 0)
             
             # 3. Generate response with LLM (always call OpenAI, even without documents)
-            logger.info("Generating response with LLM")
+            logger.info(f"Generating response with LLM (provider: {self.provider}, model: {self.model})")
+            
+            # Double-check API key before calling
+            if self.provider == "openai" and not settings.OPENAI_API_KEY:
+                raise RuntimeError("OpenAI API key is missing. Please set OPENAI_API_KEY environment variable.")
+            
             try:
                 response = self.llm.invoke(messages)
                 answer = response.content if hasattr(response, 'content') else str(response)
                 logger.info(f"LLM response generated successfully: {len(answer)} characters")
             except Exception as e:
                 logger.error(f"LLM invocation failed: {e}", exc_info=True)
+                error_msg = str(e)
+                if "api key" in error_msg.lower() or "authentication" in error_msg.lower():
+                    raise RuntimeError(f"OpenAI API key error: {error_msg}. Please check your OPENAI_API_KEY in Render environment variables.")
                 raise RuntimeError(f"Failed to generate response from OpenAI: {str(e)}")
             
             # 5. Format sources

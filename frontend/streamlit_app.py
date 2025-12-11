@@ -331,7 +331,7 @@ if st.session_state.current_page == "Chat":
                         st.session_state.chat_history[:-1]  # Exclude the message we just added
                     )
                     
-                    if response:
+                    if response and response.get("answer"):
                         # Add assistant message
                         assistant_msg = {
                             "role": "assistant",
@@ -340,17 +340,21 @@ if st.session_state.current_page == "Chat":
                         }
                         st.session_state.chat_history.append(assistant_msg)
                     else:
-                        # Add error message
+                        # Get actual error from response
+                        error_msg = "Sorry, I encountered an error. Please check the backend logs or try again."
+                        if response and isinstance(response, dict) and "error" in response:
+                            error_msg = response["error"]
                         st.session_state.chat_history.append({
                             "role": "assistant",
-                            "content": "Sorry, I encountered an error. Please try again or check if documents are uploaded.",
+                            "content": error_msg,
                             "sources": []
                         })
                 except Exception as e:
-                    st.error(f"Error: {str(e)}")
+                    error_detail = str(e)
+                    st.error(f"Error: {error_detail}")
                     st.session_state.chat_history.append({
                         "role": "assistant",
-                        "content": f"Error: {str(e)}",
+                        "content": f"Error: {error_detail}",
                         "sources": []
                     })
             

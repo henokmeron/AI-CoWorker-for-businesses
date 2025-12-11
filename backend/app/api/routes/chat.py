@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from ...models.chat import ChatRequest, ChatResponse
 from ...core.security import verify_api_key
+from ...core.config import settings
 from ...api.dependencies import get_rag
 
 logger = logging.getLogger(__name__)
