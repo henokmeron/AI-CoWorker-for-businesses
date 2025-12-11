@@ -254,7 +254,13 @@ class VectorStore:
         Returns:
             List of search results with text, metadata, and scores
         """
+        if self.client is None:
+            logger.warning("Vector store not available, returning empty results")
+            return []
+        
         collection = self.get_collection(business_id)
+        if collection is None:
+            return []
         
         # Generate query embedding
         query_embedding = self.embedding_service.embed_query(query)
@@ -325,7 +331,13 @@ class VectorStore:
         Returns:
             True if successful
         """
+        if self.client is None:
+            logger.warning("Vector store not available, skipping document deletion")
+            return False
+        
         collection = self.get_collection(business_id)
+        if collection is None:
+            return False
         
         if self.db_type == "chromadb":
             # Delete from ChromaDB using metadata filter
