@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 import os
 
-from ..models.conversation import Conversation, Message, ConversationCreate
+from ..models.conversation import Conversation, Message, ConversationCreate, ConversationUpdate
 from ..core.config import settings
 
 # Import psycopg2 for type hints
@@ -257,6 +257,75 @@ class ConversationService:
         else:
             self._archive_json_conversation(conversation_id)
     
+    def unarchive_conversation(self, conversation_id: str):
+        """Unarchive a conversation."""
+        if self.use_database:
+            try:
+                with self.conn.cursor() as cur:
+                    cur.execute("""
+                        UPDATE conversations SET archived = FALSE, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                    """, (conversation_id,))
+                    self.conn.commit()
+            except Exception as e:
+                logger.error(f"Error unarchiving conversation: {e}")
+                self._unarchive_json_conversation(conversation_id)
+        else:
+            self._unarchive_json_conversation(conversation_id)
+    
+    def update_conversation(self, conversation_id: str, update: ConversationUpdate) -> Optional[Conversation]:
+        """Update a conversation (rename, etc.)."""
+        if self.use_database:
+            try:
+                with self.conn.cursor() as cur:
+                    updates = []
+                    params = []
+                    
+                    if update.title is not None:
+                        updates.append("title = %s")
+                        params.append(update.title)
+                    
+                    if update.archived is not None:
+                        updates.append("archived = %s")
+                        params.append(update.archived)
+                    
+                    if update.tags is not None:
+                        updates.append("tags = %s")
+                        params.append(json.dumps(update.tags))
+                    
+                    if updates:
+                        updates.append("updated_at = CURRENT_TIMESTAMP")
+                        params.append(conversation_id)
+                        
+                        cur.execute(f"""
+                            UPDATE conversations SET {', '.join(updates)}
+                            WHERE id = %s
+                        """, params)
+                        self.conn.commit()
+                        
+                        return self.get_conversation(conversation_id)
+            except Exception as e:
+                logger.error(f"Error updating conversation: {e}")
+                return self._update_json_conversation(conversation_id, update)
+        else:
+            return self._update_json_conversation(conversation_id, update)
+    
+    def delete_conversation(self, conversation_id: str):
+        """Delete a conversation permanently."""
+        if self.use_database:
+            try:
+                with self.conn.cursor() as cur:
+                    # Delete messages first (CASCADE should handle this, but being explicit)
+                    cur.execute("DELETE FROM messages WHERE conversation_id = %s", (conversation_id,))
+                    # Delete conversation
+                    cur.execute("DELETE FROM conversations WHERE id = %s", (conversation_id,))
+                    self.conn.commit()
+            except Exception as e:
+                logger.error(f"Error deleting conversation: {e}")
+                self._delete_json_conversation(conversation_id)
+        else:
+            self._delete_json_conversation(conversation_id)
+    
     def _save_json_conversation(self, conversation: Conversation):
         """Save conversation to JSON file."""
         import json
@@ -304,6 +373,44 @@ class ConversationService:
                 conv['archived'] = True
                 conv['updated_at'] = datetime.utcnow().isoformat()
                 break
+        with open(self.storage_path, 'w') as f:
+            json.dump(conversations, f, indent=2, default=str)
+    
+    def _unarchive_json_conversation(self, conversation_id: str):
+        """Unarchive conversation in JSON storage."""
+        import json
+        conversations = self._load_all_json_conversations()
+        for conv in conversations:
+            if conv['id'] == conversation_id:
+                conv['archived'] = False
+                conv['updated_at'] = datetime.utcnow().isoformat()
+                break
+        with open(self.storage_path, 'w') as f:
+            json.dump(conversations, f, indent=2, default=str)
+    
+    def _update_json_conversation(self, conversation_id: str, update: ConversationUpdate) -> Optional[Conversation]:
+        """Update conversation in JSON storage."""
+        import json
+        conversations = self._load_all_json_conversations()
+        for conv in conversations:
+            if conv['id'] == conversation_id:
+                if update.title is not None:
+                    conv['title'] = update.title
+                if update.archived is not None:
+                    conv['archived'] = update.archived
+                if update.tags is not None:
+                    conv['tags'] = update.tags
+                conv['updated_at'] = datetime.utcnow().isoformat()
+                with open(self.storage_path, 'w') as f:
+                    json.dump(conversations, f, indent=2, default=str)
+                return Conversation(**conv)
+        return None
+    
+    def _delete_json_conversation(self, conversation_id: str):
+        """Delete conversation from JSON storage."""
+        import json
+        conversations = self._load_all_json_conversations()
+        conversations = [c for c in conversations if c['id'] != conversation_id]
         with open(self.storage_path, 'w') as f:
             json.dump(conversations, f, indent=2, default=str)
     

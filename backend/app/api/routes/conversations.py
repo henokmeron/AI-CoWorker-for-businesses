@@ -96,3 +96,53 @@ async def archive_conversation(
         logger.error(f"Error archiving conversation: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to archive conversation: {str(e)}")
 
+
+@router.post("/{conversation_id}/unarchive")
+async def unarchive_conversation(
+    conversation_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """Unarchive a conversation."""
+    try:
+        service = get_conversation_service()
+        service.unarchive_conversation(conversation_id)
+        return {"message": "Conversation unarchived successfully"}
+    except Exception as e:
+        logger.error(f"Error unarchiving conversation: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to unarchive conversation: {str(e)}")
+
+
+@router.put("/{conversation_id}", response_model=Conversation)
+async def update_conversation(
+    conversation_id: str,
+    update: ConversationUpdate,
+    api_key: str = Depends(verify_api_key)
+):
+    """Update a conversation (rename, etc.)."""
+    try:
+        service = get_conversation_service()
+        conversation = service.update_conversation(conversation_id, update)
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return conversation
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating conversation: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update conversation: {str(e)}")
+
+
+@router.delete("/{conversation_id}")
+async def delete_conversation(
+    conversation_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """Delete a conversation permanently."""
+    try:
+        service = get_conversation_service()
+        service.delete_conversation(conversation_id)
+        return {"message": "Conversation deleted successfully"}
+    except Exception as e:
+        logger.error(f"Error deleting conversation: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete conversation: {str(e)}")
+

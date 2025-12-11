@@ -51,7 +51,28 @@ async def chat(
         logger.info(f"Query completed successfully. Response length: {len(result.get('answer', ''))}")
         
         # Save to conversation history if conversation_id provided
-        # (For now, we'll save to current session - full history API coming)
+        if request.conversation_id:
+            try:
+                conversation_service = get_conversation_service()
+                # Save user message
+                user_msg = Message(
+                    role="user",
+                    content=request.query,
+                    sources=[]
+                )
+                conversation_service.add_message(request.conversation_id, user_msg)
+                
+                # Save assistant message
+                assistant_msg = Message(
+                    role="assistant",
+                    content=result.get("answer", ""),
+                    sources=result.get("sources", [])
+                )
+                conversation_service.add_message(request.conversation_id, assistant_msg)
+                logger.info(f"Saved messages to conversation {request.conversation_id}")
+            except Exception as e:
+                logger.warning(f"Failed to save messages to conversation history: {e}")
+                # Don't fail the request if saving history fails
         
         return ChatResponse(**result)
         

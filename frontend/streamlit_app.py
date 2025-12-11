@@ -194,6 +194,7 @@ def chat_query(business_id: str, query: str, history: List = None) -> Dict[str, 
             "business_id": business_id,
             "query": query,
             "conversation_history": formatted_history,
+            "conversation_id": st.session_state.get("current_conversation_id"),  # Pass conversation_id
             "max_sources": 5
         }
         
@@ -268,6 +269,86 @@ def archive_conversation(conversation_id: str) -> bool:
         return response and response.status_code == 200
     except Exception as e:
         logger.error(f"Error archiving conversation: {e}")
+        return False
+
+
+def unarchive_conversation(conversation_id: str) -> bool:
+    """Unarchive a conversation."""
+    try:
+        response = api_request(
+            "POST",
+            f"/api/v1/conversations/{conversation_id}/unarchive"
+        )
+        return response and response.status_code == 200
+    except Exception as e:
+        logger.error(f"Error unarchiving conversation: {e}")
+        return False
+
+
+def rename_conversation(conversation_id: str, new_title: str) -> bool:
+    """Rename a conversation."""
+    try:
+        response = api_request(
+            "PUT",
+            f"/api/v1/conversations/{conversation_id}",
+            json={"title": new_title}
+        )
+        return response and response.status_code == 200
+    except Exception as e:
+        logger.error(f"Error renaming conversation: {e}")
+        return False
+
+
+def delete_conversation(conversation_id: str) -> bool:
+    """Delete a conversation permanently."""
+    try:
+        response = api_request(
+            "DELETE",
+            f"/api/v1/conversations/{conversation_id}"
+        )
+        return response and response.status_code == 200
+    except Exception as e:
+        logger.error(f"Error deleting conversation: {e}")
+        return False
+
+
+def unarchive_conversation(conversation_id: str) -> bool:
+    """Unarchive a conversation."""
+    try:
+        response = api_request(
+            "POST",
+            f"/api/v1/conversations/{conversation_id}/unarchive"
+        )
+        return response and response.status_code == 200
+    except Exception as e:
+        logger.error(f"Error unarchiving conversation: {e}")
+        return False
+
+
+def rename_conversation(conversation_id: str, new_title: str) -> bool:
+    """Rename a conversation."""
+    try:
+        response = api_request(
+            "PUT",
+            f"/api/v1/conversations/{conversation_id}",
+            json={"title": new_title}
+        )
+        return response and response.status_code == 200
+    except Exception as e:
+        logger.error(f"Error renaming conversation: {e}")
+        return False
+
+
+def delete_conversation(conversation_id: str) -> bool:
+    """Delete a conversation permanently."""
+    try:
+        response = api_request(
+            "DELETE",
+            f"/api/v1/conversations/{conversation_id}"
+        )
+        return response and response.status_code == 200
+    except Exception as e:
+        logger.error(f"Error deleting conversation: {e}")
         return False
 
 
@@ -362,48 +443,75 @@ with st.sidebar:
             conversations = get_conversations(st.session_state.selected_business, archived=False)
             if conversations:
                 st.markdown("#### Recent Chats")
-                for conv in conversations[:10]:  # Show last 10
+                for conv in conversations[:20]:  # Show last 20
                     conv_title = conv.get('title', 'Untitled')
                     # Truncate long titles
-                    if len(conv_title) > 25:
-                        conv_title = conv_title[:22] + "..."
+                    display_title = conv_title[:30] + "..." if len(conv_title) > 30 else conv_title
                     
                     # Highlight current conversation
                     is_current = conv.get('id') == st.session_state.current_conversation_id
-                    button_label = f"💬 {conv_title}" if not is_current else f"▶️ {conv_title}"
                     
-                    if st.button(button_label, key=f"conv_{conv.get('id')}", use_container_width=True):
-                        # Load conversation
-                        try:
-                            response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
-                            if response and response.status_code == 200:
-                                loaded_conv = response.json()
-                                st.session_state.chat_history = [
-                                    {
-                                        "role": msg.get("role"),
-                                        "content": msg.get("content"),
-                                        "sources": msg.get("sources", [])
-                                    }
-                                    for msg in loaded_conv.get("messages", [])
-                                ]
-                                st.session_state.current_conversation_id = conv.get('id')
-                                st.rerun()
-                        except Exception as e:
-                            st.error(f"Error loading chat: {e}")
+                    # Create columns for chat item and menu
+                    col1, col2 = st.columns([5, 1])
+                    
+                    with col1:
+                        button_label = f"💬 {display_title}" if not is_current else f"▶️ {display_title}"
+                        if st.button(button_label, key=f"conv_btn_{conv.get('id')}", use_container_width=True):
+                            # Load conversation
+                            try:
+                                response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
+                                if response and response.status_code == 200:
+                                    loaded_conv = response.json()
+                                    st.session_state.chat_history = [
+                                        {
+                                            "role": msg.get("role"),
+                                            "content": msg.get("content"),
+                                            "sources": msg.get("sources", [])
+                                        }
+                                        for msg in loaded_conv.get("messages", [])
+                                    ]
+                                    st.session_state.current_conversation_id = conv.get('id')
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Error loading chat: {e}")
+                    
+                    with col2:
+                        # Three-dot menu
+                        menu_key = f"menu_{conv.get('id')}"
+                        if st.button("⋯", key=menu_key, help="Options"):
+                            st.session_state[f"show_menu_{conv.get('id')}"] = True
+                    
+                    # Show menu if clicked
+                    if st.session_state.get(f"show_menu_{conv.get('id')}", False):
+                        with st.expander("", expanded=True):
+                            st.markdown(f"**{conv_title}**")
+                            
+                            # Rename
+                            new_title = st.text_input("Rename", value=conv_title, key=f"rename_{conv.get('id')}")
+                            if st.button("✓ Save", key=f"save_rename_{conv.get('id')}"):
+                                if rename_conversation(conv.get('id'), new_title):
+                                    st.success("Renamed!")
+                                    st.session_state[f"show_menu_{conv.get('id')}"] = False
+                                    st.rerun()
+                            
+                            col_arch, col_del = st.columns(2)
+                            with col_arch:
+                                if st.button("📦 Archive", key=f"arch_{conv.get('id')}"):
+                                    if archive_conversation(conv.get('id')):
+                                        st.success("Archived!")
+                                        st.session_state[f"show_menu_{conv.get('id')}"] = False
+                                        st.rerun()
+                            with col_del:
+                                if st.button("🗑️ Delete", key=f"del_{conv.get('id')}", type="secondary"):
+                                    if delete_conversation(conv.get('id')):
+                                        st.success("Deleted!")
+                                        st.session_state[f"show_menu_{conv.get('id')}"] = False
+                                        st.rerun()
             else:
                 st.info("No previous chats. Start chatting to create one!")
         except Exception as e:
             logger.error(f"Error loading conversations: {e}")
-        
-        # Archive current chat button (if there's an active conversation)
-        if st.session_state.current_conversation_id and st.session_state.chat_history:
-            st.markdown("---")
-            if st.button("📦 Archive Current Chat", use_container_width=True, help="Archive the current conversation"):
-                if archive_conversation(st.session_state.current_conversation_id):
-                    st.success("Chat archived!")
-                    st.session_state.chat_history = []
-                    st.session_state.current_conversation_id = None
-                    st.rerun()
+            st.warning("Error loading conversations")
     
     st.markdown("---")
     
@@ -507,21 +615,7 @@ if st.session_state.current_page == "Chat":
                         }
                         st.session_state.chat_history.append(assistant_msg)
                         
-                        # Save to conversation history
-                        if st.session_state.current_conversation_id:
-                            try:
-                                api_request(
-                                    "POST",
-                                    f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
-                                    json=user_msg
-                                )
-                                api_request(
-                                    "POST",
-                                    f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
-                                    json=assistant_msg
-                                )
-                            except:
-                                pass  # Don't fail if history save fails
+                        # Messages are now automatically saved by backend when conversation_id is provided
                     else:
                         # Get actual error from response
                         error_msg = "Sorry, I encountered an error. Please check the backend logs or try again."
@@ -614,8 +708,14 @@ elif st.session_state.current_page == "Business Settings":
     st.markdown('<div class="main-header">⚙️ Business Settings</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Manage businesses, conversations, and configurations</div>', unsafe_allow_html=True)
     
-    # Create tabs for different settings
-    tab1, tab2, tab3 = st.tabs(["📊 Businesses", "📦 Archived Chats", "⚙️ System"])
+    # Create tabs for different settings (like OpenAI)
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📊 Businesses", 
+        "📦 Archived Chats", 
+        "⚙️ General", 
+        "🔒 Data Controls", 
+        "ℹ️ System Info"
+    ])
     
     with tab1:
         # Create new business
@@ -660,7 +760,8 @@ elif st.session_state.current_page == "Business Settings":
             st.info("No businesses found. Create one above to get started!")
     
     with tab2:
-        st.markdown("### Archived Conversations")
+        st.markdown("### 📦 Archived Conversations")
+        st.markdown("Conversations you've archived. You can unarchive them to restore them to your chat list.")
         
         if not st.session_state.selected_business:
             st.warning("Please select a business first to view archived conversations.")
@@ -676,38 +777,138 @@ elif st.session_state.current_page == "Business Settings":
                 st.info(f"Found {len(archived_conversations)} archived conversation(s)")
                 
                 for conv in archived_conversations:
-                    with st.expander(f"📦 {conv.get('title', 'Untitled')} - {len(conv.get('messages', []))} messages"):
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.write(f"**ID:** `{conv.get('id')}`")
-                            created = conv.get('created_at', 'N/A')
-                            if created and len(str(created)) > 10:
-                                st.write(f"**Created:** {str(created)[:10]}")
-                            else:
-                                st.write(f"**Created:** {created}")
-                            st.write(f"**Messages:** {len(conv.get('messages', []))}")
-                        with col2:
-                            if st.button("📂 Load", key=f"load_archived_{conv.get('id')}"):
-                                # Load conversation
-                                try:
-                                    response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
-                                    if response and response.status_code == 200:
-                                        loaded_conv = response.json()
-                                        st.session_state.chat_history = [
-                                            {
-                                                "role": msg.get("role"),
-                                                "content": msg.get("content"),
-                                                "sources": msg.get("sources", [])
-                                            }
-                                            for msg in loaded_conv.get("messages", [])
-                                        ]
-                                        st.session_state.current_conversation_id = conv.get('id')
-                                        st.success("Chat loaded! Switch to Chat tab to view it.")
-                                        st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error loading chat: {e}")
+                    col1, col2, col3 = st.columns([4, 1, 1])
+                    with col1:
+                        st.write(f"**{conv.get('title', 'Untitled')}**")
+                        created = conv.get('created_at', 'N/A')
+                        if created and len(str(created)) > 10:
+                            st.caption(f"Created: {str(created)[:10]}")
+                        st.caption(f"{len(conv.get('messages', []))} messages")
+                    
+                    with col2:
+                        if st.button("📂 Load", key=f"load_arch_{conv.get('id')}"):
+                            try:
+                                response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
+                                if response and response.status_code == 200:
+                                    loaded_conv = response.json()
+                                    st.session_state.chat_history = [
+                                        {
+                                            "role": msg.get("role"),
+                                            "content": msg.get("content"),
+                                            "sources": msg.get("sources", [])
+                                        }
+                                        for msg in loaded_conv.get("messages", [])
+                                    ]
+                                    st.session_state.current_conversation_id = conv.get('id')
+                                    st.success("Chat loaded! Switch to Chat tab to view it.")
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Error loading chat: {e}")
+                    
+                    with col3:
+                        if st.button("↩️ Unarchive", key=f"unarch_{conv.get('id')}"):
+                            if unarchive_conversation(conv.get('id')):
+                                st.success("Unarchived! It will appear in your chat list.")
+                                st.rerun()
+                    
+                    st.divider()
             else:
                 st.info("No archived conversations yet. Archive a chat from the sidebar to see it here.")
+    
+    with tab3:
+        st.markdown("### ⚙️ General Settings")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("#### Appearance")
+            theme = st.selectbox("Theme", ["Dark", "Light", "Auto"], index=0)
+            st.caption("Theme preference (requires page refresh)")
+        
+        with col2:
+            st.markdown("#### Defaults")
+            auto_save = st.checkbox("Auto-save conversations", value=True)
+            st.caption("Automatically save all conversations to database")
+        
+        st.markdown("---")
+        st.markdown("#### Model Settings")
+        model_info = st.info("Using OpenAI GPT-4 Turbo. Model selection coming soon.")
+    
+    with tab4:
+        st.markdown("### 🔒 Data Controls")
+        
+        st.markdown("#### Export Data")
+        if st.button("📥 Export All Conversations", help="Download all conversations as JSON"):
+            if st.session_state.selected_business:
+                try:
+                    conversations = get_conversations(st.session_state.selected_business, archived=None)
+                    import json
+                    export_data = {
+                        "business_id": st.session_state.selected_business,
+                        "exported_at": datetime.now().isoformat(),
+                        "conversations": [conv for conv in conversations]
+                    }
+                    st.download_button(
+                        label="Download JSON",
+                        data=json.dumps(export_data, indent=2, default=str),
+                        file_name=f"conversations_export_{datetime.now().strftime('%Y%m%d')}.json",
+                        mime="application/json"
+                    )
+                except Exception as e:
+                    st.error(f"Error exporting: {e}")
+            else:
+                st.warning("Please select a business first")
+        
+        st.markdown("---")
+        st.markdown("#### Delete Data")
+        st.warning("⚠️ These actions cannot be undone!")
+        
+        if st.button("🗑️ Delete All Archived Conversations", type="secondary"):
+            if st.session_state.selected_business:
+                try:
+                    archived = get_conversations(st.session_state.selected_business, archived=True)
+                    deleted = 0
+                    for conv in archived:
+                        if delete_conversation(conv.get('id')):
+                            deleted += 1
+                    st.success(f"Deleted {deleted} archived conversations")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error deleting: {e}")
+            else:
+                st.warning("Please select a business first")
+    
+    with tab5:
+        st.markdown("### ℹ️ System Information")
+        
+        try:
+            health_response = api_request("GET", "/health")
+            if health_response and health_response.status_code == 200:
+                health = health_response.json()
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Status", health.get('status', 'unknown'))
+                with col2:
+                    st.metric("Version", health.get('version', 'unknown'))
+            else:
+                st.error("Backend not accessible")
+        except Exception as e:
+            st.error(f"Error connecting to backend: {e}")
+        
+        st.markdown("---")
+        st.markdown("#### Backend Connection")
+        st.code(f"Backend URL: {BACKEND_URL}", language=None)
+        
+        st.markdown("---")
+        st.markdown("#### Database")
+        if st.session_state.selected_business:
+            try:
+                all_conv = get_conversations(st.session_state.selected_business, archived=None)
+                archived_conv = get_conversations(st.session_state.selected_business, archived=True)
+                st.metric("Total Conversations", len(all_conv))
+                st.metric("Archived", len(archived_conv))
+                st.metric("Active", len(all_conv) - len(archived_conv))
+            except:
+                st.warning("Could not load conversation statistics")
     
     with tab3:
         st.markdown("### System Information")
