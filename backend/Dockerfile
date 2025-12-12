@@ -3,12 +3,19 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies for document processing
+# Note: libgl1-mesa-glx and related packages are required for OpenCV (used by unstructured)
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     libtesseract-dev \
     poppler-utils \
     libmagic1 \
     pandoc \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
