@@ -5,7 +5,7 @@ import streamlit as st
 import requests
 import os
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 from requests.exceptions import ConnectionError, Timeout, RequestException, HTTPError
 
