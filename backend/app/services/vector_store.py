@@ -6,13 +6,14 @@ import logging
 from typing import List, Dict, Any, Optional
 
 # Import ChromaDB with error handling
-# Apply patch first if available
+# Apply patch FIRST before any chromadb imports
 try:
-    from ..utils.chromadb_patch import apply_patch
-    apply_patch()
-except ImportError:
-    pass  # Patch not available, continue
+    from ..utils.chromadb_patch import patch_chromadb
+    patch_chromadb()  # Apply patch immediately
+except Exception as e:
+    logging.warning(f"ChromaDB patch failed: {e}. Continuing anyway.")
 
+# Now try to import chromadb
 try:
     import chromadb
     from chromadb.config import Settings as ChromaSettings
@@ -53,15 +54,13 @@ class VectorStore:
         """Initialize vector database client."""
         if self.db_type == "chromadb":
             if not CHROMADB_AVAILABLE:
-                # Try to import again with patch
+                # Try to import again
                 try:
-                    from ..utils.chromadb_patch import apply_patch
-                    apply_patch()
                     import chromadb
                     from chromadb.config import Settings as ChromaSettings
-                    logger.info("ChromaDB imported successfully after patch")
+                    logger.info("ChromaDB imported successfully")
                 except Exception as e:
-                    logger.error(f"ChromaDB still not available after patch: {e}")
+                    logger.error(f"ChromaDB still not available: {e}")
                     # Don't fail - allow app to start without vector store
                     # Vector operations will fail gracefully
                     return None
