@@ -626,9 +626,6 @@ with st.sidebar:
                 st.session_state.current_conversation_id = None
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
-        except Exception as e:
-            logger.error(f"Error loading conversations: {e}")
-            st.warning("Error loading conversations")
     
     st.markdown("---")
     
