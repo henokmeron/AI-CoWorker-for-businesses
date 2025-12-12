@@ -107,8 +107,11 @@ async def list_businesses(api_key: str = Depends(verify_api_key)):
         vector_db = get_vector_db()
         for business in businesses:
             try:
-                stats = vector_db.get_collection_stats(business.id)
-                business.document_count = stats.get("total_chunks", 0)
+                if vector_db and vector_db.client:
+                    stats = vector_db.get_collection_stats(business.id)
+                    business.document_count = stats.get("total_chunks", 0)
+                else:
+                    business.document_count = 0
             except Exception as e:
                 logger.warning(f"Could not get stats for business {business.id}: {e}")
                 business.document_count = 0
@@ -132,10 +135,13 @@ async def get_business(
             # Update document count
             try:
                 vector_db = get_vector_db()
-                stats = vector_db.get_collection_stats(business.id)
-                business.document_count = stats.get("total_chunks", 0)
+                if vector_db and vector_db.client:
+                    stats = vector_db.get_collection_stats(business.id)
+                    business.document_count = stats.get("total_chunks", 0)
+                else:
+                    business.document_count = 0
             except Exception:
-                pass
+                business.document_count = 0
             
             return business
     

@@ -47,8 +47,19 @@ class VectorStore:
             db_type: Database type (chromadb, qdrant, or None for default)
         """
         self.db_type = db_type or settings.VECTOR_DB_TYPE
-        self.embedding_service = get_embedding_service()
+        try:
+            self.embedding_service = get_embedding_service() if get_embedding_service else None
+        except Exception as e:
+            logger.warning(f"Could not initialize embedding service: {e}")
+            self.embedding_service = None
         self.client = self._initialize_client()
+        
+        # Log initialization status
+        if self.client is None:
+            logger.error("⚠️ Vector store client is None - vector operations will not work!")
+            logger.error("This will cause document search and business stats to fail.")
+        else:
+            logger.info("✅ Vector store client initialized successfully")
     
     def _initialize_client(self):
         """Initialize vector database client."""
@@ -66,6 +77,9 @@ class VectorStore:
                     return None
             
             try:
+                import os
+                # Ensure directory exists
+                os.makedirs(settings.CHROMA_PERSIST_DIR, exist_ok=True)
                 logger.info(f"Initializing ChromaDB at {settings.CHROMA_PERSIST_DIR}")
                 
                 # Create persistent ChromaDB client
@@ -77,9 +91,10 @@ class VectorStore:
                         allow_reset=True
                     )
                 )
+                logger.info("✅ ChromaDB client created successfully")
                 return client
             except Exception as e:
-                logger.error(f"Failed to initialize ChromaDB client: {e}")
+                logger.error(f"❌ Failed to initialize ChromaDB client: {e}", exc_info=True)
                 # Return None instead of raising - allows app to start
                 return None
         
@@ -374,23 +389,31 @@ class VectorStore:
         Returns:
             Statistics dictionary
         """
-        collection = self.get_collection(business_id)
+        if not self.client:
+            logger.warning("Vector store client not initialized, returning empty stats")
+            return {"document_count": 0, "total_chunks": 0}
         
-        if self.db_type == "chromadb":
-            count = collection.count()
-            return {
-                "total_chunks": count,
-                "collection_name": f"business_{business_id}"
-            }
+        try:
+            collection = self.get_collection(business_id)
+            
+            if self.db_type == "chromadb":
+                count = collection.count()
+                return {
+                    "document_count": count,
+                    "total_chunks": count,
+                    "collection_name": f"business_{business_id}"
+                }
+            elif self.db_type == "qdrant":
+                info = self.client.get_collection(collection_name=collection)
+                return {
+                    "document_count": info.points_count,
+                    "total_chunks": info.points_count,
+                    "collection_name": collection
+                }
+        except Exception as e:
+            logger.error(f"Error in get_collection_stats: {e}", exc_info=True)
         
-        elif self.db_type == "qdrant":
-            info = self.client.get_collection(collection_name=collection)
-            return {
-                "total_chunks": info.points_count,
-                "collection_name": collection
-            }
-        
-        return {}
+        return {"document_count": 0, "total_chunks": 0}
 
 
 # Global vector store instance
