@@ -525,7 +525,7 @@ with st.sidebar:
             # Load conversations list
             try:
                 conversations = get_conversations(st.session_state.selected_business, archived=False)
-            if conversations:
+                if conversations:
                 st.markdown("#### Recent Chats")
                 for conv in conversations[:20]:  # Show last 20
                     conv_title = conv.get('title', 'Untitled')

@@ -65,13 +65,20 @@ class VectorStore:
         """Initialize vector database client."""
         if self.db_type == "chromadb":
             if not CHROMADB_AVAILABLE:
-                # Try to import again
+                # Try to import again with fresh patch
                 try:
+                    # Re-apply patch before importing
+                    from ..utils.chromadb_patch import patch_chromadb
+                    patch_chromadb()
+                    logger.info("Re-applied ChromaDB patch")
+                    
+                    # Now try importing
                     import chromadb
                     from chromadb.config import Settings as ChromaSettings
-                    logger.info("ChromaDB imported successfully")
+                    logger.info("ChromaDB imported successfully after re-patch")
                 except Exception as e:
-                    logger.error(f"ChromaDB still not available: {e}")
+                    logger.error(f"ChromaDB still not available after re-patch: {e}")
+                    logger.error("Vector store will not be available. Document search will fail.")
                     # Don't fail - allow app to start without vector store
                     # Vector operations will fail gracefully
                     return None
