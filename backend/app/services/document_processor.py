@@ -33,25 +33,38 @@ class DocumentProcessor:
         try:
             from unstructured.partition.auto import partition
             UNSTRUCTURED_AVAILABLE = True
-        except ImportError:
+            logger.info("✅ Unstructured library is available")
+        except ImportError as e:
             UNSTRUCTURED_AVAILABLE = False
-            logger.error("❌ Unstructured library not available. Install with: pip install unstructured[all-docs]")
+            logger.error(f"❌ Unstructured library not available: {e}")
+            logger.error("Install with: pip install unstructured[all-docs]")
         
         if UNSTRUCTURED_AVAILABLE:
             try:
                 # Primary handler: Unstructured.io (supports 30+ file types)
+                logger.info("Attempting to create UnstructuredFileHandler...")
                 unstructured_handler = UnstructuredFileHandler(
                     enable_ocr=settings.OCR_ENABLED
                 )
                 self.handlers.append(unstructured_handler)
-                supported_count = len(unstructured_handler.get_supported_types())
-                logger.info(f"✅ Registered UnstructuredFileHandler with {supported_count} file types: {', '.join(unstructured_handler.get_supported_types()[:10])}...")
+                supported_types = unstructured_handler.get_supported_types()
+                supported_count = len(supported_types)
+                logger.info(f"✅ Registered UnstructuredFileHandler with {supported_count} file types")
+                logger.info(f"Supported types: {', '.join(supported_types[:15])}{'...' if len(supported_types) > 15 else ''}")
+            except ImportError as e:
+                logger.error(f"❌ UnstructuredFileHandler import failed: {e}", exc_info=True)
+                logger.warning("File uploads will not work until this is fixed")
             except Exception as e:
                 logger.error(f"❌ Could not register UnstructuredFileHandler: {str(e)}", exc_info=True)
                 logger.warning("File uploads will not work until this is fixed")
         else:
             logger.error("❌ Unstructured library not installed. File uploads will not work.")
             logger.error("Install with: pip install unstructured[all-docs]")
+        
+        # Log final handler count
+        logger.info(f"Total handlers registered: {len(self.handlers)}")
+        if len(self.handlers) == 0:
+            logger.error("⚠️ NO FILE HANDLERS REGISTERED! File uploads will fail!")
         
         # TODO: Add more specialized handlers here if needed
         # self.handlers.append(CustomPDFHandler())
