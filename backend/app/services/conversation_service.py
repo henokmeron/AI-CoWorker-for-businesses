@@ -228,7 +228,7 @@ class ConversationService:
                         for msg in msg_rows
                     ]
                     
-                    return Conversation(
+                    result = Conversation(
                         id=conv_row['id'],
                         business_id=conv_row['business_id'],
                         title=conv_row['title'],
@@ -238,10 +238,12 @@ class ConversationService:
                         archived=conv_row['archived'],
                         tags=conv_row['tags'] if isinstance(conv_row['tags'], list) else json.loads(conv_row['tags'])
                     )
+                    conn.close()
+                    return result
             except Exception as e:
                 logger.error(f"Error getting conversation from database: {e}")
-                logger.info("Falling back to JSON storage")
-                self.use_database = False  # Switch to JSON for this session
+                if conn:
+                    conn.close()
                 return self._get_json_conversation(conversation_id)
         else:
             return self._get_json_conversation(conversation_id)
@@ -288,11 +290,12 @@ class ConversationService:
                             tags=row['tags'] if isinstance(row['tags'], list) else json.loads(row['tags'])
                         ))
                     
+                    conn.close()
                     return conversations
             except Exception as e:
                 logger.error(f"Error listing conversations from database: {e}")
-                logger.info("Falling back to JSON storage")
-                self.use_database = False  # Switch to JSON for this session
+                if conn:
+                    conn.close()
                 return self._list_json_conversations(business_id, archived)
         else:
             return self._list_json_conversations(business_id, archived)
