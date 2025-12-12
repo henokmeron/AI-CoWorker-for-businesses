@@ -28,3 +28,8 @@ def patch_chromadb():
 # Apply patch immediately when this module is imported
 patch_chromadb()
 
+# Export function for explicit calls
+def apply_patch():
+    """Explicitly apply ChromaDB patch (alias for patch_chromadb)."""
+    patch_chromadb()
+

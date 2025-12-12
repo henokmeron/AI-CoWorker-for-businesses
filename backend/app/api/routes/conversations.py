@@ -34,13 +34,26 @@ async def create_conversation(
 @router.get("", response_model=List[Conversation])
 async def list_conversations(
     business_id: str,
-    archived: Optional[bool] = None,
+    archived: Optional[str] = None,  # Accept string to handle "none", "true", "false"
     api_key: str = Depends(verify_api_key)
 ):
     """List conversations for a business."""
     try:
+        # Convert string to bool if needed
+        archived_bool = None
+        if archived is not None:
+            if archived.lower() == "true":
+                archived_bool = True
+            elif archived.lower() == "false":
+                archived_bool = False
+            elif archived.lower() == "none":
+                archived_bool = None
+            else:
+                # Try to parse as bool
+                archived_bool = bool(archived) if archived else None
+        
         service = get_conversation_service()
-        conversations = service.list_conversations(business_id, archived)
+        conversations = service.list_conversations(business_id, archived_bool)
         return conversations
     except Exception as e:
         logger.error(f"Error listing conversations: {e}")

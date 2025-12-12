@@ -35,9 +35,14 @@ class DocumentProcessor:
                 enable_ocr=settings.OCR_ENABLED
             )
             self.handlers.append(unstructured_handler)
-            logger.info(f"Registered UnstructuredFileHandler with {len(unstructured_handler.get_supported_types())} file types")
+            logger.info(f"✅ Registered UnstructuredFileHandler with {len(unstructured_handler.get_supported_types())} file types")
+        except ImportError as e:
+            logger.error(f"❌ Unstructured library not installed: {e}")
+            logger.error("Install with: pip install unstructured[all-docs]")
+            logger.warning("File uploads will not work until unstructured is installed")
         except Exception as e:
-            logger.warning(f"Could not register UnstructuredFileHandler: {str(e)}")
+            logger.error(f"❌ Could not register UnstructuredFileHandler: {str(e)}")
+            logger.warning("File uploads will not work until this is fixed")
         
         # TODO: Add more specialized handlers here if needed
         # self.handlers.append(CustomPDFHandler())

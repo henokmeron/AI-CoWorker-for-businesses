@@ -229,13 +229,17 @@ def chat_query(business_id: str, query: str, history: List = None) -> Dict[str, 
         return None
 
 
-def get_conversations(business_id: str, archived: bool = False) -> List[Dict[str, Any]]:
+def get_conversations(business_id: str, archived: Optional[bool] = None) -> List[Dict[str, Any]]:
     """Get conversations for a business."""
     try:
-        response = api_request(
-            "GET",
-            f"/api/v1/conversations?business_id={business_id}&archived={str(archived).lower()}"
-        )
+        params = {"business_id": business_id}
+        if archived is True:
+            params["archived"] = "true"
+        elif archived is False:
+            params["archived"] = "false"
+        # If archived is None, don't include the parameter (get all)
+        
+        response = api_request("GET", "/api/v1/conversations", params=params)
         if response and response.status_code == 200:
             return response.json()
         return []
@@ -480,33 +484,58 @@ with st.sidebar:
                                     st.error(f"Error loading chat: {e}")
                         
                         with col_menu:
-                            # Three-dot menu dropdown
+                            # Three-dot menu button
                             menu_key = f"menu_{conv.get('id')}"
-                            menu_options = ["Options", "Rename", "Archive", "Delete"]
-                            selected_option = st.selectbox(
-                                "",
+                            if st.button("⋯", key=menu_key, help="More options", use_container_width=True):
+                                # Toggle menu state
+                                current_state = st.session_state.get(f"show_menu_{conv.get('id')}", False)
+                                st.session_state[f"show_menu_{conv.get('id')}"] = not current_state
+                                st.rerun()
+                        
+                        # Show dropdown menu if active
+                        if st.session_state.get(f"show_menu_{conv.get('id')}", False):
+                            st.markdown("---")
+                            # Use selectbox for proper dropdown
+                            menu_options = ["Select action...", "Rename", "Archive", "Delete"]
+                            action_key = f"action_{conv.get('id')}"
+                            selected_action = st.selectbox(
+                                "Choose action:",
                                 menu_options,
-                                key=menu_key,
-                                label_visibility="collapsed",
-                                index=0
+                                key=action_key,
+                                label_visibility="visible"
                             )
                             
-                            if selected_option == "Rename":
-                                new_title = st.text_input("New name", value=conv_title, key=f"rename_input_{conv.get('id')}")
-                                if new_title and new_title.strip() and new_title != conv_title:
-                                    if rename_conversation(conv.get('id'), new_title.strip()):
-                                        st.success("Renamed!")
+                            if selected_action == "Rename":
+                                new_title = st.text_input("New name:", value=conv_title, key=f"rename_input_{conv.get('id')}")
+                                col_save, col_cancel = st.columns(2)
+                                with col_save:
+                                    if st.button("✓ Save", key=f"save_rename_{conv.get('id')}"):
+                                        if new_title and new_title.strip():
+                                            if rename_conversation(conv.get('id'), new_title.strip()):
+                                                st.success("Renamed!")
+                                                st.session_state[f"show_menu_{conv.get('id')}"] = False
+                                                st.rerun()
+                                with col_cancel:
+                                    if st.button("✕ Cancel", key=f"cancel_rename_{conv.get('id')}"):
+                                        st.session_state[f"show_menu_{conv.get('id')}"] = False
                                         st.rerun()
-                            elif selected_option == "Archive":
-                                if archive_conversation(conv.get('id')):
-                                    st.success("Archived!")
-                                    st.rerun()
-                            elif selected_option == "Delete":
+                            elif selected_action == "Archive":
+                                if st.button("Confirm Archive", key=f"confirm_arch_{conv.get('id')}", type="primary"):
+                                    if archive_conversation(conv.get('id')):
+                                        st.success("Archived!")
+                                        st.session_state[f"show_menu_{conv.get('id')}"] = False
+                                        st.rerun()
+                            elif selected_action == "Delete":
+                                st.warning("⚠️ This action cannot be undone!")
                                 if st.button("Confirm Delete", key=f"confirm_del_{conv.get('id')}", type="primary"):
                                     if delete_conversation(conv.get('id')):
                                         st.success("Deleted!")
+                                        st.session_state[f"show_menu_{conv.get('id')}"] = False
                                         st.rerun()
                             
+                            if st.button("✕ Close", key=f"close_menu_{conv.get('id')}"):
+                                st.session_state[f"show_menu_{conv.get('id')}"] = False
+                                st.rerun()
                             st.markdown("---")
             else:
                 st.info("No previous chats. Start chatting to create one!")

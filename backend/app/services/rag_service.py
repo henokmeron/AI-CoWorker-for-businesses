@@ -233,9 +233,9 @@ When answering:
 - Be concise and accurate"""
         else:
             from datetime import datetime
-            current_date = datetime.now().strftime("%B %Y")
-            system_prompt = f"""You are a helpful AI assistant. Answer questions clearly and accurately based on your knowledge as of {current_date}.
-Be helpful, concise, and informative. When providing information, use current knowledge and avoid referencing outdated dates unless specifically asked about historical events."""
+            current_date = datetime.now().strftime("%B %d, %Y")
+            system_prompt = f"""You are a helpful AI assistant powered by GPT-4o. Answer questions clearly and accurately based on your knowledge as of {current_date}.
+Be helpful, concise, and informative. When providing information, use current knowledge and avoid referencing outdated dates like "as of 2023" unless specifically asked about historical events. Always use the current date ({current_date}) as your knowledge cutoff."""
 
         messages = [SystemMessage(content=system_prompt)]
         
