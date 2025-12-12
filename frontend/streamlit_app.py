@@ -997,14 +997,31 @@ elif st.session_state.current_page == "Business Settings":
     with tab3:
         st.markdown("### ⚙️ General Settings")
         
+        # Authentication section (placeholder for OAuth)
+        st.markdown("#### 🔐 Authentication")
+        st.info("🔜 OAuth 2.0 authentication (Google/Microsoft) coming soon!")
+        st.markdown("""
+        **Planned Features:**
+        - Google OAuth 2.0 login
+        - Microsoft OAuth 2.0 login  
+        - Persistent sessions across refreshes
+        - User profile management
+        - Secure API key management
+        """)
+        
+        # User settings placeholder
+        st.markdown("---")
+        st.markdown("#### 👤 User Preferences")
+        st.info("User settings will be available after authentication is implemented.")
+        
+        st.markdown("---")
+        st.markdown("#### Appearance")
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("#### Appearance")
             theme = st.selectbox("Theme", ["Dark", "Light", "Auto"], index=0)
             st.caption("Theme preference (requires page refresh)")
         
         with col2:
-            st.markdown("#### Defaults")
             auto_save = st.checkbox("Auto-save conversations", value=True)
             st.caption("Automatically save all conversations to database")
         
