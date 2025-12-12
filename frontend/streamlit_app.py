@@ -1105,36 +1105,6 @@ elif st.session_state.current_page == "Business Settings":
                 st.metric("Active", len(all_conv) - len(archived_conv))
             except:
                 st.warning("Could not load conversation statistics")
-    
-    with tab3:
-        st.markdown("### System Information")
-        try:
-            response = api_request("GET", "/health")
-            if response and response.status_code == 200:
-                health = response.json()
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown(f"""
-                    <div class="stat-box">
-                        <h3>✅ Status</h3>
-                        <p>{health.get('status', 'unknown')}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with col2:
-                    st.markdown(f"""
-                    <div class="stat-box">
-                        <h3>🔢 Version</h3>
-                        <p>{health.get('version', 'unknown')}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                st.markdown("---")
-                st.markdown("#### Backend Connection")
-                st.success(f"✅ Connected to: {BACKEND_URL}")
-            else:
-                st.error("Backend not accessible")
-        except Exception as e:
-            st.error(f"Backend not accessible: {str(e)}")
 
 
 # Footer (only show in Business Settings, not in chat)
