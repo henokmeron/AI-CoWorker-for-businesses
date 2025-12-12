@@ -29,7 +29,8 @@ async def chat(
     and provide an answer with source citations.
     """
     try:
-        logger.info(f"Chat request for business {request.business_id}: {request.query[:100]}")
+        business_id = request.business_id or "default"
+        logger.info(f"Chat request for business {business_id}: {request.query[:100]}")
         
         # Validate OpenAI API key
         if not settings.OPENAI_API_KEY:
@@ -42,7 +43,7 @@ async def chat(
         logger.info(f"Processing query with OpenAI (model: {settings.OPENAI_MODEL})")
         
         result = rag_service.query(
-            business_id=request.business_id,
+            business_id=business_id,
             query=request.query,
             conversation_history=request.conversation_history or [],
             max_sources=request.max_sources

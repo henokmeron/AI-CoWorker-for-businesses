@@ -24,7 +24,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     """Request for chat/query."""
-    business_id: Optional[str] = None = Field(..., description="Business ID for context")
+    business_id: Optional[str] = Field(None, description="Business ID for context")
     query: str = Field(..., description="User question")
     conversation_history: List[ChatMessage] = Field(default_factory=list, description="Previous messages")
     conversation_id: Optional[str] = Field(None, description="Conversation ID to save messages to")
