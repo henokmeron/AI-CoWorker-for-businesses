@@ -432,6 +432,8 @@ if "current_conversation_id" not in st.session_state:
     st.session_state.current_conversation_id = None
 if "conversations" not in st.session_state:
     st.session_state.conversations = []
+if "chat_type" not in st.session_state:
+    st.session_state.chat_type = "business"  # Default to business chat
 
 
 # Sidebar - Reorganized with clear sections
@@ -489,19 +491,40 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Chat Management (only show on Chat page)
-    if st.session_state.current_page == "Chat" and st.session_state.selected_business:
-        st.markdown("### 💬 Conversations")
+    # SECTION 3: Chat Management (only show on Chat page)
+    if st.session_state.current_page == "Chat":
+        st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-section-title">Chat Type</div>', unsafe_allow_html=True)
         
-        # New Chat button
-        if st.button("➕ New Chat", use_container_width=True, help="Start a new conversation"):
-            st.session_state.chat_history = []
-            st.session_state.current_conversation_id = None
-            st.rerun()
+        # Quick Chat vs Business Chat selection
+        chat_type = st.radio(
+            "",
+            ["💬 Quick Chat", "🏢 Business Chat"],
+            key="chat_type_radio",
+            label_visibility="collapsed",
+            help="Quick Chat: Temporary, no saving. Business Chat: Saved to business."
+        )
         
-        # Load conversations list
-        try:
-            conversations = get_conversations(st.session_state.selected_business, archived=False)
+        # Store chat type in session state
+        st.session_state.chat_type = "quick" if "Quick" in chat_type else "business"
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Only show business chat management if Business Chat is selected
+        if st.session_state.chat_type == "business" and st.session_state.selected_business:
+            st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+            st.markdown('<div class="sidebar-section-title">Business Conversations</div>', unsafe_allow_html=True)
+            
+            # New Chat button
+            if st.button("➕ New Chat", use_container_width=True, help="Start a new business conversation"):
+                st.session_state.chat_history = []
+                st.session_state.current_conversation_id = None
+                st.rerun()
+        
+            # Load conversations list
+            try:
+                conversations = get_conversations(st.session_state.selected_business, archived=False)
             if conversations:
                 st.markdown("#### Recent Chats")
                 for conv in conversations[:20]:  # Show last 20
@@ -590,14 +613,26 @@ with st.sidebar:
                                         st.rerun()
             else:
                 st.info("No previous chats. Start chatting to create one!")
+            st.markdown('</div>', unsafe_allow_html=True)
+        elif st.session_state.chat_type == "quick":
+            st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+            st.markdown('<div class="sidebar-section-title">Quick Chat</div>', unsafe_allow_html=True)
+            st.info("💬 Quick chats are temporary and won't be saved. Perfect for quick document questions!")
+            if st.button("🔄 New Quick Chat", use_container_width=True):
+                st.session_state.chat_history = []
+                st.session_state.current_conversation_id = None
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
         except Exception as e:
             logger.error(f"Error loading conversations: {e}")
             st.warning("Error loading conversations")
     
     st.markdown("---")
     
-    # Create new business (quick action)
-    with st.expander("➕ Quick: Create Business"):
+    # SECTION 4: Create Business (Bottom)
+    st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section-title">Quick Actions</div>', unsafe_allow_html=True)
+    with st.expander("➕ Create Business"):
         new_biz_name = st.text_input("Business Name", key="quick_new_biz")
         if st.button("Create", key="quick_create_btn"):
             if new_biz_name:
@@ -606,6 +641,7 @@ with st.sidebar:
                     st.rerun()
             else:
                 st.error("Please enter a name")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # Main content
@@ -674,7 +710,11 @@ if st.session_state.current_page == "Chat":
                                     """, unsafe_allow_html=True)
         
         # ChatGPT-style file attachment: Plus button in prompt field (no drag-and-drop in chat)
-        if st.session_state.selected_business:
+        # For Quick Chat, allow file uploads but they'll be temporary
+        # For Business Chat, require business selection
+        can_upload = (chat_type == "quick") or (chat_type == "business" and st.session_state.selected_business)
+        
+        if can_upload:
             # File uploader styled as plus button (appears above chat input, like ChatGPT)
             chat_file = st.file_uploader(
                 "➕ Attach file",
@@ -687,7 +727,9 @@ if st.session_state.current_page == "Chat":
             if chat_file:
                 # Process file immediately when selected
                 with st.spinner(f"Processing {chat_file.name}..."):
-                    result = upload_document(st.session_state.selected_business, chat_file)
+                    # For Quick Chat, use a temporary business ID; for Business Chat, use selected business
+                    upload_business_id = st.session_state.selected_business if st.session_state.selected_business else "quick_temp"
+                    result = upload_document(upload_business_id, chat_file)
                     if result:
                         st.success(f"✅ {chat_file.name} processed! Ask questions about it.")
                         st.session_state.chat_history.append({
@@ -700,9 +742,15 @@ if st.session_state.current_page == "Chat":
                         st.error(f"❌ Failed to process {chat_file.name}")
             
             # Chat input (appears right below file button)
-            user_query = st.chat_input("Ask a question about your documents...")
+            if chat_type == "quick":
+                user_query = st.chat_input("Ask a question (Quick Chat - won't be saved)...")
+            else:
+                user_query = st.chat_input("Ask a question about your documents...")
         else:
-            user_query = st.chat_input("Please select a business first...", disabled=True)
+            if chat_type == "business":
+                user_query = st.chat_input("Please select a business first...", disabled=True)
+            else:
+                user_query = st.chat_input("Ask a question (Quick Chat)...")
         
         if user_query and st.session_state.selected_business:
             # Create conversation if needed
@@ -725,7 +773,7 @@ if st.session_state.current_page == "Chat":
             with st.spinner("🤔 Thinking..."):
                 try:
                     response = chat_query(
-                        st.session_state.selected_business,
+                        business_id_for_chat,
                         user_query,
                         st.session_state.chat_history[:-1]  # Exclude the message we just added
                     )
