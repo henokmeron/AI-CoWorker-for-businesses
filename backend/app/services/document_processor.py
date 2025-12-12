@@ -65,10 +65,20 @@ class DocumentProcessor:
             logger.info(f"📋 Supported types: {', '.join(supported_types[:20])}{'...' if len(supported_types) > 20 else ''}")
             
         except ImportError as e:
+            error_msg = str(e)
             logger.error(f"❌ ImportError during handler registration: {e}", exc_info=True)
-            logger.error(f"Import error details: {type(e).__name__}: {str(e)}")
-            # Try to provide more specific guidance
-            if "unstructured" in str(e).lower():
+            logger.error(f"Import error details: {type(e).__name__}: {error_msg}")
+            
+            # Provide specific guidance based on error type
+            if "libGL.so.1" in error_msg or "libGL" in error_msg:
+                logger.error("⚠️ Missing OpenGL system library (libGL.so.1)")
+                logger.error("This is required for OpenCV which unstructured uses for image processing")
+                logger.error("Solution: Install libgl1-mesa-glx in Dockerfile:")
+                logger.error("  RUN apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0")
+            elif "cv2" in error_msg or "opencv" in error_msg.lower():
+                logger.error("⚠️ OpenCV import failed - missing system dependencies")
+                logger.error("Install: libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev")
+            elif "unstructured" in error_msg.lower():
                 logger.error("The unstructured library may be installed but missing dependencies")
                 logger.error("Try: pip install unstructured[all-docs] --upgrade")
             else:
