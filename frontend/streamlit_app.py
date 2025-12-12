@@ -526,8 +526,8 @@ with st.sidebar:
             try:
                 conversations = get_conversations(st.session_state.selected_business, archived=False)
                 if conversations:
-                st.markdown("#### Recent Chats")
-                for conv in conversations[:20]:  # Show last 20
+                    st.markdown("#### Recent Chats")
+                    for conv in conversations[:20]:  # Show last 20
                     conv_title = conv.get('title', 'Untitled')
                     # Truncate long titles
                     display_title = conv_title[:25] + "..." if len(conv_title) > 25 else conv_title
