@@ -38,34 +38,47 @@ class DocumentProcessor:
         """Register default file handlers."""
         logger.info("🔧 Starting handler registration...")
         
-        # Check if UnstructuredFileHandler is available
-        if not UNSTRUCTURED_HANDLER_AVAILABLE or UnstructuredFileHandler is None:
-            logger.error("❌ UnstructuredFileHandler not available - cannot import")
-            logger.error("This means unstructured library or handler module has import issues")
-            logger.error("Install with: pip install unstructured[all-docs]")
-        else:
-            # Try to create the handler
-            try:
-                logger.info("🔨 Creating UnstructuredFileHandler instance...")
-                unstructured_handler = UnstructuredFileHandler(
-                    enable_ocr=settings.OCR_ENABLED
-                )
-                logger.info("✅ UnstructuredFileHandler instance created")
-                
-                # Add to handlers
-                self.handlers.append(unstructured_handler)
-                supported_types = unstructured_handler.get_supported_types()
-                supported_count = len(supported_types)
-                logger.info(f"✅✅✅ SUCCESS! Registered UnstructuredFileHandler with {supported_count} file types")
-                logger.info(f"📋 Supported types: {', '.join(supported_types[:20])}{'...' if len(supported_types) > 20 else ''}")
-                
-            except ImportError as e:
-                logger.error(f"❌ ImportError creating UnstructuredFileHandler: {e}", exc_info=True)
+        # Direct import attempt with detailed error reporting
+        try:
+            # Try importing unstructured directly
+            logger.info("📦 Testing unstructured library import...")
+            from unstructured.partition.auto import partition
+            logger.info("✅ unstructured.partition.auto imported successfully")
+            
+            # Try importing the handler class
+            logger.info("📦 Importing UnstructuredFileHandler class...")
+            from .file_handlers.unstructured_handler import UnstructuredFileHandler
+            logger.info("✅ UnstructuredFileHandler class imported successfully")
+            
+            # Try creating instance
+            logger.info("🔨 Creating UnstructuredFileHandler instance...")
+            unstructured_handler = UnstructuredFileHandler(
+                enable_ocr=settings.OCR_ENABLED
+            )
+            logger.info("✅ UnstructuredFileHandler instance created")
+            
+            # Add to handlers
+            self.handlers.append(unstructured_handler)
+            supported_types = unstructured_handler.get_supported_types()
+            supported_count = len(supported_types)
+            logger.info(f"✅✅✅ SUCCESS! Registered UnstructuredFileHandler with {supported_count} file types")
+            logger.info(f"📋 Supported types: {', '.join(supported_types[:20])}{'...' if len(supported_types) > 20 else ''}")
+            
+        except ImportError as e:
+            logger.error(f"❌ ImportError during handler registration: {e}", exc_info=True)
+            logger.error(f"Import error details: {type(e).__name__}: {str(e)}")
+            # Try to provide more specific guidance
+            if "unstructured" in str(e).lower():
+                logger.error("The unstructured library may be installed but missing dependencies")
+                logger.error("Try: pip install unstructured[all-docs] --upgrade")
+            else:
                 logger.error("This usually means unstructured library dependencies are missing")
                 logger.error("Install with: pip install unstructured[all-docs]")
-            except Exception as e:
-                logger.error(f"❌ Exception creating UnstructuredFileHandler: {type(e).__name__}: {e}", exc_info=True)
-                logger.error("Full traceback above should show the exact issue")
+        except Exception as e:
+            logger.error(f"❌ Exception creating UnstructuredFileHandler: {type(e).__name__}: {e}", exc_info=True)
+            logger.error("Full traceback above should show the exact issue")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
         
         # Log final handler count
         logger.info(f"📊 Total handlers registered: {len(self.handlers)}")

@@ -57,6 +57,36 @@ async def root():
     }
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup."""
+    logger.info("🚀 Application starting up...")
+    
+    # Force initialization of document processor to register handlers
+    try:
+        from app.services.document_processor import get_document_processor
+        processor = get_document_processor()
+        handler_count = len(processor.handlers)
+        logger.info(f"✅ Document processor initialized with {handler_count} handler(s)")
+        if handler_count == 0:
+            logger.error("⚠️ WARNING: No file handlers registered! File uploads will fail!")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize document processor: {e}", exc_info=True)
+    
+    # Force initialization of vector store
+    try:
+        from app.services.vector_store import get_vector_store
+        vector_store = get_vector_store()
+        if vector_store.client:
+            logger.info("✅ Vector store initialized successfully")
+        else:
+            logger.warning("⚠️ Vector store client not initialized (may be expected in some environments)")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize vector store: {e}", exc_info=True)
+    
+    logger.info("✅ Startup complete")
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
@@ -108,11 +138,35 @@ async def test_openai():
 
 @app.on_event("startup")
 async def startup_event():
-    """Run on application startup."""
-    logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+    """Initialize services on startup."""
+    logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info(f"LLM Provider: {settings.LLM_PROVIDER}")
     logger.info(f"Vector DB: {settings.VECTOR_DB_TYPE}")
     logger.info(f"Embedding Provider: {settings.EMBEDDING_PROVIDER}")
+    
+    # Force initialization of document processor to register handlers
+    try:
+        from app.services.document_processor import get_document_processor
+        processor = get_document_processor()
+        handler_count = len(processor.handlers)
+        logger.info(f"✅ Document processor initialized with {handler_count} handler(s)")
+        if handler_count == 0:
+            logger.error("⚠️ WARNING: No file handlers registered! File uploads will fail!")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize document processor: {e}", exc_info=True)
+    
+    # Force initialization of vector store
+    try:
+        from app.services.vector_store import get_vector_store
+        vector_store = get_vector_store()
+        if vector_store.client:
+            logger.info("✅ Vector store initialized successfully")
+        else:
+            logger.warning("⚠️ Vector store client not initialized (may be expected in some environments)")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize vector store: {e}", exc_info=True)
+    
+    logger.info("✅ Startup complete")
 
 
 @app.on_event("shutdown")

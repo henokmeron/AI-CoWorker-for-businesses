@@ -26,9 +26,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Custom CSS - Comprehensive styling for professional UI
 st.markdown("""
 <style>
+    /* Main headers */
     .main-header {
         font-size: 2.5rem;
         font-weight: bold;
@@ -40,6 +41,8 @@ st.markdown("""
         color: #666;
         margin-bottom: 2rem;
     }
+    
+    /* Source boxes */
     .source-box {
         background-color: #f0f2f6;
         padding: 1rem;
@@ -47,37 +50,71 @@ st.markdown("""
         margin: 0.5rem 0;
         border-left: 3px solid #1f77b4;
     }
-    .stat-box {
-        background-color: #1e1e1e;
-        border: 2px solid #4a4a4a;
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        text-align: center;
-        color: #ffffff;
+    
+    /* Sidebar organization */
+    .sidebar-section {
+        margin-bottom: 1.5rem;
+        padding: 0.5rem 0;
     }
-    .stat-box h3 {
-        color: #ffffff;
+    .sidebar-section-title {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
         margin-bottom: 0.5rem;
     }
-    .stat-box p {
-        color: #a0a0a0;
-        font-size: 1.2rem;
-        font-weight: bold;
+    
+    /* Responsive design - prevent text breaking */
+    .sidebar-text {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        hyphens: auto;
     }
-    /* Fix dropdown text rendering */
-    .stSelectbox label {
-        color: #ffffff !important;
-        font-size: 14px !important;
-    }
-    .stSelectbox > div > div {
-        color: #ffffff !important;
-    }
-    /* Chat menu styling */
+    
+    /* Chat menu items */
     .chat-menu-item {
         padding: 0.5rem;
         border-radius: 0.25rem;
         margin: 0.25rem 0;
+        word-wrap: break-word;
     }
+    
+    /* Dropdown fixes */
+    .stSelectbox label {
+        color: #ffffff !important;
+        font-size: 14px !important;
+        font-weight: normal !important;
+    }
+    .stSelectbox > div > div {
+        color: #ffffff !important;
+        background-color: #262730 !important;
+    }
+    div[data-baseweb="select"] > div {
+        color: #ffffff !important;
+    }
+    
+    /* File upload button styling */
+    .file-upload-button {
+        display: inline-block;
+        padding: 0.5rem;
+        cursor: pointer;
+    }
+    
+    /* Responsive media queries */
+    @media (max-width: 768px) {
+        .main-header {
+            font-size: 1.8rem;
+        }
+        .sidebar-section {
+            margin-bottom: 1rem;
+        }
+    }
+    
+    /* Hide Streamlit default elements */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -397,23 +434,28 @@ if "conversations" not in st.session_state:
     st.session_state.conversations = []
 
 
-# Sidebar
+# Sidebar - Reorganized with clear sections
 with st.sidebar:
     st.markdown("## 🤖 AI Assistant Coworker")
     st.markdown("---")
     
-    # Navigation
+    # SECTION 1: Navigation (Top)
+    st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section-title">Navigation</div>', unsafe_allow_html=True)
     page = st.radio(
-        "Navigation",
+        "",
         ["Chat", "Documents", "Business Settings"],
-        key="nav_radio"
+        key="nav_radio",
+        label_visibility="collapsed"
     )
     st.session_state.current_page = page
+    st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("---")
     
-    # Business selection
-    st.markdown("### Select Business")
+    # SECTION 2: Active Business (Middle)
+    st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section-title">Active Business</div>', unsafe_allow_html=True)
     
     # Always try to get businesses, but handle errors gracefully
     try:
@@ -426,10 +468,11 @@ with st.sidebar:
     if businesses and len(businesses) > 0:
         business_options = {b["name"]: b["id"] for b in businesses}
         selected_name = st.selectbox(
-            "Active Business",
+            "Select Business",
             options=list(business_options.keys()),
             key="business_select",
-            index=0 if business_options else None
+            index=0 if business_options else None,
+            label_visibility="visible"
         )
         if selected_name:
             st.session_state.selected_business = business_options[selected_name]
@@ -437,13 +480,12 @@ with st.sidebar:
             # Show business stats
             selected_biz = next((b for b in businesses if b["id"] == st.session_state.selected_business), None)
             if selected_biz:
-                st.markdown("#### Stats")
                 st.metric("Documents", selected_biz.get("document_count", 0))
     else:
-        st.info("No businesses found. Create one below or in Business Settings.")
-        # Keep existing selection if available
+        st.info("No businesses found. Create one below.")
         if not st.session_state.selected_business:
             st.session_state.selected_business = None
+    st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("---")
     
@@ -631,19 +673,16 @@ if st.session_state.current_page == "Chat":
                                     </div>
                                     """, unsafe_allow_html=True)
         
-        # ChatGPT-style: File attachment button appears to be IN the prompt field
-        # Note: Streamlit's chat_input doesn't support inline file buttons, so we place it right above
+        # ChatGPT-style file attachment: Plus button in prompt field (no drag-and-drop in chat)
         if st.session_state.selected_business:
-            # File attachment (styled to appear as part of input)
-            col_attach, col_spacer = st.columns([0.02, 0.98])
-            with col_attach:
-                chat_file = st.file_uploader(
-                    "",
-                    type=None,
-                    key="chat_file_uploader",
-                    help="📎 Attach file",
-                    label_visibility="collapsed"
-                )
+            # File uploader styled as plus button (appears above chat input, like ChatGPT)
+            chat_file = st.file_uploader(
+                "➕ Attach file",
+                type=None,
+                key="chat_file_uploader",
+                help="Click to attach a file to this chat",
+                label_visibility="visible"
+            )
             
             if chat_file:
                 # Process file immediately when selected
@@ -660,7 +699,7 @@ if st.session_state.current_page == "Chat":
                     else:
                         st.error(f"❌ Failed to process {chat_file.name}")
             
-            # Chat input (appears right below file button, creating illusion of being in same field)
+            # Chat input (appears right below file button)
             user_query = st.chat_input("Ask a question about your documents...")
         else:
             user_query = st.chat_input("Please select a business first...", disabled=True)
