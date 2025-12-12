@@ -480,61 +480,31 @@ with st.sidebar:
                                     st.error(f"Error loading chat: {e}")
                         
                         with col_menu:
-                            # Three-dot menu button
+                            # Three-dot menu dropdown
                             menu_key = f"menu_{conv.get('id')}"
-                            if st.button("⋯", key=menu_key, help="More options", use_container_width=True):
-                                # Toggle menu
-                                current_state = st.session_state.get(f"show_menu_{conv.get('id')}", False)
-                                st.session_state[f"show_menu_{conv.get('id')}"] = not current_state
-                                st.rerun()
-                        
-                        # Show menu dropdown if active
-                        if st.session_state.get(f"show_menu_{conv.get('id')}", False):
-                            st.markdown("---")
-                            st.markdown(f"**{conv_title}**")
+                            menu_options = ["Options", "Rename", "Archive", "Delete"]
+                            selected_option = st.selectbox(
+                                "",
+                                menu_options,
+                                key=menu_key,
+                                label_visibility="collapsed",
+                                index=0
+                            )
                             
-                            # Menu options
-                            menu_col1, menu_col2, menu_col3, menu_col4 = st.columns(4)
-                            
-                            with menu_col1:
-                                if st.button("✏️ Rename", key=f"rename_btn_{conv.get('id')}", use_container_width=True):
-                                    st.session_state[f"renaming_{conv.get('id')}"] = True
-                                    st.rerun()
-                            
-                            with menu_col2:
-                                if st.button("📦 Archive", key=f"arch_btn_{conv.get('id')}", use_container_width=True):
-                                    if archive_conversation(conv.get('id')):
-                                        st.success("Archived!")
-                                        st.session_state[f"show_menu_{conv.get('id')}"] = False
+                            if selected_option == "Rename":
+                                new_title = st.text_input("New name", value=conv_title, key=f"rename_input_{conv.get('id')}")
+                                if new_title and new_title.strip() and new_title != conv_title:
+                                    if rename_conversation(conv.get('id'), new_title.strip()):
+                                        st.success("Renamed!")
                                         st.rerun()
-                            
-                            with menu_col3:
-                                if st.button("🗑️ Delete", key=f"del_btn_{conv.get('id')}", use_container_width=True, type="secondary"):
+                            elif selected_option == "Archive":
+                                if archive_conversation(conv.get('id')):
+                                    st.success("Archived!")
+                                    st.rerun()
+                            elif selected_option == "Delete":
+                                if st.button("Confirm Delete", key=f"confirm_del_{conv.get('id')}", type="primary"):
                                     if delete_conversation(conv.get('id')):
                                         st.success("Deleted!")
-                                        st.session_state[f"show_menu_{conv.get('id')}"] = False
-                                        st.rerun()
-                            
-                            with menu_col4:
-                                if st.button("✕ Close", key=f"close_menu_{conv.get('id')}", use_container_width=True):
-                                    st.session_state[f"show_menu_{conv.get('id')}"] = False
-                                    st.rerun()
-                            
-                            # Rename input (if rename button clicked)
-                            if st.session_state.get(f"renaming_{conv.get('id')}", False):
-                                rename_col1, rename_col2 = st.columns([3, 1])
-                                with rename_col1:
-                                    new_title = st.text_input("New name", value=conv_title, key=f"rename_input_{conv.get('id')}", label_visibility="collapsed")
-                                with rename_col2:
-                                    if st.button("✓", key=f"save_rename_{conv.get('id')}"):
-                                        if new_title and new_title.strip():
-                                            if rename_conversation(conv.get('id'), new_title.strip()):
-                                                st.success("Renamed!")
-                                                st.session_state[f"show_menu_{conv.get('id')}"] = False
-                                                st.session_state[f"renaming_{conv.get('id')}"] = False
-                                                st.rerun()
-                                    if st.button("✕", key=f"cancel_rename_{conv.get('id')}"):
-                                        st.session_state[f"renaming_{conv.get('id')}"] = False
                                         st.rerun()
                             
                             st.markdown("---")
@@ -562,14 +532,11 @@ with st.sidebar:
 if st.session_state.current_page == "Chat":
     st.markdown('<div class="main-header">💬 Chat with Your Documents</div>', unsafe_allow_html=True)
     
-    # Check backend connection first
-    backend_status = st.empty()
+    # Check backend connection silently (don't show status message)
     try:
         health_response = api_request("GET", "/health")
-        if health_response and health_response.status_code == 200:
-            backend_status.success("✅ Backend connected")
-        else:
-            backend_status.error(f"⚠️ Backend is not responding. Check if it's running at {BACKEND_URL}")
+        if not health_response or health_response.status_code != 200:
+            st.error(f"⚠️ Backend is not responding. Check if it's running at {BACKEND_URL}")
             st.warning("""
             **Backend Connection Issue:**
             - Check if the backend is deployed and running on Render
@@ -579,7 +546,7 @@ if st.session_state.current_page == "Chat":
             """)
             st.stop()
     except requests.exceptions.ConnectionError:
-        backend_status.error(f"⚠️ Cannot connect to backend at {BACKEND_URL}")
+        st.error(f"⚠️ Cannot connect to backend at {BACKEND_URL}")
         st.warning("""
         **Backend Connection Issue:**
         - Check if the backend is deployed and running on Render
@@ -589,7 +556,7 @@ if st.session_state.current_page == "Chat":
         """)
         st.stop()
     except Exception as e:
-        backend_status.error(f"⚠️ Backend error: {str(e)}")
+        st.error(f"⚠️ Backend error: {str(e)}")
         st.info(f"Backend URL: {BACKEND_URL}")
         st.stop()
     
@@ -625,6 +592,32 @@ if st.session_state.current_page == "Chat":
                                         {source['chunk_text']}
                                     </div>
                                     """, unsafe_allow_html=True)
+        
+        # File attachment for chat (temporary files for discussion)
+        if st.session_state.selected_business:
+            with st.expander("📎 Attach File to Chat", expanded=False):
+                chat_file = st.file_uploader(
+                    "Upload a file to discuss",
+                    type=None,  # Accept all file types
+                    key="chat_file_uploader",
+                    help="Upload a file to discuss in this chat. This is temporary and won't be saved to your documents."
+                )
+                if chat_file:
+                    # Process and upload the file temporarily
+                    if st.button("📤 Upload & Process", key="process_chat_file"):
+                        with st.spinner(f"Processing {chat_file.name}..."):
+                            result = upload_document(st.session_state.selected_business, chat_file)
+                            if result:
+                                st.success(f"✅ {chat_file.name} processed! You can now ask questions about it.")
+                                # Optionally add a message about the file
+                                st.session_state.chat_history.append({
+                                    "role": "assistant",
+                                    "content": f"I've processed the file '{chat_file.name}'. You can now ask me questions about it!",
+                                    "sources": []
+                                })
+                                st.rerun()
+                            else:
+                                st.error(f"❌ Failed to process {chat_file.name}")
         
         # Chat input (always show, but disabled if no business)
         if st.session_state.selected_business:

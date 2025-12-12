@@ -232,8 +232,10 @@ When answering:
 - If the question is not related to the documents, answer based on your general knowledge
 - Be concise and accurate"""
         else:
-            system_prompt = """You are a helpful AI assistant. Answer questions clearly and accurately based on your knowledge.
-Be helpful, concise, and informative."""
+            from datetime import datetime
+            current_date = datetime.now().strftime("%B %Y")
+            system_prompt = f"""You are a helpful AI assistant. Answer questions clearly and accurately based on your knowledge as of {current_date}.
+Be helpful, concise, and informative. When providing information, use current knowledge and avoid referencing outdated dates unless specifically asked about historical events."""
 
         messages = [SystemMessage(content=system_prompt)]
         

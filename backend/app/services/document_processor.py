@@ -109,10 +109,32 @@ class DocumentProcessor:
         # Find appropriate handler
         handler = self.get_handler(file_path)
         if not handler:
-            raise ValueError(
-                f"Unsupported file type: {file_type}. "
-                f"Supported types: {', '.join(self.get_supported_types())}"
-            )
+            supported = self.get_supported_types()
+            if not supported:
+                # If no handlers registered, try to process anyway (fallback)
+                logger.warning(f"No handlers registered, attempting to process {file_type} anyway")
+                # Try to use unstructured handler directly
+                try:
+                    from .file_handlers.unstructured_handler import UnstructuredFileHandler
+                    handler = UnstructuredFileHandler()
+                    if handler.can_handle(file_path, file_type):
+                        logger.info(f"Using fallback Unstructured handler for {file_type}")
+                    else:
+                        raise ValueError(
+                            f"Unsupported file type: {file_type}. "
+                            f"Supported types: {', '.join(supported) if supported else 'None registered'}"
+                        )
+                except Exception as e:
+                    logger.error(f"Fallback handler failed: {e}")
+                    raise ValueError(
+                        f"Unsupported file type: {file_type}. "
+                        f"Supported types: {', '.join(supported) if supported else 'None registered'}"
+                    )
+            else:
+                raise ValueError(
+                    f"Unsupported file type: {file_type}. "
+                    f"Supported types: {', '.join(supported)}"
+                )
         
         logger.info(f"Processing {file_path} with {handler.__class__.__name__}")
         

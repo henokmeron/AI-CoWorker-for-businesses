@@ -31,8 +31,9 @@ class ConversationService:
         self._init_json_storage()
         
         # Try to use database if DATABASE_URL is set
-        db_url = os.getenv("DATABASE_URL") or settings.DATABASE_URL
-        self.use_database = bool(db_url)
+        self.db_url = os.getenv("DATABASE_URL") or settings.DATABASE_URL
+        self.use_database = bool(self.db_url)
+        self.conn = None  # Will be created per request to avoid connection closed errors
         
         if self.use_database:
             try:
@@ -40,12 +41,11 @@ class ConversationService:
                 from psycopg2.extras import RealDictCursor
                 self.psycopg2 = psycopg2
                 self.RealDictCursor = RealDictCursor
-                if db_url:
-                    self.conn = psycopg2.connect(db_url)
-                    self._init_database()
-                    logger.info("Using PostgreSQL for conversation storage")
-                else:
-                    raise ValueError("DATABASE_URL not set")
+                # Test connection and initialize tables
+                test_conn = psycopg2.connect(self.db_url)
+                self._init_database(test_conn)
+                test_conn.close()
+                logger.info("Using PostgreSQL for conversation storage")
             except Exception as e:
                 logger.warning(f"PostgreSQL not available, using JSON fallback: {e}")
                 self.use_database = False
@@ -53,10 +53,28 @@ class ConversationService:
         else:
             logger.info("Using JSON file for conversation storage")
     
-    def _init_database(self):
-        """Initialize PostgreSQL tables."""
+    def _get_connection(self):
+        """Get a fresh database connection (create new one each time to avoid closed connections)."""
+        if not self.use_database or not self.db_url:
+            return None
         try:
-            with self.conn.cursor() as cur:
+            return self.psycopg2.connect(self.db_url)
+        except Exception as e:
+            logger.error(f"Failed to get database connection: {e}")
+            return None
+    
+    def _init_database(self, conn=None):
+        """Initialize PostgreSQL tables."""
+        if conn is None:
+            conn = self._get_connection()
+            if conn is None:
+                return
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            with conn.cursor() as cur:
                 # Create conversations table
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS conversations (
@@ -90,12 +108,16 @@ class ConversationService:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)")
                 
-                self.conn.commit()
+                conn.commit()
                 logger.info("✅ Database tables initialized successfully")
         except Exception as e:
             logger.error(f"❌ Error initializing database: {e}", exc_info=True)
-            # Don't fall back to JSON - raise the error so user knows
+            if should_close and conn:
+                conn.close()
             raise RuntimeError(f"Failed to initialize database. Please check your DATABASE_URL and run database_schema.sql in Neon SQL Editor. Error: {e}")
+        finally:
+            if should_close and conn:
+                conn.close()
     
     def _init_json_storage(self):
         """Initialize JSON file storage."""
@@ -124,15 +146,22 @@ class ConversationService:
         )
         
         if self.use_database:
-            try:
-                with self.conn.cursor() as cur:
-                    cur.execute("""
-                        INSERT INTO conversations (id, business_id, title, created_at, updated_at)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, (conv_id, business_id, title, conversation.created_at, conversation.updated_at))
-                    self.conn.commit()
-            except Exception as e:
-                logger.error(f"Error saving conversation to database: {e}")
+            conn = self._get_connection()
+            if conn:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO conversations (id, business_id, title, created_at, updated_at)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, (conv_id, business_id, title, conversation.created_at, conversation.updated_at))
+                        conn.commit()
+                    conn.close()
+                except Exception as e:
+                    logger.error(f"Error saving conversation to database: {e}")
+                    if conn:
+                        conn.close()
+                    self._save_json_conversation(conversation)
+            else:
                 self._save_json_conversation(conversation)
         else:
             self._save_json_conversation(conversation)
@@ -142,23 +171,28 @@ class ConversationService:
     def add_message(self, conversation_id: str, message: Message):
         """Add a message to a conversation."""
         if self.use_database:
-            try:
-                with self.conn.cursor() as cur:
-                    cur.execute("""
-                        INSERT INTO messages (conversation_id, role, content, sources, timestamp)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, (conversation_id, message.role, message.content, json.dumps(message.sources), message.timestamp))
-                    
-                    cur.execute("""
-                        UPDATE conversations SET updated_at = CURRENT_TIMESTAMP
-                        WHERE id = %s
-                    """, (conversation_id,))
-                    
-                    self.conn.commit()
-            except Exception as e:
-                logger.error(f"Error adding message to database: {e}")
-                logger.info("Falling back to JSON storage")
-                self.use_database = False  # Switch to JSON for this session
+            conn = self._get_connection()
+            if conn:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO messages (conversation_id, role, content, sources, timestamp)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, (conversation_id, message.role, message.content, json.dumps(message.sources), message.timestamp))
+                        
+                        cur.execute("""
+                            UPDATE conversations SET updated_at = CURRENT_TIMESTAMP
+                            WHERE id = %s
+                        """, (conversation_id,))
+                        
+                        conn.commit()
+                    conn.close()
+                except Exception as e:
+                    logger.error(f"Error adding message to database: {e}")
+                    if conn:
+                        conn.close()
+                    self._add_json_message(conversation_id, message)
+            else:
                 self._add_json_message(conversation_id, message)
         else:
             self._add_json_message(conversation_id, message)
@@ -166,8 +200,11 @@ class ConversationService:
     def get_conversation(self, conversation_id: str) -> Optional[Conversation]:
         """Get a conversation by ID."""
         if self.use_database and self.RealDictCursor:
+            conn = self._get_connection()
+            if not conn:
+                return self._get_json_conversation(conversation_id)
             try:
-                with self.conn.cursor(cursor_factory=self.RealDictCursor) as cur:
+                with conn.cursor(cursor_factory=self.RealDictCursor) as cur:
                     cur.execute("SELECT * FROM conversations WHERE id = %s", (conversation_id,))
                     conv_row = cur.fetchone()
                     if not conv_row:
@@ -212,8 +249,11 @@ class ConversationService:
     def list_conversations(self, business_id: str, archived: Optional[bool] = None) -> List[Conversation]:
         """List conversations for a business."""
         if self.use_database and self.RealDictCursor:
+            conn = self._get_connection()
+            if not conn:
+                return self._list_json_conversations(business_id, archived)
             try:
-                with self.conn.cursor(cursor_factory=self.RealDictCursor) as cur:
+                with conn.cursor(cursor_factory=self.RealDictCursor) as cur:
                     if archived is not None:
                         cur.execute("""
                             SELECT * FROM conversations
@@ -260,15 +300,22 @@ class ConversationService:
     def archive_conversation(self, conversation_id: str):
         """Archive a conversation."""
         if self.use_database:
-            try:
-                with self.conn.cursor() as cur:
-                    cur.execute("""
-                        UPDATE conversations SET archived = TRUE, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = %s
-                    """, (conversation_id,))
-                    self.conn.commit()
-            except Exception as e:
-                logger.error(f"Error archiving conversation: {e}")
+            conn = self._get_connection()
+            if conn:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            UPDATE conversations SET archived = TRUE, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = %s
+                        """, (conversation_id,))
+                        conn.commit()
+                    conn.close()
+                except Exception as e:
+                    logger.error(f"Error archiving conversation: {e}")
+                    if conn:
+                        conn.close()
+                    self._archive_json_conversation(conversation_id)
+            else:
                 self._archive_json_conversation(conversation_id)
         else:
             self._archive_json_conversation(conversation_id)
@@ -276,15 +323,22 @@ class ConversationService:
     def unarchive_conversation(self, conversation_id: str):
         """Unarchive a conversation."""
         if self.use_database:
-            try:
-                with self.conn.cursor() as cur:
-                    cur.execute("""
-                        UPDATE conversations SET archived = FALSE, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = %s
-                    """, (conversation_id,))
-                    self.conn.commit()
-            except Exception as e:
-                logger.error(f"Error unarchiving conversation: {e}")
+            conn = self._get_connection()
+            if conn:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            UPDATE conversations SET archived = FALSE, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = %s
+                        """, (conversation_id,))
+                        conn.commit()
+                    conn.close()
+                except Exception as e:
+                    logger.error(f"Error unarchiving conversation: {e}")
+                    if conn:
+                        conn.close()
+                    self._unarchive_json_conversation(conversation_id)
+            else:
                 self._unarchive_json_conversation(conversation_id)
         else:
             self._unarchive_json_conversation(conversation_id)
@@ -292,36 +346,42 @@ class ConversationService:
     def update_conversation(self, conversation_id: str, update: ConversationUpdate) -> Optional[Conversation]:
         """Update a conversation (rename, etc.)."""
         if self.use_database:
-            try:
-                with self.conn.cursor() as cur:
-                    updates = []
-                    params = []
-                    
-                    if update.title is not None:
-                        updates.append("title = %s")
-                        params.append(update.title)
-                    
-                    if update.archived is not None:
-                        updates.append("archived = %s")
-                        params.append(update.archived)
-                    
-                    if update.tags is not None:
-                        updates.append("tags = %s")
-                        params.append(json.dumps(update.tags))
-                    
-                    if updates:
-                        updates.append("updated_at = CURRENT_TIMESTAMP")
-                        params.append(conversation_id)
+            conn = self._get_connection()
+            if conn:
+                try:
+                    with conn.cursor() as cur:
+                        updates = []
+                        params = []
                         
-                        cur.execute(f"""
-                            UPDATE conversations SET {', '.join(updates)}
-                            WHERE id = %s
-                        """, params)
-                        self.conn.commit()
+                        if update.title is not None:
+                            updates.append("title = %s")
+                            params.append(update.title)
                         
-                        return self.get_conversation(conversation_id)
-            except Exception as e:
-                logger.error(f"Error updating conversation: {e}")
+                        if update.archived is not None:
+                            updates.append("archived = %s")
+                            params.append(update.archived)
+                        
+                        if update.tags is not None:
+                            updates.append("tags = %s")
+                            params.append(json.dumps(update.tags))
+                        
+                        if updates:
+                            updates.append("updated_at = CURRENT_TIMESTAMP")
+                            params.append(conversation_id)
+                            
+                            cur.execute(f"""
+                                UPDATE conversations SET {', '.join(updates)}
+                                WHERE id = %s
+                            """, params)
+                            conn.commit()
+                    conn.close()
+                    return self.get_conversation(conversation_id)
+                except Exception as e:
+                    logger.error(f"Error updating conversation: {e}")
+                    if conn:
+                        conn.close()
+                    return self._update_json_conversation(conversation_id, update)
+            else:
                 return self._update_json_conversation(conversation_id, update)
         else:
             return self._update_json_conversation(conversation_id, update)
@@ -329,15 +389,22 @@ class ConversationService:
     def delete_conversation(self, conversation_id: str):
         """Delete a conversation permanently."""
         if self.use_database:
-            try:
-                with self.conn.cursor() as cur:
-                    # Delete messages first (CASCADE should handle this, but being explicit)
-                    cur.execute("DELETE FROM messages WHERE conversation_id = %s", (conversation_id,))
-                    # Delete conversation
-                    cur.execute("DELETE FROM conversations WHERE id = %s", (conversation_id,))
-                    self.conn.commit()
-            except Exception as e:
-                logger.error(f"Error deleting conversation: {e}")
+            conn = self._get_connection()
+            if conn:
+                try:
+                    with conn.cursor() as cur:
+                        # Delete messages first (CASCADE should handle this, but being explicit)
+                        cur.execute("DELETE FROM messages WHERE conversation_id = %s", (conversation_id,))
+                        # Delete conversation
+                        cur.execute("DELETE FROM conversations WHERE id = %s", (conversation_id,))
+                        conn.commit()
+                    conn.close()
+                except Exception as e:
+                    logger.error(f"Error deleting conversation: {e}")
+                    if conn:
+                        conn.close()
+                    self._delete_json_conversation(conversation_id)
+            else:
                 self._delete_json_conversation(conversation_id)
         else:
             self._delete_json_conversation(conversation_id)
