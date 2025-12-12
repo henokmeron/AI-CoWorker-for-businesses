@@ -64,6 +64,20 @@ st.markdown("""
         font-size: 1.2rem;
         font-weight: bold;
     }
+    /* Fix dropdown text rendering */
+    .stSelectbox label {
+        color: #ffffff !important;
+        font-size: 14px !important;
+    }
+    .stSelectbox > div > div {
+        color: #ffffff !important;
+    }
+    /* Chat menu styling */
+    .chat-menu-item {
+        padding: 0.5rem;
+        border-radius: 0.25rem;
+        margin: 0.25rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -617,34 +631,41 @@ if st.session_state.current_page == "Chat":
                                     </div>
                                     """, unsafe_allow_html=True)
         
-        # File attachment button (before chat input, like OpenAI)
+        # ChatGPT-style file attachment: Create custom input area with file button
         if st.session_state.selected_business:
-            # Show file uploader as a button-like element
-            chat_file = st.file_uploader(
-                "📎",
-                type=None,  # Accept all file types
-                key="chat_file_uploader",
-                help="Attach file to chat",
-                label_visibility="collapsed"
-            )
-            if chat_file:
-                # Process file immediately when selected
-                with st.spinner(f"Processing {chat_file.name}..."):
-                    result = upload_document(st.session_state.selected_business, chat_file)
-                    if result:
-                        st.success(f"✅ {chat_file.name} processed! You can now ask questions about it.")
-                        st.session_state.chat_history.append({
-                            "role": "assistant",
-                            "content": f"I've processed the file '{chat_file.name}'. You can now ask me questions about it!",
-                            "sources": []
-                        })
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Failed to process {chat_file.name}")
-        
-        # Chat input (always show, but disabled if no business)
-        if st.session_state.selected_business:
-            user_query = st.chat_input("Ask a question about your documents...")
+            # Create a container that mimics chat input with file attachment
+            input_container = st.container()
+            with input_container:
+                # Use columns to place file button and chat input side by side
+                col_file, col_input = st.columns([0.05, 0.95])
+                
+                with col_file:
+                    # File attachment button (plus icon like ChatGPT)
+                    chat_file = st.file_uploader(
+                        "",
+                        type=None,  # Accept all file types
+                        key="chat_file_uploader",
+                        help="Attach file",
+                        label_visibility="collapsed"
+                    )
+                    if chat_file:
+                        # Process file immediately when selected
+                        with st.spinner(f"Processing {chat_file.name}..."):
+                            result = upload_document(st.session_state.selected_business, chat_file)
+                            if result:
+                                st.success(f"✅ {chat_file.name} processed!")
+                                st.session_state.chat_history.append({
+                                    "role": "assistant",
+                                    "content": f"I've processed the file '{chat_file.name}'. You can now ask me questions about it!",
+                                    "sources": []
+                                })
+                                st.rerun()
+                            else:
+                                st.error(f"❌ Failed to process {chat_file.name}")
+                
+                with col_input:
+                    # Chat input
+                    user_query = st.chat_input("Ask a question about your documents...")
         else:
             user_query = st.chat_input("Please select a business first...", disabled=True)
         
