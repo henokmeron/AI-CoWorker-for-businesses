@@ -631,41 +631,37 @@ if st.session_state.current_page == "Chat":
                                     </div>
                                     """, unsafe_allow_html=True)
         
-        # ChatGPT-style file attachment: Create custom input area with file button
+        # ChatGPT-style: File attachment button appears to be IN the prompt field
+        # Note: Streamlit's chat_input doesn't support inline file buttons, so we place it right above
         if st.session_state.selected_business:
-            # Create a container that mimics chat input with file attachment
-            input_container = st.container()
-            with input_container:
-                # Use columns to place file button and chat input side by side
-                col_file, col_input = st.columns([0.05, 0.95])
-                
-                with col_file:
-                    # File attachment button (plus icon like ChatGPT)
-                    chat_file = st.file_uploader(
-                        "",
-                        type=None,  # Accept all file types
-                        key="chat_file_uploader",
-                        help="Attach file",
-                        label_visibility="collapsed"
-                    )
-                    if chat_file:
-                        # Process file immediately when selected
-                        with st.spinner(f"Processing {chat_file.name}..."):
-                            result = upload_document(st.session_state.selected_business, chat_file)
-                            if result:
-                                st.success(f"✅ {chat_file.name} processed!")
-                                st.session_state.chat_history.append({
-                                    "role": "assistant",
-                                    "content": f"I've processed the file '{chat_file.name}'. You can now ask me questions about it!",
-                                    "sources": []
-                                })
-                                st.rerun()
-                            else:
-                                st.error(f"❌ Failed to process {chat_file.name}")
-                
-                with col_input:
-                    # Chat input
-                    user_query = st.chat_input("Ask a question about your documents...")
+            # File attachment (styled to appear as part of input)
+            col_attach, col_spacer = st.columns([0.02, 0.98])
+            with col_attach:
+                chat_file = st.file_uploader(
+                    "",
+                    type=None,
+                    key="chat_file_uploader",
+                    help="📎 Attach file",
+                    label_visibility="collapsed"
+                )
+            
+            if chat_file:
+                # Process file immediately when selected
+                with st.spinner(f"Processing {chat_file.name}..."):
+                    result = upload_document(st.session_state.selected_business, chat_file)
+                    if result:
+                        st.success(f"✅ {chat_file.name} processed! Ask questions about it.")
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": f"I've processed '{chat_file.name}'. You can now ask me questions about it!",
+                            "sources": []
+                        })
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Failed to process {chat_file.name}")
+            
+            # Chat input (appears right below file button, creating illusion of being in same field)
+            user_query = st.chat_input("Ask a question about your documents...")
         else:
             user_query = st.chat_input("Please select a business first...", disabled=True)
         
