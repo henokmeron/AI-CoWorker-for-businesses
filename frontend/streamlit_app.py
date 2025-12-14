@@ -43,10 +43,10 @@ st.markdown("""
     
     /* Fixed bottom-left avatar button */
     .auth-avatar-container {
-        position: fixed;
-        left: 16px;
-        bottom: 16px;
-        z-index: 9999;
+        position: fixed !important;
+        left: 16px !important;
+        bottom: 16px !important;
+        z-index: 9999 !important;
     }
     .auth-avatar-button {
         width: 40px;
@@ -62,6 +62,7 @@ st.markdown("""
         font-weight: 600;
         font-size: 14px;
         transition: all 0.2s;
+        user-select: none;
     }
     .auth-avatar-button:hover {
         background: #40414f;
@@ -83,6 +84,7 @@ st.markdown("""
         min-width: 200px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         display: none;
+        z-index: 10000;
     }
     .auth-dropdown.show {
         display: block;
@@ -97,8 +99,14 @@ st.markdown("""
     .auth-dropdown-item:hover {
         background: #343541;
     }
+    .auth-dropdown-item:first-child {
+        border-top-left-radius: 8px;
+        border-top-right-radius: 8px;
+    }
     .auth-dropdown-item:last-child {
         border-bottom: none;
+        border-bottom-left-radius: 8px;
+        border-bottom-right-radius: 8px;
     }
     
     /* Sidebar styling */
@@ -387,84 +395,6 @@ def get_user_initials():
     return "?"
 
 
-def render_auth_avatar():
-    """Render fixed bottom-left avatar button."""
-    initials = get_user_initials()
-    logged_in_class = "logged-in" if st.session_state.user_logged_in else ""
-    
-    st.markdown(f"""
-    <div class="auth-avatar-container">
-        <div class="auth-avatar-button {logged_in_class}" id="auth-avatar-btn">
-            {initials}
-        </div>
-    </div>
-    <script>
-        document.getElementById('auth-avatar-btn').addEventListener('click', function() {{
-            // Toggle dropdown via Streamlit
-            window.parent.postMessage({{type: 'streamlit:setComponentValue', value: 'toggle_auth'}}, '*');
-        }});
-    </script>
-    """, unsafe_allow_html=True)
-    
-    # Handle avatar click
-    if st.button("", key="auth_avatar_click", help="", use_container_width=False):
-        st.session_state.show_auth_dropdown = not st.session_state.show_auth_dropdown
-        st.rerun()
-
-
-def render_auth_dropdown():
-    """Render auth dropdown menu."""
-    if not st.session_state.show_auth_dropdown:
-        return
-    
-    with st.container():
-        st.markdown('<div class="auth-dropdown show">', unsafe_allow_html=True)
-        
-        if st.session_state.user_logged_in:
-            st.markdown(f"**{st.session_state.user_name or 'User'}**")
-            st.markdown("---")
-            if st.button("⚙️ Settings", key="auth_settings", use_container_width=True):
-                st.session_state.show_settings = True
-                st.session_state.show_auth_dropdown = False
-                st.rerun()
-            if st.button("⬆️ Upgrade", key="auth_upgrade", use_container_width=True):
-                st.info("Upgrade feature coming soon!")
-                st.session_state.show_auth_dropdown = False
-                st.rerun()
-            if st.button("❓ Help", key="auth_help", use_container_width=True):
-                st.info("Help center coming soon!")
-                st.session_state.show_auth_dropdown = False
-                st.rerun()
-            if st.button("🚪 Log out", key="auth_logout", use_container_width=True):
-                st.session_state.user_logged_in = False
-                st.session_state.user_name = None
-                st.session_state.user_email = None
-                st.session_state.show_auth_dropdown = False
-                st.success("Logged out!")
-                st.rerun()
-        else:
-            if st.button("🔐 Login", key="auth_login", use_container_width=True):
-                # Simple login (can be extended with real auth)
-                st.session_state.user_logged_in = True
-                st.session_state.user_name = "Demo User"
-                st.session_state.user_email = "demo@example.com"
-                st.session_state.show_auth_dropdown = False
-                st.success("Logged in!")
-                st.rerun()
-            if st.button("📝 Sign up", key="auth_signup", use_container_width=True):
-                st.info("Sign up feature coming soon!")
-                st.session_state.show_auth_dropdown = False
-                st.rerun()
-            if st.button("⚙️ Settings", key="auth_settings_guest", use_container_width=True):
-                st.session_state.show_settings = True
-                st.session_state.show_auth_dropdown = False
-                st.rerun()
-            if st.button("❓ Help", key="auth_help_guest", use_container_width=True):
-                st.info("Help center coming soon!")
-                st.session_state.show_auth_dropdown = False
-                st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_settings():
@@ -807,6 +737,12 @@ with st.sidebar:
         st.warning("Error loading conversations")
     
     st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Bottom of sidebar: Reply as me toggle
+    st.markdown("---")
+    st.checkbox("Reply as me", value=st.session_state.reply_as_me, key="reply_as_me_toggle", 
+                help="Toggle between personalized replies and categorization mode")
+    st.session_state.reply_as_me = st.session_state.get("reply_as_me_toggle", False)
 
 
 # Main content area
@@ -832,11 +768,6 @@ else:
     except Exception as e:
         st.error(f"⚠️ Cannot connect to backend: {e}")
         st.stop()
-    
-    # Reply as me toggle
-    st.checkbox("Reply as me", value=st.session_state.reply_as_me, key="reply_as_me_toggle", 
-                help="Toggle between personalized replies and categorization mode")
-    st.session_state.reply_as_me = st.session_state.get("reply_as_me_toggle", False)
     
     # Chat interface
     chat_container = st.container()
@@ -963,8 +894,71 @@ else:
         st.rerun()
 
 
-# Render auth UI (fixed bottom-left)
-render_auth_avatar()
+# Fixed bottom-left avatar (rendered at end to avoid interfering with content)
+initials = get_user_initials()
+logged_in_class = "logged-in" if st.session_state.user_logged_in else ""
+
+st.markdown(f"""
+<div class="auth-avatar-container">
+    <div class="auth-avatar-button {logged_in_class}" id="fixed-avatar">
+        {initials}
+    </div>
+</div>
+<script>
+    document.getElementById('fixed-avatar').addEventListener('click', function() {{
+        // Trigger Streamlit rerun to show dropdown
+        window.parent.postMessage({{type: 'streamlit:setComponentValue', value: 'avatar_clicked'}}, '*');
+    }});
+</script>
+""", unsafe_allow_html=True)
+
+# Handle avatar click via invisible button
+if st.button("", key="fixed_avatar_click", help="", use_container_width=False):
+    st.session_state.show_auth_dropdown = not st.session_state.show_auth_dropdown
+    st.rerun()
+
+# Show dropdown as a sidebar panel when clicked (since we can't do true overlay in Streamlit)
 if st.session_state.show_auth_dropdown:
-    render_auth_dropdown()
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("### Account")
+        if st.session_state.user_logged_in:
+            st.markdown(f"**{st.session_state.user_name or 'User'}**")
+            if st.button("⚙️ Settings", key="fixed_settings", use_container_width=True):
+                st.session_state.show_settings = True
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
+            if st.button("⬆️ Upgrade", key="fixed_upgrade", use_container_width=True):
+                st.info("Upgrade feature coming soon!")
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
+            if st.button("❓ Help", key="fixed_help", use_container_width=True):
+                st.info("Help center coming soon!")
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
+            if st.button("🚪 Log out", key="fixed_logout", use_container_width=True):
+                st.session_state.user_logged_in = False
+                st.session_state.user_name = None
+                st.session_state.user_email = None
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
+        else:
+            if st.button("🔐 Login", key="fixed_login", use_container_width=True):
+                st.session_state.user_logged_in = True
+                st.session_state.user_name = "Demo User"
+                st.session_state.user_email = "demo@example.com"
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
+            if st.button("📝 Sign up", key="fixed_signup", use_container_width=True):
+                st.info("Sign up feature coming soon!")
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
+            if st.button("⚙️ Settings", key="fixed_settings_guest", use_container_width=True):
+                st.session_state.show_settings = True
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
+            if st.button("❓ Help", key="fixed_help_guest", use_container_width=True):
+                st.info("Help center coming soon!")
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
 
