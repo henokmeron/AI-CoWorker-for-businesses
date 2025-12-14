@@ -402,7 +402,14 @@ def render_settings():
     if not st.session_state.show_settings:
         return
     
-    st.markdown("## ⚙️ Settings")
+    # Header with back button
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        if st.button("←", key="back_to_chat", help="Back to Chat"):
+            st.session_state.show_settings = False
+            st.rerun()
+    with col2:
+        st.markdown("## ⚙️ Settings")
     
     # Settings tabs
     tabs = ["General", "Notifications", "Personalization", "App Connectors", "Data Control", "Security", "Account"]
@@ -639,8 +646,9 @@ with st.sidebar:
         else:
             st.info("No GPTs yet. Create one to get started!")
     except Exception as e:
-        logger.error(f"Error loading GPTs: {e}")
-        st.warning("Error loading GPTs")
+        logger.error(f"Error loading GPTs: {e}", exc_info=True)
+        st.error(f"Error loading GPTs: {str(e)}")
+        st.info("Please check your backend connection and try again.")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -894,70 +902,59 @@ else:
         st.rerun()
 
 
-# Fixed bottom-left avatar (rendered at end to avoid interfering with content)
-initials = get_user_initials()
-logged_in_class = "logged-in" if st.session_state.user_logged_in else ""
-
-st.markdown(f"""
-<div class="auth-avatar-container">
-    <div class="auth-avatar-button {logged_in_class}" id="fixed-avatar">
-        {initials}
-    </div>
-</div>
-<script>
-    document.getElementById('fixed-avatar').addEventListener('click', function() {{
-        // Trigger Streamlit rerun to show dropdown
-        window.parent.postMessage({{type: 'streamlit:setComponentValue', value: 'avatar_clicked'}}, '*');
-    }});
-</script>
-""", unsafe_allow_html=True)
-
-# Handle avatar click via invisible button
-if st.button("", key="fixed_avatar_click", help="", use_container_width=False):
-    st.session_state.show_auth_dropdown = not st.session_state.show_auth_dropdown
-    st.rerun()
-
-# Show dropdown as a sidebar panel when clicked (since we can't do true overlay in Streamlit)
-if st.session_state.show_auth_dropdown:
-    with st.sidebar:
+# Avatar in sidebar bottom (not in main content)
+with st.sidebar:
+    st.markdown("---")
+    initials = get_user_initials()
+    logged_in_class = "logged-in" if st.session_state.user_logged_in else ""
+    
+    # Avatar button
+    if st.button(f"{initials}", key="sidebar_avatar_btn", help="Account menu", use_container_width=True):
+        st.session_state.show_auth_dropdown = not st.session_state.show_auth_dropdown
+        st.rerun()
+    
+    # Show dropdown menu in sidebar when clicked
+    if st.session_state.show_auth_dropdown:
         st.markdown("---")
         st.markdown("### Account")
         if st.session_state.user_logged_in:
             st.markdown(f"**{st.session_state.user_name or 'User'}**")
-            if st.button("⚙️ Settings", key="fixed_settings", use_container_width=True):
+            if st.button("⚙️ Settings", key="sidebar_settings", use_container_width=True):
                 st.session_state.show_settings = True
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
-            if st.button("⬆️ Upgrade", key="fixed_upgrade", use_container_width=True):
+            if st.button("⬆️ Upgrade", key="sidebar_upgrade", use_container_width=True):
                 st.info("Upgrade feature coming soon!")
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
-            if st.button("❓ Help", key="fixed_help", use_container_width=True):
+            if st.button("❓ Help", key="sidebar_help", use_container_width=True):
                 st.info("Help center coming soon!")
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
-            if st.button("🚪 Log out", key="fixed_logout", use_container_width=True):
+            if st.button("🚪 Log out", key="sidebar_logout", use_container_width=True):
                 st.session_state.user_logged_in = False
                 st.session_state.user_name = None
                 st.session_state.user_email = None
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
         else:
-            if st.button("🔐 Login", key="fixed_login", use_container_width=True):
+            if st.button("🔐 Login", key="sidebar_login", use_container_width=True):
+                # For now, just set logged in state (real auth would redirect to OAuth)
                 st.session_state.user_logged_in = True
-                st.session_state.user_name = "Demo User"
-                st.session_state.user_email = "demo@example.com"
+                st.session_state.user_name = "User"
+                st.session_state.user_email = ""
                 st.session_state.show_auth_dropdown = False
+                st.info("Note: This is a demo login. Real authentication will redirect to Google/OAuth.")
                 st.rerun()
-            if st.button("📝 Sign up", key="fixed_signup", use_container_width=True):
+            if st.button("📝 Sign up", key="sidebar_signup", use_container_width=True):
                 st.info("Sign up feature coming soon!")
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
-            if st.button("⚙️ Settings", key="fixed_settings_guest", use_container_width=True):
+            if st.button("⚙️ Settings", key="sidebar_settings_guest", use_container_width=True):
                 st.session_state.show_settings = True
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
-            if st.button("❓ Help", key="fixed_help_guest", use_container_width=True):
+            if st.button("❓ Help", key="sidebar_help_guest", use_container_width=True):
                 st.info("Help center coming soon!")
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
