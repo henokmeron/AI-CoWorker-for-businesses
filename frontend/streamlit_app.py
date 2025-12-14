@@ -41,36 +41,38 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Fixed bottom-left avatar button */
-    .auth-avatar-container {
+    /* Fixed bottom-left avatar button - positioned outside Streamlit's main content */
+    .stApp > div:first-child {
+        position: relative;
+    }
+    .auth-avatar-fixed {
         position: fixed !important;
         left: 16px !important;
         bottom: 16px !important;
-        z-index: 9999 !important;
+        z-index: 999999 !important;
+        width: 40px !important;
+        height: 40px !important;
+        border-radius: 50% !important;
+        background: #343541 !important;
+        border: 2px solid #565869 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        cursor: pointer !important;
+        color: white !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        transition: all 0.2s !important;
+        user-select: none !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
     }
-    .auth-avatar-button {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: #343541;
-        border: 2px solid #565869;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        color: white;
-        font-weight: 600;
-        font-size: 14px;
-        transition: all 0.2s;
-        user-select: none;
+    .auth-avatar-fixed:hover {
+        background: #40414f !important;
+        border-color: #8e8ea0 !important;
     }
-    .auth-avatar-button:hover {
-        background: #40414f;
-        border-color: #8e8ea0;
-    }
-    .auth-avatar-button.logged-in {
-        background: #10a37f;
-        border-color: #10a37f;
+    .auth-avatar-fixed.logged-in {
+        background: #10a37f !important;
+        border-color: #10a37f !important;
     }
     
     /* Dropdown menu */
@@ -902,59 +904,83 @@ else:
         st.rerun()
 
 
-# Avatar in sidebar bottom (not in main content)
-with st.sidebar:
-    st.markdown("---")
-    initials = get_user_initials()
-    logged_in_class = "logged-in" if st.session_state.user_logged_in else ""
+# Fixed bottom-left avatar - render at the very end using HTML injection
+initials = get_user_initials()
+logged_in_class = "logged-in" if st.session_state.user_logged_in else ""
+
+# Inject fixed avatar using JavaScript after page load
+st.markdown(f"""
+<script>
+(function() {{
+    // Remove any existing avatar
+    const existing = document.getElementById('fixed-avatar-element');
+    if (existing) existing.remove();
     
-    # Avatar button
-    if st.button(f"{initials}", key="sidebar_avatar_btn", help="Account menu", use_container_width=True):
-        st.session_state.show_auth_dropdown = not st.session_state.show_auth_dropdown
-        st.rerun()
+    // Create avatar element
+    const avatar = document.createElement('div');
+    avatar.id = 'fixed-avatar-element';
+    avatar.className = 'auth-avatar-fixed {logged_in_class}';
+    avatar.innerHTML = '{initials}';
+    avatar.style.cssText = 'position: fixed !important; left: 16px !important; bottom: 16px !important; z-index: 999999 !important; width: 40px !important; height: 40px !important; border-radius: 50% !important; background: {"#10a37f" if st.session_state.user_logged_in else "#343541"} !important; border: 2px solid {"#10a37f" if st.session_state.user_logged_in else "#565869"} !important; display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer !important; color: white !important; font-weight: 600 !important; font-size: 14px !important; box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;';
     
-    # Show dropdown menu in sidebar when clicked
-    if st.session_state.show_auth_dropdown:
+    avatar.addEventListener('click', function() {{
+        // Trigger Streamlit button click
+        const btn = window.parent.document.querySelector('[data-testid="baseButton-secondary"][aria-label*="avatar"]');
+        if (btn) btn.click();
+    }});
+    
+    document.body.appendChild(avatar);
+}})();
+</script>
+""", unsafe_allow_html=True)
+
+# Hidden button to handle avatar click
+if st.button("", key="fixed_avatar_click_btn", help="", use_container_width=False):
+    st.session_state.show_auth_dropdown = not st.session_state.show_auth_dropdown
+    st.rerun()
+
+# Show dropdown in sidebar when avatar is clicked
+if st.session_state.show_auth_dropdown:
+    with st.sidebar:
         st.markdown("---")
         st.markdown("### Account")
         if st.session_state.user_logged_in:
             st.markdown(f"**{st.session_state.user_name or 'User'}**")
-            if st.button("⚙️ Settings", key="sidebar_settings", use_container_width=True):
+            if st.button("⚙️ Settings", key="avatar_settings", use_container_width=True):
                 st.session_state.show_settings = True
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
-            if st.button("⬆️ Upgrade", key="sidebar_upgrade", use_container_width=True):
+            if st.button("⬆️ Upgrade", key="avatar_upgrade", use_container_width=True):
                 st.info("Upgrade feature coming soon!")
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
-            if st.button("❓ Help", key="sidebar_help", use_container_width=True):
+            if st.button("❓ Help", key="avatar_help", use_container_width=True):
                 st.info("Help center coming soon!")
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
-            if st.button("🚪 Log out", key="sidebar_logout", use_container_width=True):
+            if st.button("🚪 Log out", key="avatar_logout", use_container_width=True):
                 st.session_state.user_logged_in = False
                 st.session_state.user_name = None
                 st.session_state.user_email = None
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
         else:
-            if st.button("🔐 Login", key="sidebar_login", use_container_width=True):
-                # For now, just set logged in state (real auth would redirect to OAuth)
+            if st.button("🔐 Login", key="avatar_login", use_container_width=True):
                 st.session_state.user_logged_in = True
                 st.session_state.user_name = "User"
                 st.session_state.user_email = ""
                 st.session_state.show_auth_dropdown = False
                 st.info("Note: This is a demo login. Real authentication will redirect to Google/OAuth.")
                 st.rerun()
-            if st.button("📝 Sign up", key="sidebar_signup", use_container_width=True):
+            if st.button("📝 Sign up", key="avatar_signup", use_container_width=True):
                 st.info("Sign up feature coming soon!")
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
-            if st.button("⚙️ Settings", key="sidebar_settings_guest", use_container_width=True):
+            if st.button("⚙️ Settings", key="avatar_settings_guest", use_container_width=True):
                 st.session_state.show_settings = True
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
-            if st.button("❓ Help", key="sidebar_help_guest", use_container_width=True):
+            if st.button("❓ Help", key="avatar_help_guest", use_container_width=True):
                 st.info("Help center coming soon!")
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
