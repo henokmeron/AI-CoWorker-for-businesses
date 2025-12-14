@@ -30,6 +30,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = Field(None, description="Conversation ID to save messages to")
     max_sources: int = Field(5, description="Maximum number of source citations")
     stream: bool = Field(False, description="Enable streaming response")
+    reply_as_me: bool = Field(False, description="Reply as user vs categorize only")
 
 
 class ChatResponse(BaseModel):

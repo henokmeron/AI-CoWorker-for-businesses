@@ -28,7 +28,7 @@ class Conversation(BaseModel):
 
 class ConversationCreate(BaseModel):
     """Request to create a conversation."""
-    business_id: str
+    business_id: Optional[str] = None
     title: Optional[str] = None
 
 

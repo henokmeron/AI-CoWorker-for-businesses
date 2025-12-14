@@ -46,7 +46,8 @@ async def chat(
             business_id=business_id,
             query=request.query,
             conversation_history=request.conversation_history or [],
-            max_sources=request.max_sources
+            max_sources=request.max_sources,
+            reply_as_me=request.reply_as_me
         )
         
         logger.info(f"Query completed successfully. Response length: {len(result.get('answer', ''))}")

@@ -131,8 +131,11 @@ class ConversationService:
             with open(self.storage_path, 'w') as f:
                 json.dump([], f)
     
-    def create_conversation(self, business_id: str, title: Optional[str] = None) -> Conversation:
+    def create_conversation(self, business_id: Optional[str] = None, title: Optional[str] = None) -> Conversation:
         """Create a new conversation."""
+        # Use default business_id if not provided
+        if business_id is None:
+            business_id = settings.DEFAULT_BUSINESS_ID
         conv_id = f"conv_{business_id}_{int(datetime.utcnow().timestamp())}"
         title = title or f"Chat {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
         
@@ -248,26 +251,39 @@ class ConversationService:
         else:
             return self._get_json_conversation(conversation_id)
     
-    def list_conversations(self, business_id: str, archived: Optional[bool] = None) -> List[Conversation]:
-        """List conversations for a business."""
+    def list_conversations(self, business_id: Optional[str] = None, archived: Optional[bool] = None) -> List[Conversation]:
+        """List conversations for a business (or all conversations if business_id is None)."""
         if self.use_database and self.RealDictCursor:
             conn = self._get_connection()
             if not conn:
                 return self._list_json_conversations(business_id, archived)
             try:
                 with conn.cursor(cursor_factory=self.RealDictCursor) as cur:
-                    if archived is not None:
-                        cur.execute("""
-                            SELECT * FROM conversations
-                            WHERE business_id = %s AND archived = %s
-                            ORDER BY updated_at DESC
-                        """, (business_id, archived))
+                    if business_id is not None:
+                        if archived is not None:
+                            cur.execute("""
+                                SELECT * FROM conversations
+                                WHERE business_id = %s AND archived = %s
+                                ORDER BY updated_at DESC
+                            """, (business_id, archived))
+                        else:
+                            cur.execute("""
+                                SELECT * FROM conversations
+                                WHERE business_id = %s
+                                ORDER BY updated_at DESC
+                            """, (business_id,))
                     else:
-                        cur.execute("""
-                            SELECT * FROM conversations
-                            WHERE business_id = %s
-                            ORDER BY updated_at DESC
-                        """, (business_id,))
+                        if archived is not None:
+                            cur.execute("""
+                                SELECT * FROM conversations
+                                WHERE archived = %s
+                                ORDER BY updated_at DESC
+                            """, (archived,))
+                        else:
+                            cur.execute("""
+                                SELECT * FROM conversations
+                                ORDER BY updated_at DESC
+                            """)
                     
                     rows = cur.fetchall()
                     conversations = []
@@ -440,14 +456,18 @@ class ConversationService:
                 return Conversation(**conv_data)
         return None
     
-    def _list_json_conversations(self, business_id: str, archived: Optional[bool] = None) -> List[Conversation]:
+    def _list_json_conversations(self, business_id: Optional[str] = None, archived: Optional[bool] = None) -> List[Conversation]:
         """List conversations from JSON storage."""
         conversations = self._load_all_json_conversations()
         result = []
         for conv_data in conversations:
-            if conv_data['business_id'] == business_id:
-                if archived is None or conv_data.get('archived', False) == archived:
-                    result.append(Conversation(**conv_data))
+            # Filter by business_id if provided
+            if business_id is not None and conv_data['business_id'] != business_id:
+                continue
+            # Filter by archived status if provided
+            if archived is not None and conv_data.get('archived', False) != archived:
+                continue
+            result.append(Conversation(**conv_data))
         return sorted(result, key=lambda x: x.updated_at, reverse=True)
     
     def _archive_json_conversation(self, conversation_id: str):

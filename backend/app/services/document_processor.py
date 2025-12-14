@@ -15,6 +15,14 @@ try:
 except ImportError:
     UnstructuredFileHandler = None
     UNSTRUCTURED_HANDLER_AVAILABLE = False
+
+# Import fallback handlers
+try:
+    from .file_handlers.pdf_fallback_handler import PDFFallbackHandler
+    PDF_FALLBACK_AVAILABLE = True
+except ImportError:
+    PDFFallbackHandler = None
+    PDF_FALLBACK_AVAILABLE = False
 from ..core.config import settings
 from ..utils.file_utils import get_file_extension, ensure_directory
 
@@ -90,11 +98,23 @@ class DocumentProcessor:
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
         
+        # Register fallback handlers if unstructured is not available
+        if len(self.handlers) == 0 or not UNSTRUCTURED_HANDLER_AVAILABLE:
+            logger.warning("⚠️ Unstructured handler not available, registering fallback handlers...")
+            try:
+                if PDF_FALLBACK_AVAILABLE and PDFFallbackHandler:
+                    pdf_handler = PDFFallbackHandler()
+                    self.handlers.append(pdf_handler)
+                    logger.info(f"✅ Registered PDF fallback handler (PyPDF2)")
+            except Exception as e:
+                logger.warning(f"Could not register PDF fallback handler: {e}")
+        
         # Log final handler count
         logger.info(f"📊 Total handlers registered: {len(self.handlers)}")
         if len(self.handlers) == 0:
             logger.error("⚠️⚠️⚠️ CRITICAL: NO FILE HANDLERS REGISTERED! File uploads will fail!")
             logger.error("Check the error messages above to diagnose the issue")
+            logger.error("Install dependencies: pip install unstructured[all-docs] OR pip install PyPDF2")
         else:
             logger.info(f"✅ Handler registration complete! {len(self.handlers)} handler(s) ready")
         
@@ -169,31 +189,31 @@ class DocumentProcessor:
         handler = self.get_handler(file_path)
         if not handler:
             supported = self.get_supported_types()
-            if not supported:
-                # If no handlers registered, try to process anyway (fallback)
-                logger.warning(f"No handlers registered, attempting to process {file_type} anyway")
-                # Try to use unstructured handler directly
+            # Try fallback handlers for specific file types
+            if file_type.lower() == 'pdf':
+                logger.warning(f"No PDF handler found, trying fallback...")
                 try:
-                    from .file_handlers.unstructured_handler import UnstructuredFileHandler
-                    handler = UnstructuredFileHandler()
-                    if handler.can_handle(file_path, file_type):
-                        logger.info(f"Using fallback Unstructured handler for {file_type}")
-                    else:
-                        raise ValueError(
-                            f"Unsupported file type: {file_type}. "
-                            f"Supported types: {', '.join(supported) if supported else 'None registered'}"
-                        )
+                    if PDF_FALLBACK_AVAILABLE and PDFFallbackHandler:
+                        handler = PDFFallbackHandler()
+                        if handler.can_handle(file_path, file_type):
+                            logger.info(f"Using PDF fallback handler (PyPDF2) for {file_type}")
+                        else:
+                            handler = None
                 except Exception as e:
-                    logger.error(f"Fallback handler failed: {e}")
+                    logger.error(f"PDF fallback handler failed: {e}")
+                    handler = None
+            
+            if not handler:
+                if not supported:
                     raise ValueError(
                         f"Unsupported file type: {file_type}. "
-                        f"Supported types: {', '.join(supported) if supported else 'None registered'}"
+                        f"No handlers registered. Install dependencies: pip install unstructured[all-docs] OR pip install PyPDF2"
                     )
-            else:
-                raise ValueError(
-                    f"Unsupported file type: {file_type}. "
-                    f"Supported types: {', '.join(supported)}"
-                )
+                else:
+                    raise ValueError(
+                        f"Unsupported file type: {file_type}. "
+                        f"Supported types: {', '.join(supported)}"
+                    )
         
         logger.info(f"Processing {file_path} with {handler.__class__.__name__}")
         

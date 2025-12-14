@@ -33,11 +33,11 @@ async def create_conversation(
 
 @router.get("", response_model=List[Conversation])
 async def list_conversations(
-    business_id: str,
+    business_id: Optional[str] = None,
     archived: Optional[str] = None,  # Accept string to handle "none", "true", "false"
     api_key: str = Depends(verify_api_key)
 ):
-    """List conversations for a business."""
+    """List conversations for a business (or all conversations if business_id not provided)."""
     try:
         # Convert string to bool if needed
         archived_bool = None

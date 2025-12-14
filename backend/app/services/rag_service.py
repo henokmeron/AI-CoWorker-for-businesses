@@ -96,7 +96,8 @@ class RAGService:
         business_id: str,
         query: str,
         conversation_history: List[ChatMessage] = None,
-        max_sources: int = 5
+        max_sources: int = 5,
+        reply_as_me: bool = False
     ) -> Dict[str, Any]:
         """
         Answer a query using RAG.
@@ -134,7 +135,7 @@ class RAGService:
                 # Continue without documents - can still answer general questions
             
             # 2. Build prompt with or without context
-            messages = self._build_messages(query, context, conversation_history, has_documents=len(retrieved_docs) > 0)
+            messages = self._build_messages(query, context, conversation_history, has_documents=len(retrieved_docs) > 0, reply_as_me=reply_as_me)
             
             # 3. Generate response with LLM (always call OpenAI, even without documents)
             logger.info(f"Generating response with LLM (provider: {self.provider}, model: {self.model})")
@@ -208,7 +209,8 @@ class RAGService:
         query: str,
         context: str,
         conversation_history: Optional[List[ChatMessage]] = None,
-        has_documents: bool = False
+        has_documents: bool = False,
+        reply_as_me: bool = False
     ) -> List:
         """
         Build message list for LLM.
@@ -222,19 +224,35 @@ class RAGService:
         Returns:
             List of messages for LLM
         """
-        # System prompt adapts based on whether we have documents
-        if has_documents and context:
-            system_prompt = """You are a helpful AI assistant that answers questions based on provided documents.
+        # System prompt adapts based on whether we have documents and reply mode
+        if reply_as_me:
+            # Reply as the user (personalized responses)
+            if has_documents and context:
+                system_prompt = """You are helping the user craft personalized responses based on provided documents.
 
 When answering:
+- Write responses as if the user is writing them
+- Use information from the provided documents when available
+- Maintain a natural, personal tone
+- Cite sources when referencing documents
+- Be concise and accurate"""
+            else:
+                system_prompt = """You are helping the user craft personalized responses. Write as if the user is writing, maintaining a natural and personal tone."""
+        else:
+            # Categorize only mode (default)
+            if has_documents and context:
+                system_prompt = """You are a helpful AI assistant that categorizes and analyzes questions based on provided documents.
+
+When answering:
+- Categorize the question and provide analysis
 - Use information from the provided documents when available
 - Cite sources when referencing documents (e.g., "According to Source 1...")
-- If the question is not related to the documents, answer based on your general knowledge
+- Focus on categorization and analysis rather than direct answers
 - Be concise and accurate"""
-        else:
-            from datetime import datetime
-            current_date = datetime.now().strftime("%B %d, %Y")
-            system_prompt = f"""You are a helpful AI assistant powered by GPT-4o. Answer questions clearly and accurately based on your knowledge as of {current_date}.
+            else:
+                from datetime import datetime
+                current_date = datetime.now().strftime("%B %d, %Y")
+                system_prompt = f"""You are a helpful AI assistant powered by GPT-4o. Answer questions clearly and accurately based on your knowledge as of {current_date}.
 Be helpful, concise, and informative. When providing information, use current knowledge and avoid referencing outdated dates like "as of 2023" unless specifically asked about historical events. Always use the current date ({current_date}) as your knowledge cutoff."""
 
         messages = [SystemMessage(content=system_prompt)]
