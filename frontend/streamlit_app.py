@@ -756,20 +756,10 @@ with st.sidebar:
     # Avatar at bottom-left of sidebar (like ChatGPT) - FIXED AT BOTTOM
     st.markdown("---")
     initials = get_user_initials()
-    logged_in_class = "logged-in" if st.session_state.user_logged_in else ""
     
-    # Use a small button styled as avatar
-    avatar_style = "background: #10a37f; border: 2px solid #10a37f;" if st.session_state.user_logged_in else "background: #343541; border: 2px solid #565869;"
-    st.markdown(f"""
-    <div style="display: flex; justify-content: center; padding: 8px 0;">
-        <div style="width: 32px; height: 32px; border-radius: 50%; {avatar_style} display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 12px;">
-            {initials}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Avatar button (invisible but clickable, covers the avatar area)
-    if st.button("", key="sidebar_avatar", help="Account menu", use_container_width=True):
+    # Avatar button - visible button with initials
+    button_type = "primary" if st.session_state.user_logged_in else "secondary"
+    if st.button(f"{initials}", key="sidebar_avatar", help="Account menu", use_container_width=True, type=button_type):
         st.session_state.show_auth_dropdown = not st.session_state.show_auth_dropdown
         st.rerun()
     
@@ -854,9 +844,17 @@ else:
                                 </div>
                                 """, unsafe_allow_html=True)
     
+    # "+" button to attach files - positioned above chat input, aligned left (ChatGPT style)
+    attach_col1, attach_col2 = st.columns([0.05, 0.95])
+    with attach_col1:
+        if st.button("➕", key="attach_file_btn", help="Attach file", use_container_width=True):
+            st.session_state.show_file_upload = not st.session_state.show_file_upload
+            st.rerun()
+    with attach_col2:
+        st.write("")  # Spacer
+    
     # File upload area - shown when "+" button is clicked, positioned above prompt (not in chat)
     if st.session_state.show_file_upload:
-        st.markdown("---")
         uploaded_file = st.file_uploader(
             "📎 Attach file",
             type=["pdf", "docx", "txt", "xlsx", "doc", "xls", "pptx", "csv"],
@@ -884,21 +882,8 @@ else:
             st.session_state.show_file_upload = False
             st.rerun()
     
-    # Prompt area with "+" button on the left (ChatGPT style)
-    # Use columns to position "+" button to the left of chat input
-    prompt_container = st.container()
-    with prompt_container:
-        col1, col2 = st.columns([0.06, 0.94])
-        
-        with col1:
-            # "+" button to attach files (positioned to the left of prompt)
-            if st.button("➕", key="attach_file_btn", help="Attach file", use_container_width=True):
-                st.session_state.show_file_upload = not st.session_state.show_file_upload
-                st.rerun()
-        
-        with col2:
-            # Chat input (positioned to the right of "+" button)
-            user_query = st.chat_input("Message...")
+    # Chat input (must be at root level, not in columns)
+    user_query = st.chat_input("Message...")
     
     # Handle chat input
     if user_query:
