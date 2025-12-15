@@ -55,6 +55,10 @@ if "show_auth_dropdown" not in st.session_state:
     st.session_state.show_auth_dropdown = False
 if "show_file_upload" not in st.session_state:
     st.session_state.show_file_upload = False
+# CRITICAL: Force hide file uploader on initial load
+if not st.session_state.get("_file_upload_initialized", False):
+    st.session_state.show_file_upload = False
+    st.session_state._file_upload_initialized = True
 if "gpt_dropdown_open" not in st.session_state:
     st.session_state.gpt_dropdown_open = {}
 
@@ -844,17 +848,19 @@ else:
                                 </div>
                                 """, unsafe_allow_html=True)
     
-    # "+" button to attach files - positioned above chat input, aligned left (ChatGPT style)
-    attach_col1, attach_col2 = st.columns([0.05, 0.95])
-    with attach_col1:
+    # "+" button to attach files - positioned above chat input, left-aligned (ChatGPT style)
+    # Make it clearly visible
+    col_left, col_right = st.columns([0.08, 0.92])
+    with col_left:
         if st.button("➕", key="attach_file_btn", help="Attach file", use_container_width=True):
             st.session_state.show_file_upload = not st.session_state.show_file_upload
             st.rerun()
-    with attach_col2:
-        st.write("")  # Spacer
+    with col_right:
+        st.empty()  # Empty space
     
-    # File upload area - shown when "+" button is clicked, positioned above prompt (not in chat)
-    if st.session_state.show_file_upload:
+    # File upload area - ONLY shown when "+" button is clicked, positioned above prompt (not in chat)
+    # CRITICAL: This must be hidden by default - only show if explicitly toggled
+    if st.session_state.get("show_file_upload", False):
         uploaded_file = st.file_uploader(
             "📎 Attach file",
             type=["pdf", "docx", "txt", "xlsx", "doc", "xls", "pptx", "csv"],
