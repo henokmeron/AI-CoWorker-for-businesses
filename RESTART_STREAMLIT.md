@@ -1,28 +1,42 @@
-# ⚠️ IMPORTANT: Restart Required
+# ⚠️ IMPORTANT: Restart Streamlit to See Changes
 
-## The frontend changes require a Streamlit restart to take effect!
+The UI changes have been applied to the code, but **Streamlit caches the UI state**. You MUST restart Streamlit to see the changes.
 
-### If running locally:
-1. **Stop the Streamlit app** (Ctrl+C in terminal)
-2. **Restart it**: `streamlit run frontend/streamlit_app.py`
-3. **Clear browser cache** (Ctrl+Shift+R or Cmd+Shift+R)
+## Steps to See the New UI:
 
-### If deployed on Streamlit Cloud:
-1. The changes are already pushed to GitHub
-2. Streamlit Cloud should auto-deploy
-3. If not, go to your Streamlit Cloud dashboard and click "Reboot app"
-4. Clear browser cache
+1. **Stop Streamlit** (if running):
+   - Press `Ctrl+C` in the terminal where Streamlit is running
+   - Wait for it to fully stop
 
-### Changes Made:
-- ✅ Fixed bottom-left avatar (truly fixed position)
-- ✅ Removed all buttons from chat area
-- ✅ Settings has "Back to Chat" button
-- ✅ Improved GPT error messages
-- ✅ Avatar dropdown shows in sidebar when clicked
+2. **Clear Streamlit Cache** (optional but recommended):
+   ```bash
+   # Delete the cache folder
+   rm -rf .streamlit/cache
+   # Or on Windows:
+   rmdir /s .streamlit\cache
+   ```
 
-### If still not working:
-1. Check browser console for errors (F12)
-2. Verify you're on the latest commit: `git log -1`
-3. Try incognito/private browsing mode
-4. Hard refresh: Ctrl+F5 (Windows) or Cmd+Shift+R (Mac)
+3. **Restart Streamlit**:
+   ```bash
+   streamlit run frontend/streamlit_app.py
+   ```
 
+4. **Hard Refresh Browser**:
+   - Windows: `Ctrl + Shift + R`
+   - Mac: `Cmd + Shift + R`
+
+## What Should Change:
+
+✅ **Avatar** - Should be at BOTTOM of sidebar (not top)  
+✅ **"+" Button** - Should appear ABOVE the chat input, on the LEFT side  
+✅ **File Uploader** - Should be HIDDEN by default (only shows when you click "+")  
+✅ **GPT Dropdowns** - Should work when you click "⋮" on each GPT  
+
+## If Still Not Working:
+
+1. Check that you're running `frontend/streamlit_app.py` (not a backup file)
+2. Verify the file was saved: `git log -1 frontend/streamlit_app.py`
+3. Try clearing browser cache completely
+4. Check browser console for errors (F12)
+
+The code is correct - Streamlit just needs a fresh restart to pick up the changes!
