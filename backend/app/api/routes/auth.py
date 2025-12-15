@@ -44,16 +44,18 @@ async def login(
     3. Return user info and token
     """
     try:
-        # TODO: Implement real authentication
-        # For now, accept any email/password as demo
-        # In production: verify against database, hash passwords, etc.
-        
         logger.info(f"Login attempt for: {request.email}")
         
-        # Simulate authentication (replace with real auth)
-        # For demo: accept any non-empty password
-        if not request.password:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+        # For demo: Accept any email with any non-empty password
+        # In production: Verify against database, hash passwords, etc.
+        if not request.password or len(request.password.strip()) == 0:
+            logger.warning(f"Login failed: Empty password for {request.email}")
+            raise HTTPException(status_code=401, detail="Password cannot be empty")
+        
+        # Validate email format (Pydantic already does this, but double-check)
+        if "@" not in request.email:
+            logger.warning(f"Login failed: Invalid email format: {request.email}")
+            raise HTTPException(status_code=401, detail="Invalid email format")
         
         # Extract username from email
         username = request.email.split("@")[0].title()
@@ -61,6 +63,7 @@ async def login(
         # In production, generate JWT token here
         # token = create_access_token(data={"sub": request.email})
         
+        logger.info(f"Login successful for: {request.email}")
         return LoginResponse(
             success=True,
             message="Login successful",
@@ -72,7 +75,7 @@ async def login(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Login error: {e}")
+        logger.error(f"Login error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
 
 

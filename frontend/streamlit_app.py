@@ -333,7 +333,8 @@ def get_user_initials():
             return (parts[0][0] + parts[-1][0]).upper()
         elif len(parts) == 1:
             return parts[0][:2].upper()
-    return "?"
+    # Show user icon when not logged in
+    return "👤"
 
 
 def handle_login():
@@ -361,13 +362,23 @@ def handle_login():
                         else:
                             st.error(result.get("message", "Login failed"))
                     else:
+                        # Login failed - show specific error
                         error_msg = "Login failed. Please check your credentials."
                         if response:
                             try:
                                 error_data = response.json()
-                                error_msg = error_data.get("detail", error_msg)
+                                if "detail" in error_data:
+                                    error_msg = error_data["detail"]
+                                elif "message" in error_data:
+                                    error_msg = error_data["message"]
                             except:
-                                pass
+                                # If response is not JSON, check status code
+                                if response.status_code == 401:
+                                    error_msg = "Invalid email or password."
+                                elif response.status_code == 403:
+                                    error_msg = "Access denied. Please check your credentials."
+                                elif response.status_code >= 500:
+                                    error_msg = "Server error. Please try again later."
                         st.error(error_msg)
                 else:
                     st.error("Please enter email and password")
@@ -379,22 +390,16 @@ def handle_login():
     st.markdown("---")
     st.markdown("**Or sign in with:**")
     if st.button("🔵 Google", key="google_login", use_container_width=True):
-        # Call Google OAuth endpoint
-        response = api_request("GET", "/api/v1/auth/google")
-        if response and response.status_code == 200:
-            result = response.json()
-            st.info(f"{result.get('message', 'Google OAuth coming soon')}")
-        else:
-            st.info("Google OAuth integration coming soon. For now, use email/password above.")
+        # Redirect to Google OAuth (simplified - in production would use proper OAuth flow)
+        google_oauth_url = "https://accounts.google.com/o/oauth2/v2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&response_type=code&scope=email profile"
+        st.markdown(f'<a href="{google_oauth_url}" target="_blank">Click here to sign in with Google</a>', unsafe_allow_html=True)
+        st.info("⚠️ Google OAuth requires backend configuration. For now, please use email/password above.")
     
     if st.button("🔷 Microsoft", key="microsoft_login", use_container_width=True):
-        # Call Microsoft OAuth endpoint
-        response = api_request("GET", "/api/v1/auth/microsoft")
-        if response and response.status_code == 200:
-            result = response.json()
-            st.info(f"{result.get('message', 'Microsoft OAuth coming soon')}")
-        else:
-            st.info("Microsoft OAuth integration coming soon. For now, use email/password above.")
+        # Redirect to Microsoft OAuth (simplified)
+        microsoft_oauth_url = "https://login.microsoftonline.com/oauth2/v2.0/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&response_type=code&scope=openid email profile"
+        st.markdown(f'<a href="{microsoft_oauth_url}" target="_blank">Click here to sign in with Microsoft</a>', unsafe_allow_html=True)
+        st.info("⚠️ Microsoft OAuth requires backend configuration. For now, please use email/password above.")
 
 
 def render_settings():
@@ -848,16 +853,6 @@ else:
                                 </div>
                                 """, unsafe_allow_html=True)
     
-    # "+" button to attach files - positioned above chat input, left-aligned (ChatGPT style)
-    # Make it clearly visible
-    col_left, col_right = st.columns([0.08, 0.92])
-    with col_left:
-        if st.button("➕", key="attach_file_btn", help="Attach file", use_container_width=True):
-            st.session_state.show_file_upload = not st.session_state.show_file_upload
-            st.rerun()
-    with col_right:
-        st.empty()  # Empty space
-    
     # File upload area - ONLY shown when "+" button is clicked, positioned above prompt (not in chat)
     # CRITICAL: This must be hidden by default - only show if explicitly toggled
     if st.session_state.get("show_file_upload", False):
@@ -887,6 +882,16 @@ else:
         if st.button("✕ Close", key="close_file_upload"):
             st.session_state.show_file_upload = False
             st.rerun()
+    
+    # "+" button positioned right above chat input, left-aligned (ChatGPT style)
+    # Create a row with the "+" button on the left
+    attach_row = st.columns([0.06, 0.94])
+    with attach_row[0]:
+        if st.button("➕", key="attach_file_btn", help="Attach file", use_container_width=True):
+            st.session_state.show_file_upload = not st.session_state.show_file_upload
+            st.rerun()
+    with attach_row[1]:
+        st.empty()  # Empty space to align with chat input
     
     # Chat input (must be at root level, not in columns)
     user_query = st.chat_input("Message...")
