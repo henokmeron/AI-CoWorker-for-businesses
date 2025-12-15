@@ -1,6 +1,5 @@
 """
-Streamlit frontend for AI Assistant Coworker - ChatGPT-style interface.
-Properly structured like ChatGPT with sidebar avatar, prompt-area file attachment, and dropdown menus.
+Streamlit frontend for AI Assistant Coworker - ChatGPT-style interface with enhanced features.
 """
 import streamlit as st
 import requests
@@ -26,45 +25,91 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize session state
+# Initialize session state for auth
 if "user_logged_in" not in st.session_state:
     st.session_state.user_logged_in = False
 if "user_name" not in st.session_state:
     st.session_state.user_name = None
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
-if "selected_gpt" not in st.session_state:
-    st.session_state.selected_gpt = None
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "current_conversation_id" not in st.session_state:
-    st.session_state.current_conversation_id = None
-if "conversations" not in st.session_state:
-    st.session_state.conversations = []
-if "gpts" not in st.session_state:
-    st.session_state.gpts = []
-if "show_settings" not in st.session_state:
-    st.session_state.show_settings = False
-if "show_edit_gpt" not in st.session_state:
-    st.session_state.show_edit_gpt = False
-if "editing_gpt_id" not in st.session_state:
-    st.session_state.editing_gpt_id = None
-if "reply_as_me" not in st.session_state:
-    st.session_state.reply_as_me = False
-if "show_auth_dropdown" not in st.session_state:
-    st.session_state.show_auth_dropdown = False
-if "show_file_upload" not in st.session_state:
-    st.session_state.show_file_upload = False
-if "gpt_dropdown_open" not in st.session_state:
-    st.session_state.gpt_dropdown_open = {}
 
-# Custom CSS - ChatGPT-style
+# Custom CSS - ChatGPT-style with Auth UI
 st.markdown("""
 <style>
     /* Hide Streamlit default elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    
+    /* Fixed bottom-left avatar button - positioned outside Streamlit's main content */
+    .stApp > div:first-child {
+        position: relative;
+    }
+    .auth-avatar-fixed {
+        position: fixed !important;
+        left: 16px !important;
+        bottom: 16px !important;
+        z-index: 999999 !important;
+        width: 40px !important;
+        height: 40px !important;
+        border-radius: 50% !important;
+        background: #343541 !important;
+        border: 2px solid #565869 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        cursor: pointer !important;
+        color: white !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        transition: all 0.2s !important;
+        user-select: none !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+    }
+    .auth-avatar-fixed:hover {
+        background: #40414f !important;
+        border-color: #8e8ea0 !important;
+    }
+    .auth-avatar-fixed.logged-in {
+        background: #10a37f !important;
+        border-color: #10a37f !important;
+    }
+    
+    /* Dropdown menu */
+    .auth-dropdown {
+        position: absolute;
+        bottom: 50px;
+        left: 0;
+        background: #202123;
+        border: 1px solid #565869;
+        border-radius: 8px;
+        min-width: 200px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        display: none;
+        z-index: 10000;
+    }
+    .auth-dropdown.show {
+        display: block;
+    }
+    .auth-dropdown-item {
+        padding: 12px 16px;
+        color: #ececf1;
+        cursor: pointer;
+        border-bottom: 1px solid #343541;
+        font-size: 14px;
+    }
+    .auth-dropdown-item:hover {
+        background: #343541;
+    }
+    .auth-dropdown-item:first-child {
+        border-top-left-radius: 8px;
+        border-top-right-radius: 8px;
+    }
+    .auth-dropdown-item:last-child {
+        border-bottom: none;
+        border-bottom-left-radius: 8px;
+        border-bottom-right-radius: 8px;
+    }
     
     /* Sidebar styling */
     .sidebar-section {
@@ -80,51 +125,36 @@ st.markdown("""
         padding: 0 0.5rem;
     }
     
-    /* GPT dropdown menu */
-    .gpt-dropdown {
-        position: relative;
-        display: inline-block;
+    /* GPT header with kebab menu */
+    .gpt-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.5rem;
+        margin-bottom: 0.25rem;
     }
-    .gpt-dropdown-content {
-        display: none;
-        position: absolute;
-        background-color: #202123;
-        min-width: 200px;
-        box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
-        z-index: 1;
-        border: 1px solid #343541;
-        border-radius: 8px;
-        margin-top: 4px;
-    }
-    .gpt-dropdown-item {
-        color: #ececf1;
-        padding: 12px 16px;
-        text-decoration: none;
-        display: block;
+    .gpt-kebab {
         cursor: pointer;
-        border-bottom: 1px solid #343541;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 18px;
+        color: #8e8ea0;
     }
-    .gpt-dropdown-item:hover {
-        background-color: #343541;
-    }
-    .gpt-dropdown-item:last-child {
-        border-bottom: none;
+    .gpt-kebab:hover {
+        background: #343541;
+        color: #ececf1;
     }
     
-    /* File attachment button next to prompt */
-    .file-attach-btn {
-        position: absolute;
-        left: 8px;
-        bottom: 8px;
-        z-index: 10;
-        background: transparent;
-        border: none;
+    /* Chat item styling */
+    .chat-item {
+        padding: 0.5rem;
+        border-radius: 0.25rem;
+        margin: 0.25rem 0;
         cursor: pointer;
-        padding: 8px;
-        border-radius: 4px;
+        word-wrap: break-word;
     }
-    .file-attach-btn:hover {
-        background: rgba(255,255,255,0.1);
+    .chat-item:hover {
+        background-color: #343541;
     }
     
     /* Main content */
@@ -144,28 +174,38 @@ st.markdown("""
         border-left: 3px solid #10a37f;
     }
     
-    /* Avatar button in sidebar */
-    .sidebar-avatar {
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
-        background: #343541;
-        border: 2px solid #565869;
+    /* Settings tabs */
+    .settings-tabs {
         display: flex;
-        align-items: center;
-        justify-content: center;
+        border-bottom: 1px solid #343541;
+        margin-bottom: 1rem;
+    }
+    .settings-tab {
+        padding: 12px 24px;
         cursor: pointer;
-        color: white;
-        font-weight: 600;
-        font-size: 12px;
-        margin: 8px auto;
+        color: #8e8ea0;
+        border-bottom: 2px solid transparent;
     }
-    .sidebar-avatar:hover {
-        background: #40414f;
+    .settings-tab.active {
+        color: #10a37f;
+        border-bottom-color: #10a37f;
     }
-    .sidebar-avatar.logged-in {
-        background: #10a37f;
-        border-color: #10a37f;
+    .settings-tab:hover {
+        color: #ececf1;
+    }
+    
+    /* Edit GPT panel */
+    .edit-gpt-panel {
+        position: fixed;
+        right: 0;
+        top: 0;
+        width: 400px;
+        height: 100vh;
+        background: #202123;
+        border-left: 1px solid #343541;
+        z-index: 1000;
+        overflow-y: auto;
+        padding: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -320,6 +360,31 @@ def delete_conversation(conversation_id: str) -> bool:
     return response and response.status_code == 200
 
 
+# Initialize session state
+if "selected_gpt" not in st.session_state:
+    st.session_state.selected_gpt = None
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "current_conversation_id" not in st.session_state:
+    st.session_state.current_conversation_id = None
+if "conversations" not in st.session_state:
+    st.session_state.conversations = []
+if "gpts" not in st.session_state:
+    st.session_state.gpts = []
+if "show_settings" not in st.session_state:
+    st.session_state.show_settings = False
+if "settings_tab" not in st.session_state:
+    st.session_state.settings_tab = "General"
+if "show_edit_gpt" not in st.session_state:
+    st.session_state.show_edit_gpt = False
+if "editing_gpt_id" not in st.session_state:
+    st.session_state.editing_gpt_id = None
+if "reply_as_me" not in st.session_state:
+    st.session_state.reply_as_me = False
+if "show_auth_dropdown" not in st.session_state:
+    st.session_state.show_auth_dropdown = False
+
+
 def get_user_initials():
     """Get user initials for avatar."""
     if st.session_state.user_logged_in and st.session_state.user_name:
@@ -332,65 +397,6 @@ def get_user_initials():
     return "?"
 
 
-def handle_login():
-    """Handle login - redirect to OAuth or show login form."""
-    with st.form("login_form"):
-        st.markdown("### Login")
-        email = st.text_input("Email", key="login_email")
-        password = st.text_input("Password", type="password", key="login_password")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.form_submit_button("Login", use_container_width=True):
-                if email and password:
-                    # Call real auth endpoint
-                    data = {"email": email, "password": password}
-                    response = api_request("POST", "/api/v1/auth/login", json=data)
-                    if response and response.status_code == 200:
-                        result = response.json()
-                        if result.get("success"):
-                            st.session_state.user_logged_in = True
-                            st.session_state.user_name = result.get("user_name", email.split("@")[0].title())
-                            st.session_state.user_email = result.get("user_email", email)
-                            st.session_state.show_auth_dropdown = False
-                            st.success("Logged in!")
-                            st.rerun()
-                        else:
-                            st.error(result.get("message", "Login failed"))
-                    else:
-                        error_msg = "Login failed. Please check your credentials."
-                        if response:
-                            try:
-                                error_data = response.json()
-                                error_msg = error_data.get("detail", error_msg)
-                            except:
-                                pass
-                        st.error(error_msg)
-                else:
-                    st.error("Please enter email and password")
-        with col2:
-            if st.form_submit_button("Cancel", use_container_width=True):
-                st.session_state.show_auth_dropdown = False
-                st.rerun()
-    
-    st.markdown("---")
-    st.markdown("**Or sign in with:**")
-    if st.button("🔵 Google", key="google_login", use_container_width=True):
-        # Call Google OAuth endpoint
-        response = api_request("GET", "/api/v1/auth/google")
-        if response and response.status_code == 200:
-            result = response.json()
-            st.info(f"{result.get('message', 'Google OAuth coming soon')}")
-        else:
-            st.info("Google OAuth integration coming soon. For now, use email/password above.")
-    
-    if st.button("🔷 Microsoft", key="microsoft_login", use_container_width=True):
-        # Call Microsoft OAuth endpoint
-        response = api_request("GET", "/api/v1/auth/microsoft")
-        if response and response.status_code == 200:
-            result = response.json()
-            st.info(f"{result.get('message', 'Microsoft OAuth coming soon')}")
-        else:
-            st.info("Microsoft OAuth integration coming soon. For now, use email/password above.")
 
 
 def render_settings():
@@ -410,6 +416,7 @@ def render_settings():
     # Settings tabs
     tabs = ["General", "Notifications", "Personalization", "App Connectors", "Data Control", "Security", "Account"]
     selected_tab = st.radio("", tabs, horizontal=True, key="settings_tabs_radio", label_visibility="collapsed")
+    st.session_state.settings_tab = selected_tab
     
     st.markdown("---")
     
@@ -583,66 +590,60 @@ with st.sidebar:
                     st.session_state.show_create_gpt = False
                     st.rerun()
     
-    # Load and display GPTs with dropdown menus
+    # Load and display GPTs
     try:
         gpts = get_businesses()
         st.session_state.gpts = gpts
         
         if gpts:
             for gpt in gpts:
-                gpt_id = gpt.get('id')
                 gpt_name = gpt.get('name', 'Untitled')
                 display_name = gpt_name[:30] + "..." if len(gpt_name) > 30 else gpt_name
-                is_selected = st.session_state.selected_gpt == gpt_id
+                is_selected = st.session_state.selected_gpt == gpt.get('id')
                 
-                # GPT row with button and dropdown
+                # GPT header with kebab menu
                 col1, col2 = st.columns([8, 1])
                 
                 with col1:
                     button_style = "primary" if is_selected else "secondary"
-                    if st.button(display_name, key=f"gpt_{gpt_id}", use_container_width=True, type=button_style):
-                        st.session_state.selected_gpt = gpt_id
+                    if st.button(display_name, key=f"gpt_{gpt.get('id')}", use_container_width=True, type=button_style):
+                        st.session_state.selected_gpt = gpt.get('id')
                         st.session_state.chat_history = []
                         st.session_state.current_conversation_id = None
                         st.rerun()
                 
                 with col2:
-                    # Dropdown trigger button (⋮)
-                    if st.button("⋮", key=f"gpt_dd_{gpt_id}", help="GPT options"):
-                        # Toggle dropdown for this GPT
-                        if gpt_id in st.session_state.gpt_dropdown_open:
-                            st.session_state.gpt_dropdown_open[gpt_id] = not st.session_state.gpt_dropdown_open[gpt_id]
-                        else:
-                            st.session_state.gpt_dropdown_open[gpt_id] = True
+                    if st.button("⋮", key=f"gpt_menu_{gpt.get('id')}", help="GPT options"):
+                        st.session_state[f"gpt_menu_{gpt.get('id')}"] = True
                         st.rerun()
                 
-                # Show dropdown menu if open
-                if st.session_state.gpt_dropdown_open.get(gpt_id, False):
-                    if st.button("💬 New chat", key=f"gpt_new_{gpt_id}", use_container_width=True):
-                        st.session_state.selected_gpt = gpt_id
+                # GPT menu
+                if st.session_state.get(f"gpt_menu_{gpt.get('id')}", False):
+                    if st.button("💬 New chat", key=f"gpt_new_chat_{gpt.get('id')}"):
+                        st.session_state.selected_gpt = gpt.get('id')
                         st.session_state.chat_history = []
                         st.session_state.current_conversation_id = None
-                        st.session_state.gpt_dropdown_open[gpt_id] = False
+                        st.session_state[f"gpt_menu_{gpt.get('id')}"] = False
                         st.rerun()
                     
-                    if st.button("ℹ️ About", key=f"gpt_about_{gpt_id}", use_container_width=True):
+                    if st.button("ℹ️ About", key=f"gpt_about_{gpt.get('id')}"):
                         st.info(f"**{gpt.get('name')}**\n\n{gpt.get('description', 'No description')}")
-                        st.session_state.gpt_dropdown_open[gpt_id] = False
+                        st.session_state[f"gpt_menu_{gpt.get('id')}"] = False
                         st.rerun()
                     
-                    if st.button("✏️ Edit GPT", key=f"gpt_edit_{gpt_id}", use_container_width=True):
-                        st.session_state.editing_gpt_id = gpt_id
+                    if st.button("✏️ Edit GPT", key=f"gpt_edit_{gpt.get('id')}"):
+                        st.session_state.editing_gpt_id = gpt.get('id')
                         st.session_state.show_edit_gpt = True
-                        st.session_state.gpt_dropdown_open[gpt_id] = False
+                        st.session_state[f"gpt_menu_{gpt.get('id')}"] = False
                         st.rerun()
                     
-                    if st.button("👁️ Hide", key=f"gpt_hide_{gpt_id}", use_container_width=True):
+                    if st.button("👁️ Hide", key=f"gpt_hide_{gpt.get('id')}"):
                         st.info("Hide feature coming soon!")
-                        st.session_state.gpt_dropdown_open[gpt_id] = False
+                        st.session_state[f"gpt_menu_{gpt.get('id')}"] = False
                         st.rerun()
                     
-                    if st.button("✕ Close", key=f"gpt_close_{gpt_id}", use_container_width=True):
-                        st.session_state.gpt_dropdown_open[gpt_id] = False
+                    if st.button("✕ Close", key=f"gpt_close_{gpt.get('id')}"):
+                        st.session_state[f"gpt_menu_{gpt.get('id')}"] = False
                         st.rerun()
         else:
             st.info("No GPTs yet. Create one to get started!")
@@ -747,59 +748,11 @@ with st.sidebar:
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Bottom of sidebar: Reply as me toggle and Avatar
+    # Bottom of sidebar: Reply as me toggle
     st.markdown("---")
     st.checkbox("Reply as me", value=st.session_state.reply_as_me, key="reply_as_me_toggle", 
                 help="Toggle between personalized replies and categorization mode")
     st.session_state.reply_as_me = st.session_state.get("reply_as_me_toggle", False)
-    
-    # Avatar at bottom-left of sidebar (like ChatGPT) - FIXED AT BOTTOM
-    st.markdown("---")
-    initials = get_user_initials()
-    logged_in_class = "logged-in" if st.session_state.user_logged_in else ""
-    
-    # Use a small button styled as avatar
-    avatar_style = "background: #10a37f; border: 2px solid #10a37f;" if st.session_state.user_logged_in else "background: #343541; border: 2px solid #565869;"
-    st.markdown(f"""
-    <div style="display: flex; justify-content: center; padding: 8px 0;">
-        <div style="width: 32px; height: 32px; border-radius: 50%; {avatar_style} display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 12px;">
-            {initials}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Avatar button (invisible but clickable, covers the avatar area)
-    if st.button("", key="sidebar_avatar", help="Account menu", use_container_width=True):
-        st.session_state.show_auth_dropdown = not st.session_state.show_auth_dropdown
-        st.rerun()
-    
-    # Show dropdown menu in sidebar when avatar is clicked
-    if st.session_state.show_auth_dropdown:
-        st.markdown("---")
-        st.markdown("### Account")
-        if st.session_state.user_logged_in:
-            st.markdown(f"**{st.session_state.user_name or 'User'}**")
-            if st.button("⚙️ Settings", key="avatar_settings", use_container_width=True):
-                st.session_state.show_settings = True
-                st.session_state.show_auth_dropdown = False
-                st.rerun()
-            if st.button("⬆️ Upgrade", key="avatar_upgrade", use_container_width=True):
-                st.info("Upgrade feature coming soon!")
-                st.session_state.show_auth_dropdown = False
-                st.rerun()
-            if st.button("❓ Help", key="avatar_help", use_container_width=True):
-                st.info("Help center coming soon!")
-                st.session_state.show_auth_dropdown = False
-                st.rerun()
-            if st.button("🚪 Log out", key="avatar_logout", use_container_width=True):
-                st.session_state.user_logged_in = False
-                st.session_state.user_name = None
-                st.session_state.user_email = None
-                st.session_state.show_auth_dropdown = False
-                st.rerun()
-        else:
-            # Show login form
-            handle_login()
 
 
 # Main content area
@@ -854,53 +807,54 @@ else:
                                 </div>
                                 """, unsafe_allow_html=True)
     
-    # File upload area - shown when "+" button is clicked, positioned above prompt (not in chat)
-    if st.session_state.show_file_upload:
-        st.markdown("---")
+    # File upload with drag zone support
+    if st.session_state.selected_gpt:
         uploaded_file = st.file_uploader(
-            "📎 Attach file",
+            "➕ Attach file (PDF, DOCX, TXT, XLSX)",
             type=["pdf", "docx", "txt", "xlsx", "doc", "xls", "pptx", "csv"],
-            key="prompt_file_uploader",
-            help="Supported: PDF, DOCX, TXT, XLSX"
+            key="gpt_file_uploader",
+            help="Upload a document to this GPT. Supported: PDF, DOCX, TXT, XLSX"
         )
         
         if uploaded_file:
-            business_id = st.session_state.selected_gpt or "temp_chat"
             with st.spinner(f"Processing {uploaded_file.name}..."):
-                result = upload_document(business_id, uploaded_file)
+                result = upload_document(st.session_state.selected_gpt, uploaded_file)
                 if result:
-                    st.success(f"✅ {uploaded_file.name} processed!")
+                    st.success(f"✅ {uploaded_file.name} processed! Ask questions about it.")
                     st.session_state.chat_history.append({
                         "role": "assistant",
                         "content": f"I've processed '{uploaded_file.name}'. You can now ask me questions about it!",
                         "sources": []
                     })
-                    st.session_state.show_file_upload = False
                     st.rerun()
                 else:
-                    st.error(f"❌ Failed to process {uploaded_file.name}")
+                    st.error(f"❌ Failed to process {uploaded_file.name}. Please check file format and try again.")
+    else:
+        uploaded_file = st.file_uploader(
+            "➕ Attach file (PDF, DOCX, TXT, XLSX)",
+            type=["pdf", "docx", "txt", "xlsx", "doc", "xls", "pptx", "csv"],
+            key="chat_file_uploader",
+            help="Attach a temporary file to this chat"
+        )
         
-        if st.button("✕ Close", key="close_file_upload"):
-            st.session_state.show_file_upload = False
-            st.rerun()
+        if uploaded_file:
+            temp_business_id = "temp_chat"
+            with st.spinner(f"Processing {uploaded_file.name}..."):
+                result = upload_document(temp_business_id, uploaded_file)
+                if result:
+                    st.success(f"✅ {uploaded_file.name} attached! Ask questions about it.")
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": f"I've attached '{uploaded_file.name}'. You can now ask me questions about it!",
+                        "sources": []
+                    })
+                    st.rerun()
+                else:
+                    st.error(f"❌ Failed to process {uploaded_file.name}. Please check file format and try again.")
     
-    # Prompt area with "+" button on the left (ChatGPT style)
-    # Use columns to position "+" button to the left of chat input
-    prompt_container = st.container()
-    with prompt_container:
-        col1, col2 = st.columns([0.06, 0.94])
-        
-        with col1:
-            # "+" button to attach files (positioned to the left of prompt)
-            if st.button("➕", key="attach_file_btn", help="Attach file", use_container_width=True):
-                st.session_state.show_file_upload = not st.session_state.show_file_upload
-                st.rerun()
-        
-        with col2:
-            # Chat input (positioned to the right of "+" button)
-            user_query = st.chat_input("Message...")
+    # Chat input
+    user_query = st.chat_input("Message...")
     
-    # Handle chat input
     if user_query:
         # Create conversation if needed
         if not st.session_state.current_conversation_id:
@@ -948,4 +902,86 @@ else:
                 st.error(f"Error: {str(e)}")
         
         st.rerun()
+
+
+# Fixed bottom-left avatar - render at the very end using HTML injection
+initials = get_user_initials()
+logged_in_class = "logged-in" if st.session_state.user_logged_in else ""
+
+# Inject fixed avatar using JavaScript after page load
+st.markdown(f"""
+<script>
+(function() {{
+    // Remove any existing avatar
+    const existing = document.getElementById('fixed-avatar-element');
+    if (existing) existing.remove();
+    
+    // Create avatar element
+    const avatar = document.createElement('div');
+    avatar.id = 'fixed-avatar-element';
+    avatar.className = 'auth-avatar-fixed {logged_in_class}';
+    avatar.innerHTML = '{initials}';
+    avatar.style.cssText = 'position: fixed !important; left: 16px !important; bottom: 16px !important; z-index: 999999 !important; width: 40px !important; height: 40px !important; border-radius: 50% !important; background: {"#10a37f" if st.session_state.user_logged_in else "#343541"} !important; border: 2px solid {"#10a37f" if st.session_state.user_logged_in else "#565869"} !important; display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer !important; color: white !important; font-weight: 600 !important; font-size: 14px !important; box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;';
+    
+    avatar.addEventListener('click', function() {{
+        // Trigger Streamlit button click
+        const btn = window.parent.document.querySelector('[data-testid="baseButton-secondary"][aria-label*="avatar"]');
+        if (btn) btn.click();
+    }});
+    
+    document.body.appendChild(avatar);
+}})();
+</script>
+""", unsafe_allow_html=True)
+
+# Hidden button to handle avatar click
+if st.button("", key="fixed_avatar_click_btn", help="", use_container_width=False):
+    st.session_state.show_auth_dropdown = not st.session_state.show_auth_dropdown
+    st.rerun()
+
+# Show dropdown in sidebar when avatar is clicked
+if st.session_state.show_auth_dropdown:
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("### Account")
+        if st.session_state.user_logged_in:
+            st.markdown(f"**{st.session_state.user_name or 'User'}**")
+            if st.button("⚙️ Settings", key="avatar_settings", use_container_width=True):
+                st.session_state.show_settings = True
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
+            if st.button("⬆️ Upgrade", key="avatar_upgrade", use_container_width=True):
+                st.info("Upgrade feature coming soon!")
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
+            if st.button("❓ Help", key="avatar_help", use_container_width=True):
+                st.info("Help center coming soon!")
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
+            if st.button("🚪 Log out", key="avatar_logout", use_container_width=True):
+                st.session_state.user_logged_in = False
+                st.session_state.user_name = None
+                st.session_state.user_email = None
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
+        else:
+            if st.button("🔐 Login", key="avatar_login", use_container_width=True):
+                st.session_state.user_logged_in = True
+                st.session_state.user_name = "User"
+                st.session_state.user_email = ""
+                st.session_state.show_auth_dropdown = False
+                st.info("Note: This is a demo login. Real authentication will redirect to Google/OAuth.")
+                st.rerun()
+            if st.button("📝 Sign up", key="avatar_signup", use_container_width=True):
+                st.info("Sign up feature coming soon!")
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
+            if st.button("⚙️ Settings", key="avatar_settings_guest", use_container_width=True):
+                st.session_state.show_settings = True
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
+            if st.button("❓ Help", key="avatar_help_guest", use_container_width=True):
+                st.info("Help center coming soon!")
+                st.session_state.show_auth_dropdown = False
+                st.rerun()
 
