@@ -766,9 +766,27 @@ with st.sidebar:
     st.markdown("---")
     initials = get_user_initials()
     
-    # Avatar button - visible button with initials
+    # Avatar button - visible button with initials or user icon
+    avatar_display = initials
     button_type = "primary" if st.session_state.user_logged_in else "secondary"
-    if st.button(f"{initials}", key="sidebar_avatar", help="Account menu", use_container_width=True, type=button_type):
+    
+    # Style the button to look like a circular avatar
+    st.markdown(f"""
+    <style>
+        button[data-testid="baseButton-secondary"][aria-label*="Account menu"],
+        button[data-testid="baseButton-primary"][aria-label*="Account menu"] {{
+            border-radius: 50% !important;
+            width: 40px !important;
+            height: 40px !important;
+            min-width: 40px !important;
+            padding: 0 !important;
+            font-size: 14px !important;
+            font-weight: 600 !important;
+        }}
+    </style>
+    """, unsafe_allow_html=True)
+    
+    if st.button(f"{avatar_display}", key="sidebar_avatar", help="Account menu", use_container_width=True, type=button_type):
         st.session_state.show_auth_dropdown = not st.session_state.show_auth_dropdown
         st.rerun()
     
