@@ -123,12 +123,20 @@ async def upload_document(
             for i, chunk in enumerate(result["chunks"])
         ]
         
-        vector_db.add_documents(
-            business_id=business_id,
-            texts=chunk_texts,
-            metadatas=chunk_metadatas,
-            document_id=result["document_id"]
-        )
+        try:
+            chunk_ids = vector_db.add_documents(
+                business_id=business_id,
+                texts=chunk_texts,
+                metadatas=chunk_metadatas,
+                document_id=result["document_id"]
+            )
+            if not chunk_ids:
+                logger.warning("No chunks were added to vector database - this may indicate an error")
+                raise HTTPException(status_code=500, detail="Failed to store document in vector database")
+            logger.info(f"Successfully stored {len(chunk_ids)} chunks in vector database")
+        except Exception as e:
+            logger.error(f"Error storing document in vector database: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Failed to store document in vector database: {str(e)}")
         
         # Save document metadata
         doc = Document(

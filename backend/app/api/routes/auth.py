@@ -88,14 +88,14 @@ async def google_oauth(
     Initiate Google OAuth flow.
     
     In production, this would redirect to Google OAuth.
+    For now, return a proper error message instead of redirecting to a malformed URL.
     """
-    # TODO: Implement Google OAuth
-    # For now, return info message
     logger.info("Google OAuth requested")
-    return {
-        "message": "Google OAuth integration coming soon",
-        "oauth_url": "https://accounts.google.com/o/oauth2/v2/auth"  # Placeholder
-    }
+    # Don't redirect - return error message instead
+    raise HTTPException(
+        status_code=501,
+        detail="Google OAuth integration is not yet implemented. Please use email/password authentication for now."
+    )
 
 
 @router.get("/microsoft")

@@ -874,28 +874,39 @@ else:
     # File upload area - ONLY shown when "+" button is clicked, positioned above prompt (not in chat)
     # CRITICAL: This must be hidden by default - only show if explicitly toggled
     if st.session_state.get("show_file_upload", False):
+        # Use a unique key that changes after upload to prevent infinite loop
+        upload_key = f"prompt_file_uploader_{st.session_state.get('upload_counter', 0)}"
         uploaded_file = st.file_uploader(
             "📎 Attach file",
             type=["pdf", "docx", "txt", "xlsx", "doc", "xls", "pptx", "csv"],
-            key="prompt_file_uploader",
+            key=upload_key,
             help="Supported: PDF, DOCX, TXT, XLSX"
         )
         
         if uploaded_file:
             business_id = st.session_state.selected_gpt or "temp_chat"
-            with st.spinner(f"Processing {uploaded_file.name}..."):
-                result = upload_document(business_id, uploaded_file)
-                if result:
-                    st.success(f"✅ {uploaded_file.name} processed!")
-                    st.session_state.chat_history.append({
-                        "role": "assistant",
-                        "content": f"I've processed '{uploaded_file.name}'. You can now ask me questions about it!",
-                        "sources": []
-                    })
-                    st.session_state.show_file_upload = False
-                    st.rerun()
-                else:
-                    st.error(f"❌ Failed to process {uploaded_file.name}")
+            # Check if this file was already processed (prevent infinite loop)
+            file_key = f"processed_{uploaded_file.name}_{uploaded_file.size}"
+            if file_key not in st.session_state:
+                st.session_state[file_key] = True
+                with st.spinner(f"Processing {uploaded_file.name}..."):
+                    result = upload_document(business_id, uploaded_file)
+                    if result:
+                        st.success(f"✅ {uploaded_file.name} processed!")
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": f"I've processed '{uploaded_file.name}'. You can now ask me questions about it!",
+                            "sources": []
+                        })
+                        # Increment counter to change uploader key
+                        st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
+                        st.session_state.show_file_upload = False
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Failed to process {uploaded_file.name}")
+                        # Remove the processed flag so user can retry
+                        if file_key in st.session_state:
+                            del st.session_state[file_key]
         
         if st.button("✕ Close", key="close_file_upload"):
             st.session_state.show_file_upload = False

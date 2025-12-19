@@ -48,9 +48,11 @@ class VectorStore:
         """
         self.db_type = db_type or settings.VECTOR_DB_TYPE
         try:
-            self.embedding_service = get_embedding_service() if get_embedding_service else None
+            self.embedding_service = get_embedding_service()
+            logger.info("✅ Embedding service initialized successfully")
         except Exception as e:
-            logger.warning(f"Could not initialize embedding service: {e}")
+            logger.error(f"❌ Could not initialize embedding service: {e}")
+            logger.error("Vector store will not work without embeddings. Please configure OPENAI_API_KEY or EMBEDDING_PROVIDER.")
             self.embedding_service = None
         self.client = self._initialize_client()
         
@@ -149,6 +151,10 @@ class VectorStore:
             logger.warning("Vector store client not initialized. Vector operations will not work.")
             return None
         
+        if self.embedding_service is None:
+            logger.error("Embedding service not initialized. Cannot create collection without embeddings.")
+            return None
+        
         collection_name = f"business_{business_id}"
         
         if self.db_type == "chromadb":
@@ -213,16 +219,25 @@ class VectorStore:
             List of chunk IDs
         """
         if self.client is None:
-            logger.warning("Vector store not available, skipping document addition")
-            return []
+            logger.error("Vector store client not available, skipping document addition")
+            raise ValueError("Vector store client not initialized. Cannot add documents.")
+        
+        if self.embedding_service is None:
+            logger.error("Embedding service not available, skipping document addition")
+            raise ValueError("Embedding service not initialized. Cannot generate embeddings.")
         
         collection = self.get_collection(business_id)
         if collection is None:
-            return []
+            logger.error(f"Could not get/create collection for business {business_id}")
+            raise ValueError(f"Could not get/create collection for business {business_id}")
         
         # Generate embeddings
         logger.info(f"Generating embeddings for {len(texts)} chunks")
-        embeddings = self.embedding_service.embed_documents(texts)
+        try:
+            embeddings = self.embedding_service.embed_documents(texts)
+        except Exception as e:
+            logger.error(f"Failed to generate embeddings: {e}")
+            raise ValueError(f"Failed to generate embeddings: {e}")
         
         # Create IDs for chunks
         chunk_ids = [f"{document_id}_chunk_{i}" for i in range(len(texts))]
