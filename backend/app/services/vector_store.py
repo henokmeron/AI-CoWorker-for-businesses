@@ -6,23 +6,31 @@ import logging
 from typing import List, Dict, Any, Optional
 
 # Import ChromaDB with error handling
-# Apply patch FIRST before any chromadb imports
-try:
-    from ..utils.chromadb_patch import patch_chromadb
-    patch_chromadb()  # Apply patch immediately
-except Exception as e:
-    logging.warning(f"ChromaDB patch failed: {e}. Continuing anyway.")
+# Try to import chromadb with fallback
+CHROMADB_AVAILABLE = False
+chromadb = None
+ChromaSettings = None
 
-# Now try to import chromadb
 try:
+    # Apply patch FIRST before any chromadb imports
+    try:
+        from ..utils.chromadb_patch import patch_chromadb
+        patch_chromadb()  # Apply patch immediately
+        logging.info("ChromaDB patch applied successfully")
+    except Exception as patch_error:
+        logging.warning(f"ChromaDB patch failed: {patch_error}. Continuing anyway.")
+    
+    # Now try to import chromadb
     import chromadb
     from chromadb.config import Settings as ChromaSettings
     CHROMADB_AVAILABLE = True
+    logging.info("✅ ChromaDB imported successfully")
+except ImportError as e:
+    logging.error(f"❌ ChromaDB import failed (ImportError): {e}")
+    logging.error("Install with: pip install chromadb==0.4.22")
 except Exception as e:
-    logging.warning(f"ChromaDB import failed: {e}. Some features may not work.")
-    CHROMADB_AVAILABLE = False
-    chromadb = None
-    ChromaSettings = None
+    logging.error(f"❌ ChromaDB import failed: {e}")
+    logging.error("Vector store will not be available.")
 
 from ..core.config import settings
 from .embedding_service import get_embedding_service, ChromaEmbeddingFunction

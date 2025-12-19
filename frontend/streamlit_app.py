@@ -668,10 +668,27 @@ with st.sidebar:
     st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
     st.markdown('<div class="sidebar-section-title">Conversations</div>', unsafe_allow_html=True)
     
-    # New Chat button
+    # New Chat button - ACTUALLY CREATE A NEW CONVERSATION
     if st.button("➕ New Chat", use_container_width=True, key="new_chat_btn"):
-        st.session_state.chat_history = []
+        # Clear current conversation and chat history
         st.session_state.current_conversation_id = None
+        st.session_state.chat_history = []
+        
+        # Create a new conversation on the backend
+        business_id = st.session_state.selected_gpt or "temp_chat"
+        new_conv_title = f"New Chat {datetime.now().strftime('%I:%M %p')}"
+        
+        try:
+            new_conv = create_conversation(business_id, title=new_conv_title)
+            if new_conv:
+                st.session_state.current_conversation_id = new_conv.get('id')
+                st.success("Started new chat!")
+            else:
+                st.warning("Could not create conversation on server, continuing locally")
+        except Exception as e:
+            logger.error(f"Error creating new conversation: {e}")
+            st.warning("Continuing with local chat (not saved to server)")
+        
         st.rerun()
     
     # Load and display conversations
