@@ -12,22 +12,14 @@ chromadb = None
 ChromaSettings = None
 
 try:
-    # Apply patch FIRST before any chromadb imports
-    try:
-        from ..utils.chromadb_patch import patch_chromadb
-        patch_chromadb()  # Apply patch immediately
-        logging.info("ChromaDB patch applied successfully")
-    except Exception as patch_error:
-        logging.warning(f"ChromaDB patch failed: {patch_error}. Continuing anyway.")
-    
-    # Now try to import chromadb
+    # Import chromadb directly (no patch needed for 0.4.24+)
     import chromadb
     from chromadb.config import Settings as ChromaSettings
     CHROMADB_AVAILABLE = True
     logging.info("✅ ChromaDB imported successfully")
 except ImportError as e:
     logging.error(f"❌ ChromaDB import failed (ImportError): {e}")
-    logging.error("Install with: pip install chromadb==0.4.22")
+    logging.error("Install with: pip install chromadb==0.4.24")
 except Exception as e:
     logging.error(f"❌ ChromaDB import failed: {e}")
     logging.error("Vector store will not be available.")
@@ -75,23 +67,9 @@ class VectorStore:
         """Initialize vector database client."""
         if self.db_type == "chromadb":
             if not CHROMADB_AVAILABLE:
-                # Try to import again with fresh patch
-                try:
-                    # Re-apply patch before importing
-                    from ..utils.chromadb_patch import patch_chromadb
-                    patch_chromadb()
-                    logger.info("Re-applied ChromaDB patch")
-                    
-                    # Now try importing
-                    import chromadb
-                    from chromadb.config import Settings as ChromaSettings
-                    logger.info("ChromaDB imported successfully after re-patch")
-                except Exception as e:
-                    logger.error(f"ChromaDB still not available after re-patch: {e}")
-                    logger.error("Vector store will not be available. Document search will fail.")
-                    # Don't fail - allow app to start without vector store
-                    # Vector operations will fail gracefully
-                    return None
+                logger.error("ChromaDB is not available - cannot initialize vector store")
+                logger.error("Vector store will not be available. Document search will fail.")
+                return None
             
             try:
                 import os

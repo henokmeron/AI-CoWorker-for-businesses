@@ -12,7 +12,7 @@ langgraph==0.0.20
 openai==1.10.0
 
 # Vector Database
-chromadb==0.4.22
+chromadb==0.4.24
 qdrant-client==1.7.0
 
 # Database (PostgreSQL for conversation history)
