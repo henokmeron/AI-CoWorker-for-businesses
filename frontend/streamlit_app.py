@@ -628,10 +628,17 @@ with st.sidebar:
                 # Show dropdown menu if open
                 if st.session_state.gpt_dropdown_open.get(gpt_id, False):
                     if st.button("💬 New chat", key=f"gpt_new_{gpt_id}", use_container_width=True):
+                        # CRITICAL: Clear everything for this GPT
                         st.session_state.selected_gpt = gpt_id
                         st.session_state.chat_history = []
                         st.session_state.current_conversation_id = None
                         st.session_state.gpt_dropdown_open[gpt_id] = False
+                        
+                        # Create new conversation on backend
+                        new_conv = create_conversation(gpt_id, title=f"New Chat {datetime.now().strftime('%I:%M %p')}")
+                        if new_conv:
+                            st.session_state.current_conversation_id = new_conv.get('id')
+                        
                         st.rerun()
                     
                     if st.button("ℹ️ About", key=f"gpt_about_{gpt_id}", use_container_width=True):
@@ -670,11 +677,16 @@ with st.sidebar:
     
     # New Chat button - ACTUALLY CREATE A NEW CONVERSATION
     if st.button("➕ New Chat", use_container_width=True, key="new_chat_btn"):
-        # Clear current conversation and chat history
+        # CRITICAL: Clear EVERYTHING to prevent chat bleeding
         st.session_state.current_conversation_id = None
         st.session_state.chat_history = []
         
-        # Create a new conversation on the backend
+        # Also clear any cached messages
+        for key in list(st.session_state.keys()):
+            if key.startswith("processed_") or key.startswith("show_menu_") or key.startswith("renaming_"):
+                del st.session_state[key]
+        
+        # Create a new conversation on the backend (starts empty)
         business_id = st.session_state.selected_gpt or "temp_chat"
         new_conv_title = f"New Chat {datetime.now().strftime('%I:%M %p')}"
         
@@ -682,7 +694,7 @@ with st.sidebar:
             new_conv = create_conversation(business_id, title=new_conv_title)
             if new_conv:
                 st.session_state.current_conversation_id = new_conv.get('id')
-                st.success("Started new chat!")
+                st.success("✅ New chat started!")
             else:
                 st.warning("Could not create conversation on server, continuing locally")
         except Exception as e:
@@ -710,9 +722,14 @@ with st.sidebar:
                 with col1:
                     button_style = "primary" if is_current else "secondary"
                     if st.button(display_title, key=f"conv_{conv.get('id')}", use_container_width=True, type=button_style):
+                        # CRITICAL: Clear chat history FIRST to prevent bleeding
+                        st.session_state.chat_history = []
+                        
+                        # Load conversation from backend
                         response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
                         if response and response.status_code == 200:
                             loaded_conv = response.json()
+                            # REPLACE (not append) chat history with loaded messages
                             st.session_state.chat_history = [
                                 {
                                     "role": msg.get("role"),
@@ -722,7 +739,11 @@ with st.sidebar:
                                 for msg in loaded_conv.get("messages", [])
                             ]
                             st.session_state.current_conversation_id = conv.get('id')
-                            st.rerun()
+                            logger.info(f"Loaded conversation {conv.get('id')} with {len(st.session_state.chat_history)} messages")
+                        else:
+                            logger.error(f"Failed to load conversation {conv.get('id')}")
+                            st.session_state.current_conversation_id = conv.get('id')
+                        st.rerun()
                 
                 with col2:
                     if st.button("⋯", key=f"menu_{conv.get('id')}", help="More options"):
