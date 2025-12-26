@@ -22,8 +22,20 @@ RUN apt-get update && apt-get install -y \
 COPY backend/requirements.txt /tmp/requirements_original.txt
 
 # CRITICAL: Clean null bytes from requirements.txt BEFORE pip install
-# FIXED: Always exit with 0 after successful cleaning (even if null bytes were found)
-RUN python3 -c "import sys; data = open('/tmp/requirements_original.txt', 'rb').read(); cleaned = data.replace(b'\x00', b''); null_count = len(data) - len(cleaned); print(f'Cleaned requirements.txt: {len(data)} bytes -> {len(cleaned)} bytes (removed {null_count} null bytes)'); open('requirements.txt', 'wb').write(cleaned); print('Successfully cleaned requirements.txt'); sys.exit(0)"
+# Use a more robust cleaning script to handle any encoding issues
+RUN python3 << 'EOF'
+import sys
+null_byte = b'\x00'
+with open('/tmp/requirements_original.txt', 'rb') as f:
+    data = f.read()
+cleaned = data.replace(null_byte, b'')
+null_count = len(data) - len(cleaned)
+print(f'Cleaned requirements.txt: {len(data)} bytes -> {len(cleaned)} bytes (removed {null_count} null bytes)')
+with open('requirements.txt', 'wb') as f:
+    f.write(cleaned)
+print('Successfully cleaned requirements.txt')
+sys.exit(0)
+EOF
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
