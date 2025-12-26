@@ -1,7 +1,11 @@
 # Dockerfile for Fly.io deployment
 # Updated: 2025-01-27 - Fixed null bytes and removed unnecessary packages
+# Updated: 2025-01-27 - Added cache busting and improved null byte cleaning
 
 FROM python:3.11-slim
+
+# Add build argument to bust cache if needed
+ARG CACHE_BUST=1
 
 WORKDIR /app
 
