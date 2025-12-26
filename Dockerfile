@@ -35,9 +35,16 @@ with open('/tmp/requirements_original.txt', 'rb') as f:
 cleaned = data.replace(null_byte, b'')
 null_count = len(data) - len(cleaned)
 print(f'Cleaned requirements.txt: {len(data)} bytes -> {len(cleaned)} bytes (removed {null_count} null bytes)')
+
+# Verify the cleaned file is valid (no null bytes remaining)
+if null_byte in cleaned:
+    print('ERROR: Null bytes still present after cleaning!')
+    sys.exit(1)
+
+# Write cleaned file
 with open('requirements.txt', 'wb') as f:
     f.write(cleaned)
-print('Successfully cleaned requirements.txt')
+print('Successfully cleaned and verified requirements.txt')
 sys.exit(0)
 EOF
 
