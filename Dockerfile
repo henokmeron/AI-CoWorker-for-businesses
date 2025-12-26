@@ -1,27 +1,29 @@
-# Root Dockerfile for Fly.io deployment
-# This builds the backend service
+# Dockerfile for Fly.io deployment
+# Updated: 2025-01-27 - Fixed null bytes and removed unnecessary packages
 
 FROM python:3.11-slim
 
 WORKDIR /app
 
 # Install system dependencies for document processing
+# NOTE: Removed tesseract-ocr, poppler-utils, pandoc (not needed without unstructured)
 RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    libtesseract-dev \
-    poppler-utils \
     libmagic1 \
-    pandoc \
     libgl1 \
     libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libreoffice \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements.txt to temp location first
 COPY backend/requirements.txt /tmp/requirements_original.txt
 
 # CRITICAL: Clean null bytes from requirements.txt BEFORE pip install
-# This step MUST run every time - it removes any null bytes that cause pip to fail
-RUN python3 -c "import sys; data = open('/tmp/requirements_original.txt', 'rb').read(); cleaned = data.replace(b'\x00', b''); null_count = len(data) - len(cleaned); print(f'Cleaned requirements.txt: {len(data)} bytes -> {len(cleaned)} bytes (removed {null_count} null bytes)'); open('requirements.txt', 'wb').write(cleaned); sys.exit(0 if null_count == 0 else 1)"
+# FIXED: Always exit with 0 after successful cleaning (even if null bytes were found)
+RUN python3 -c "import sys; data = open('/tmp/requirements_original.txt', 'rb').read(); cleaned = data.replace(b'\x00', b''); null_count = len(data) - len(cleaned); print(f'Cleaned requirements.txt: {len(data)} bytes -> {len(cleaned)} bytes (removed {null_count} null bytes)'); open('requirements.txt', 'wb').write(cleaned); print('Successfully cleaned requirements.txt'); sys.exit(0)"
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt

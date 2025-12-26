@@ -12,7 +12,8 @@ langgraph==0.0.20
 openai==1.10.0
 
 # Vector Database
-chromadb==0.4.24
+# Using 0.4.14 - last stable version before onnxruntime hard dependency
+chromadb==0.4.14
 qdrant-client==1.7.0
 
 # Database (PostgreSQL for conversation history)
@@ -21,12 +22,10 @@ sqlalchemy==2.0.25
 alembic==1.13.1
 
 # Document Processing
-unstructured==0.12.0
-unstructured[all-docs]==0.12.0
+# REMOVED unstructured to avoid onnxruntime dependency issues
+# Using direct parsers instead: PyPDF2, python-docx, openpyxl
 python-magic==0.4.27
 pillow==10.2.0
-pytesseract==0.3.10
-pypandoc==1.12
 
 # File Processing
 PyPDF2==3.0.1
