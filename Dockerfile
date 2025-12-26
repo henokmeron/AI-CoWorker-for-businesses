@@ -1,13 +1,18 @@
 # Dockerfile for Fly.io deployment
 # Updated: 2025-01-27 - Fixed null bytes and removed unnecessary packages
 # Updated: 2025-01-27 - Added cache busting and improved null byte cleaning
+# Updated: 2025-01-27 - Force cache invalidation
 
 FROM python:3.11-slim
 
 # Add build argument to bust cache if needed
-ARG CACHE_BUST=1
+ARG CACHE_BUST=2
+ARG BUILD_DATE=2025-01-27
 
 WORKDIR /app
+
+# Force cache invalidation by touching a file
+RUN echo "Build date: ${BUILD_DATE}" > /tmp/build_info.txt
 
 # Install system dependencies for document processing
 # NOTE: Removed tesseract-ocr, poppler-utils, pandoc (not needed without unstructured)
