@@ -1,4 +1,4 @@
-# Root Dockerfile for Render deployment
+# Root Dockerfile for Fly.io deployment
 # This builds the backend service
 
 FROM python:3.11-slim
@@ -16,8 +16,14 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY backend/requirements.txt .
+# Copy requirements.txt to temp location first
+COPY backend/requirements.txt /tmp/requirements_original.txt
+
+# CRITICAL: Clean null bytes from requirements.txt BEFORE pip install
+# This step MUST run every time - it removes any null bytes that cause pip to fail
+RUN python3 -c "import sys; data = open('/tmp/requirements_original.txt', 'rb').read(); cleaned = data.replace(b'\x00', b''); null_count = len(data) - len(cleaned); print(f'Cleaned requirements.txt: {len(data)} bytes -> {len(cleaned)} bytes (removed {null_count} null bytes)'); open('requirements.txt', 'wb').write(cleaned); sys.exit(0 if null_count == 0 else 1)"
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
