@@ -586,7 +586,8 @@ def render_edit_gpt_panel():
                     st.success(f"✅ {uploaded_file.name} uploaded!")
                     st.rerun()
                 else:
-                    st.error(f"❌ Failed to upload {uploaded_file.name}")
+                    error_msg = f"❌ Failed to upload {uploaded_file.name}\n\nPossible reasons:\n- File format not supported\n- File is corrupted\n- Backend processing error\n\nPlease try again or check backend logs."
+                    st.error(error_msg)
         
         st.markdown("---")
         
