@@ -148,20 +148,24 @@ async def test_openai():
 def validate_startup():
     """
     Validate all critical services at startup.
-    If any critical service fails, crash the application.
+    Log warnings for non-critical issues, but allow app to start.
+    Only crash for truly critical issues that prevent basic operation.
     """
-    errors = []
+    warnings = []
+    critical_errors = []
     
     # 1. Validate OpenAI API key (required for embeddings and LLM)
     if not settings.OPENAI_API_KEY:
-        errors.append("OPENAI_API_KEY is not set. This is REQUIRED for the application to function.")
+        critical_errors.append("OPENAI_API_KEY is not set. This is REQUIRED for embeddings and LLM.")
+    else:
+        logger.info("✅ OpenAI API key is set")
     
-    # 2. Validate and initialize vector store
+    # 2. Validate and initialize vector store (try, but don't crash if it fails)
     try:
         from app.services.vector_store import get_vector_store
         vector_store = get_vector_store()
         if vector_store.client is None:
-            errors.append("Vector store client is None. Vector database initialization failed.")
+            warnings.append("Vector store client is None. Document uploads will fail.")
         else:
             # Test by listing collections
             try:
@@ -169,22 +173,22 @@ def validate_startup():
                     vector_store.client.list_collections()
                 logger.info("✅ Vector store validated successfully")
             except Exception as e:
-                errors.append(f"Vector store validation failed: {e}")
+                warnings.append(f"Vector store validation failed: {e}")
     except Exception as e:
-        errors.append(f"Vector store initialization failed: {e}")
+        warnings.append(f"Vector store initialization failed: {e}. Document uploads will not work.")
     
     # 3. Validate document processor
     try:
         from app.services.document_processor import get_document_processor
         processor = get_document_processor()
         if len(processor.handlers) == 0:
-            errors.append("No file handlers registered. Document processing will fail.")
+            warnings.append("No file handlers registered. Document processing will fail.")
         else:
             logger.info(f"✅ Document processor validated ({len(processor.handlers)} handlers)")
     except Exception as e:
-        errors.append(f"Document processor initialization failed: {e}")
+        warnings.append(f"Document processor initialization failed: {e}")
     
-    # 4. Validate storage directory
+    # 4. Validate storage directory (critical - must be writable)
     try:
         storage_path = Path(settings.UPLOAD_DIR)
         storage_path.mkdir(parents=True, exist_ok=True)
@@ -196,7 +200,7 @@ def validate_startup():
         
         logger.info(f"✅ Storage directory validated: {storage_path}")
     except Exception as e:
-        errors.append(f"Storage directory validation failed: {e}")
+        critical_errors.append(f"Storage directory validation failed: {e}. Cannot save files.")
     
     # 5. Validate data directory
     try:
@@ -204,23 +208,37 @@ def validate_startup():
         data_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"✅ Data directory validated: {data_path}")
     except Exception as e:
-        errors.append(f"Data directory validation failed: {e}")
+        critical_errors.append(f"Data directory validation failed: {e}")
     
-    # If any critical errors, crash the app
-    if errors:
+    # Log warnings
+    if warnings:
+        logger.warning("=" * 80)
+        logger.warning("STARTUP WARNINGS - App will start but some features may not work")
+        logger.warning("=" * 80)
+        for warning in warnings:
+            logger.warning(f"⚠️  {warning}")
+        logger.warning("=" * 80)
+    
+    # Only crash for truly critical errors
+    if critical_errors:
         logger.error("=" * 80)
         logger.error("CRITICAL STARTUP FAILURES - Application will not start")
         logger.error("=" * 80)
-        for error in errors:
+        for error in critical_errors:
             logger.error(f"❌ {error}")
         logger.error("=" * 80)
         logger.error("Fix these issues before the application can start.")
         logger.error("=" * 80)
         sys.exit(1)
     
-    logger.info("=" * 80)
-    logger.info("✅ ALL STARTUP VALIDATIONS PASSED")
-    logger.info("=" * 80)
+    if not warnings:
+        logger.info("=" * 80)
+        logger.info("✅ ALL STARTUP VALIDATIONS PASSED")
+        logger.info("=" * 80)
+    else:
+        logger.info("=" * 80)
+        logger.info("⚠️  STARTUP COMPLETE WITH WARNINGS - Some features may not work")
+        logger.info("=" * 80)
 
 
 @app.on_event("startup")
