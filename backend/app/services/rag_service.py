@@ -119,7 +119,7 @@ class RAGService:
             context = ""
             
             try:
-                logger.info(f"Retrieving documents for query: {query[:100]}...")
+                logger.info(f"🔍 Searching vector database for business_id='{business_id}', query: {query[:100]}...")
                 retrieved_docs = self.vector_store.search(
                     business_id=business_id,
                     query=query,
@@ -127,12 +127,18 @@ class RAGService:
                 )
                 if retrieved_docs:
                     context = self._format_context(retrieved_docs)
-                    logger.info(f"Found {len(retrieved_docs)} relevant documents")
+                    logger.info(f"✅ Found {len(retrieved_docs)} relevant document chunks for business_id='{business_id}'")
                 else:
-                    logger.info("No documents found - will answer as general AI")
+                    logger.warning(f"⚠️  No documents found in vector database for business_id='{business_id}'")
+                    logger.warning(f"   This could mean:")
+                    logger.warning(f"   1. No documents have been uploaded for this business_id")
+                    logger.warning(f"   2. Documents were uploaded but not indexed properly")
+                    logger.warning(f"   3. business_id mismatch between upload and query")
+                    # Still continue - will answer as general AI but with warning in prompt
             except Exception as e:
-                logger.warning(f"Vector store search failed (this is OK if no documents): {e}")
+                logger.error(f"❌ Vector store search failed for business_id='{business_id}': {e}", exc_info=True)
                 # Continue without documents - can still answer general questions
+                retrieved_docs = []
             
             # 2. Build prompt with or without context
             messages = self._build_messages(query, context, conversation_history, has_documents=len(retrieved_docs) > 0, reply_as_me=reply_as_me)

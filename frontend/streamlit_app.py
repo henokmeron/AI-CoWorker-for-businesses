@@ -284,14 +284,18 @@ def upload_document(business_id: str, file) -> Optional[Dict[str, Any]]:
             # Log the error for debugging
             error_text = response.text
             logger.error(f"Upload failed: {response.status_code} - {error_text}")
-            # Try to extract error message from response
+            # Try to extract error message from response and return it
             try:
                 error_json = response.json()
                 if 'detail' in error_json:
-                    logger.error(f"Error detail: {error_json['detail']}")
+                    error_detail = error_json['detail']
+                    logger.error(f"Error detail: {error_detail}")
+                    # Return error dict so frontend can display it
+                    return {"error": error_detail, "status_code": response.status_code}
             except:
-                pass
-        return None
+                # If not JSON, return the text
+                return {"error": error_text, "status_code": response.status_code}
+        return {"error": "Upload failed: No response from server", "status_code": 0}
     except Exception as e:
         logger.error(f"Exception during upload: {e}", exc_info=True)
         return None
@@ -994,7 +998,13 @@ else:
                             st.session_state.show_file_upload = False
                             st.rerun()
                         else:
-                            error_msg = f"❌ Failed to process {uploaded_file.name}\n\nPossible reasons:\n- File format not supported\n- File is corrupted\n- Backend processing error\n\nPlease try again or check backend logs."
+                            # Get detailed error from response
+                            error_msg = f"❌ Failed to process {uploaded_file.name}"
+                            if isinstance(result, dict) and "error" in result:
+                                error_detail = result["error"]
+                                error_msg += f"\n\nError: {error_detail}\n\nPossible reasons:\n- File format not supported\n- File is corrupted\n- Backend processing error\n- Vector database not available\n\nPlease check backend logs for details."
+                            else:
+                                error_msg += "\n\nPossible reasons:\n- File format not supported\n- File is corrupted\n- Backend processing error\n- Vector database not available\n\nPlease try again or check backend logs."
                             st.error(error_msg)
                             if file_key in st.session_state:
                                 del st.session_state[file_key]
@@ -1035,8 +1045,10 @@ else:
         # Get response
         with st.spinner("Thinking..."):
             try:
+                # Use same business_id logic as file upload: selected_gpt or "temp_chat"
+                business_id_for_query = st.session_state.selected_gpt or "temp_chat"
                 response = chat_query(
-                    st.session_state.selected_gpt,
+                    business_id_for_query,
                     user_query,
                     st.session_state.chat_history[:-1],
                     st.session_state.current_conversation_id,

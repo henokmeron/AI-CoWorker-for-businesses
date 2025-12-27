@@ -29,8 +29,10 @@ async def chat(
     and provide an answer with source citations.
     """
     try:
+        # Use business_id from request, or "default" if not provided
+        # CRITICAL: This must match the business_id used when uploading files
         business_id = request.business_id or "default"
-        logger.info(f"Chat request for business {business_id}: {request.query[:100]}")
+        logger.info(f"Chat request for business '{business_id}': {request.query[:100]}")
         
         # Validate OpenAI API key
         if not settings.OPENAI_API_KEY:
