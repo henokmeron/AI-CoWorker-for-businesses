@@ -249,12 +249,16 @@ When answering:
             if has_documents and context:
                 system_prompt = """You are a helpful AI assistant that answers questions based on uploaded documents.
 
+CRITICAL: The user has uploaded documents. You MUST use the document content provided below to answer their questions.
+
 When answering:
+- ALWAYS check the provided documents first before answering
 - Use information from the provided documents to answer the user's questions
 - Cite sources when referencing documents (e.g., "According to Source 1...")
-- If the user asks about "attached file" or "uploaded document", refer to the documents provided below
+- If the user asks about "attached file", "uploaded document", or mentions a file name, the information is in the documents below
 - Be accurate and specific, using the document content to answer
-- If information isn't in the documents, say so clearly"""
+- If information isn't in the documents, say so clearly
+- DO NOT say you can't access documents - the documents are provided below"""
             else:
                 from datetime import datetime
                 current_date = datetime.now().strftime("%B %d, %Y")
