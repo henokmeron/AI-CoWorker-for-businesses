@@ -354,23 +354,39 @@ class VectorStore:
         
         if self.db_type == "chromadb":
             # Search in ChromaDB
-            results = collection.query(
-                query_embeddings=[query_embedding],
-                n_results=k,
-                where=filter_metadata
-            )
-            
-            # Format results
-            formatted_results = []
-            for i in range(len(results['ids'][0])):
-                formatted_results.append({
-                    "id": results['ids'][0][i],
-                    "text": results['documents'][0][i],
-                    "metadata": results['metadatas'][0][i],
-                    "score": 1 - results['distances'][0][i]  # Convert distance to similarity
-                })
-            
-            return formatted_results
+            try:
+                # Check if collection has any documents first
+                doc_count = collection.count()
+                logger.info(f"   🔍 Searching collection 'business_{business_id}' with {doc_count} documents")
+                
+                if doc_count == 0:
+                    logger.warning(f"   ⚠️  Collection 'business_{business_id}' is empty - no documents to search")
+                    return []
+                
+                results = collection.query(
+                    query_embeddings=[query_embedding],
+                    n_results=min(k, doc_count),  # Don't ask for more than available
+                    where=filter_metadata
+                )
+                
+                # Format results
+                formatted_results = []
+                if results and 'ids' in results and len(results['ids']) > 0 and len(results['ids'][0]) > 0:
+                    for i in range(len(results['ids'][0])):
+                        formatted_results.append({
+                            "id": results['ids'][0][i],
+                            "text": results['documents'][0][i],
+                            "metadata": results['metadatas'][0][i],
+                            "score": 1 - results['distances'][0][i]  # Convert distance to similarity
+                        })
+                    logger.info(f"   ✅ Found {len(formatted_results)} results from search")
+                else:
+                    logger.warning(f"   ⚠️  Search returned no results (collection has {doc_count} docs but query matched none)")
+                
+                return formatted_results
+            except Exception as e:
+                logger.error(f"   ❌ Error during ChromaDB search: {e}", exc_info=True)
+                return []
         
         elif self.db_type == "qdrant":
             from qdrant_client.models import Filter, FieldCondition, MatchValue
