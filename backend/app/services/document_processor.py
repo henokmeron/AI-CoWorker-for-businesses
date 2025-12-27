@@ -74,24 +74,9 @@ class DocumentProcessor:
             
         except ImportError as e:
             # This is EXPECTED - unstructured was removed to avoid onnxruntime issues
+            error_msg = str(e)
             logger.info(f"ℹ️  Unstructured library not available (expected): {e}")
             logger.info("ℹ️  This is normal - we use PyPDF2 fallback instead")
-            
-            # Provide specific guidance based on error type
-            if "libGL.so.1" in error_msg or "libGL" in error_msg:
-                logger.error("⚠️ Missing OpenGL system library (libGL.so.1)")
-                logger.error("This is required for OpenCV which unstructured uses for image processing")
-                logger.error("Solution: Install libgl1-mesa-glx in Dockerfile:")
-                logger.error("  RUN apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0")
-            elif "cv2" in error_msg or "opencv" in error_msg.lower():
-                logger.error("⚠️ OpenCV import failed - missing system dependencies")
-                logger.error("Install: libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev")
-            elif "unstructured" in error_msg.lower():
-                logger.error("The unstructured library may be installed but missing dependencies")
-                logger.error("Try: pip install unstructured[all-docs] --upgrade")
-            else:
-                logger.error("This usually means unstructured library dependencies are missing")
-                logger.error("Install with: pip install unstructured[all-docs]")
         except Exception as e:
             logger.error(f"❌ Exception creating UnstructuredFileHandler: {type(e).__name__}: {e}", exc_info=True)
             logger.error("Full traceback above should show the exact issue")
