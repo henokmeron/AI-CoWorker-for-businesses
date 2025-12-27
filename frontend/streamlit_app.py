@@ -15,7 +15,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration
-BACKEND_URL = os.getenv("BACKEND_URL", "https://ai-coworker-for-businesses.onrender.com")
+# Backend is on Fly.io - update this if your Fly.io app name is different
+BACKEND_URL = os.getenv("BACKEND_URL", "https://ai-coworker-for-businesses.fly.dev")
 API_KEY = os.getenv("API_KEY", "ai-coworker-secret-key-2024")
 
 # Set page config
