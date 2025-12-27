@@ -120,6 +120,12 @@ class VectorStore:
                 try:
                     collections = client.list_collections()
                     logger.info(f"✅ ChromaDB client verified ({len(collections)} collections)")
+                    # Log existing collections for debugging
+                    if collections:
+                        collection_names = [c.name for c in collections]
+                        logger.info(f"   Existing collections: {', '.join(collection_names)}")
+                    else:
+                        logger.info("   No existing collections found (this is OK for first run)")
                 except Exception as verify_error:
                     error_msg = f"ChromaDB client verification failed: {verify_error}"
                     logger.error(f"❌ {error_msg}")
@@ -280,13 +286,16 @@ class VectorStore:
             meta["business_id"] = business_id
         
         if self.db_type == "chromadb":
-            # Add to ChromaDB
+            # Add to ChromaDB (persistent storage)
             collection.add(
                 ids=chunk_ids,
                 embeddings=embeddings,
                 documents=texts,
                 metadatas=metadatas
             )
+            # Verify documents were added
+            new_count = collection.count()
+            logger.info(f"✅ Added {len(chunk_ids)} chunks to collection '{collection.name}' (total: {new_count} documents, persistent)")
         
         elif self.db_type == "qdrant":
             from qdrant_client.models import PointStruct

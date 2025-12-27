@@ -111,10 +111,14 @@ class DocumentProcessor:
             
             # Register XLSX handler if available
             try:
-                import openpyxl
-                logger.info("✅ openpyxl available - XLSX files will work")
-            except ImportError:
-                logger.warning("⚠️  openpyxl not available - XLSX files will not work")
+                from .file_handlers.xlsx_handler import XLSXHandler
+                xlsx_handler = XLSXHandler()
+                self.handlers.append(xlsx_handler)
+                logger.info(f"✅ Registered XLSX handler (openpyxl) - XLSX files will work")
+            except ImportError as e:
+                logger.warning(f"⚠️  openpyxl not available - XLSX files will not work: {e}")
+            except Exception as e:
+                logger.error(f"❌ Could not register XLSX handler: {e}")
         
         # Log final handler count
         logger.info(f"📊 Total handlers registered: {len(self.handlers)}")
