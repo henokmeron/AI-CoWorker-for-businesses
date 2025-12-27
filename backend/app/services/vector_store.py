@@ -161,14 +161,19 @@ class VectorStore:
         
         Returns:
             Collection object
+        
+        Raises:
+            RuntimeError: If client or embedding service is not available
         """
         if self.client is None:
-            logger.warning("Vector store client not initialized. Vector operations will not work.")
-            return None
+            error_msg = "Vector store client not initialized. Cannot perform vector operations."
+            logger.error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg)
         
         if self.embedding_service is None:
-            logger.error("Embedding service not initialized. Cannot create collection without embeddings.")
-            return None
+            error_msg = "Embedding service not initialized. Cannot create collection without embeddings."
+            logger.error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg)
         
         collection_name = f"business_{business_id}"
         
@@ -312,11 +317,13 @@ class VectorStore:
             List of search results with text, metadata, and scores
         """
         if self.client is None:
-            logger.warning("Vector store not available, returning empty results")
+            logger.error("Vector store not available - cannot search")
             return []
         
-        collection = self.get_collection(business_id)
-        if collection is None:
+        try:
+            collection = self.get_collection(business_id)
+        except RuntimeError as e:
+            logger.error(f"Cannot get collection for search: {e}")
             return []
         
         # Generate query embedding

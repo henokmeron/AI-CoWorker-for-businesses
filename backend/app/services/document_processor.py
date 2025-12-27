@@ -309,7 +309,10 @@ class DocumentProcessor:
         filename: str
     ) -> str:
         """
-        Save uploaded document to permanent storage (cloud or local).
+        Save uploaded document to permanent storage.
+        
+        Uses Fly.io persistent volume at /app/data/businesses/{business_id}/
+        This ensures files persist across deployments and restarts.
         
         Args:
             source_path: Temporary upload path
@@ -317,24 +320,27 @@ class DocumentProcessor:
             filename: Original filename
             
         Returns:
-            Path/URL to saved document
+            Path to saved document (absolute path)
         """
-        from app.services.cloud_storage import get_storage_service
+        # Use Fly.io persistent volume - /app/data is mounted from fly.toml
+        business_dir = Path(settings.UPLOAD_DIR) / business_id
+        ensure_directory(str(business_dir))
         
         # Generate unique filename to avoid conflicts
         file_ext = get_file_extension(filename)
         unique_name = f"{uuid.uuid4()}.{file_ext}"
+        dest_path = business_dir / unique_name
         
-        # Remote path in storage (cloud or local)
-        remote_path = f"{business_id}/{unique_name}"
+        # Copy file to persistent storage
+        import shutil
+        shutil.copy2(source_path, dest_path)
         
-        # Get storage service (cloud or local)
-        storage = get_storage_service()
+        # Verify file was saved
+        if not dest_path.exists():
+            raise RuntimeError(f"Failed to save document to {dest_path}")
         
-        # Upload to permanent storage
-        saved_path = storage.upload_file(source_path, remote_path)
-        
-        logger.info(f"Saved document to permanent storage: {saved_path}")
+        saved_path = str(dest_path.absolute())
+        logger.info(f"✅ Saved document to persistent storage: {saved_path} ({dest_path.stat().st_size} bytes)")
         return saved_path
 
 

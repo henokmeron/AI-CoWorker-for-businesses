@@ -53,10 +53,11 @@ async def chat(
         logger.info(f"Query completed successfully. Response length: {len(result.get('answer', ''))}")
         
         # Save to conversation history if conversation_id provided
+        # This is important for persistence - try hard to save
         if request.conversation_id:
             try:
                 conversation_service = get_conversation_service()
-                # Save user message
+                # Save user message BEFORE LLM response
                 user_msg = Message(
                     role="user",
                     content=request.query,
@@ -64,17 +65,18 @@ async def chat(
                 )
                 conversation_service.add_message(request.conversation_id, user_msg)
                 
-                # Save assistant message
+                # Save assistant message AFTER LLM response
                 assistant_msg = Message(
                     role="assistant",
                     content=result.get("answer", ""),
                     sources=result.get("sources", [])
                 )
                 conversation_service.add_message(request.conversation_id, assistant_msg)
-                logger.info(f"Saved messages to conversation {request.conversation_id}")
+                logger.info(f"✅ Saved messages to conversation {request.conversation_id}")
             except Exception as e:
-                logger.warning(f"Failed to save messages to conversation history: {e}")
-                # Don't fail the request if saving history fails
+                # Log error but don't fail the request - conversation history is important but not critical
+                logger.error(f"Failed to save messages to conversation history: {e}", exc_info=True)
+                # Continue - user still gets their answer
         
         return ChatResponse(**result)
         

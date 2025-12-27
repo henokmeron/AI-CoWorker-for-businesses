@@ -68,9 +68,10 @@ class Settings(BaseSettings):
     # CORS
     ALLOWED_ORIGINS: List[str] = ["http://localhost:8501", "http://localhost:3000"]
     
-    # Storage
-    DATA_DIR: str = os.getenv("DATA_DIR", "/app/data")  # Use /app/data in production
-    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "/app/data/businesses")
+    # Storage - Use Fly.io persistent volume at /app/data
+    # This is mounted from fly.toml: [[mounts]] destination = "/app/data"
+    DATA_DIR: str = os.getenv("DATA_DIR", "/app/data")  # Persistent volume on Fly.io
+    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "/app/data/businesses")  # Documents stored here
     
     # Cloud Storage (for permanent document storage)
     USE_CLOUD_STORAGE: bool = os.getenv("USE_CLOUD_STORAGE", "false").lower() == "true"

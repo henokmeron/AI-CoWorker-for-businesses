@@ -120,16 +120,27 @@ class ConversationService:
                 conn.close()
     
     def _init_json_storage(self):
-        """Initialize JSON file storage."""
+        """Initialize JSON file storage on persistent volume."""
         import json
         from pathlib import Path
         
+        # Use persistent data directory - /app/data on Fly.io
         self.storage_path = Path(settings.DATA_DIR) / "conversations.json"
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Verify directory is writable
+        try:
+            test_file = self.storage_path.parent / ".test_write"
+            test_file.write_text("test")
+            test_file.unlink()
+        except Exception as e:
+            logger.error(f"Storage directory not writable: {e}")
+            raise RuntimeError(f"Cannot write to storage directory: {e}")
         
         if not self.storage_path.exists():
             with open(self.storage_path, 'w') as f:
                 json.dump([], f)
+            logger.info(f"Initialized conversation storage at {self.storage_path}")
     
     def create_conversation(self, business_id: Optional[str] = None, title: Optional[str] = None) -> Conversation:
         """Create a new conversation."""

@@ -71,8 +71,11 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 # Copy application code
 COPY backend/ .
 
-# Create data directory
-RUN mkdir -p /app/data
+# Create data directory structure for persistent storage
+# This matches fly.toml mount: destination = "/app/data"
+RUN mkdir -p /app/data/businesses && \
+    mkdir -p /app/data/chromadb && \
+    chmod -R 755 /app/data
 
 EXPOSE 8000
 

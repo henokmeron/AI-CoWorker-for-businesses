@@ -2,6 +2,9 @@
 FastAPI application entry point.
 """
 import logging
+import sys
+import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,15 +56,52 @@ async def root():
     }
 
 
-
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {
+    # Verify critical services are available
+    from app.services.vector_store import get_vector_store
+    from app.services.document_processor import get_document_processor
+    
+    checks = {
         "status": "healthy",
-        "version": settings.APP_VERSION
+        "version": settings.APP_VERSION,
+        "checks": {}
     }
+    
+    # Check vector store
+    try:
+        vector_store = get_vector_store()
+        if vector_store.client is None:
+            checks["checks"]["vector_store"] = "unavailable"
+            checks["status"] = "degraded"
+        else:
+            checks["checks"]["vector_store"] = "available"
+    except Exception as e:
+        checks["checks"]["vector_store"] = f"error: {str(e)}"
+        checks["status"] = "unhealthy"
+    
+    # Check document processor
+    try:
+        processor = get_document_processor()
+        checks["checks"]["document_processor"] = f"available ({len(processor.handlers)} handlers)"
+    except Exception as e:
+        checks["checks"]["document_processor"] = f"error: {str(e)}"
+        checks["status"] = "unhealthy"
+    
+    # Check storage
+    try:
+        storage_path = Path(settings.UPLOAD_DIR)
+        storage_path.mkdir(parents=True, exist_ok=True)
+        test_file = storage_path / ".test_write"
+        test_file.write_text("test")
+        test_file.unlink()
+        checks["checks"]["storage"] = "writable"
+    except Exception as e:
+        checks["checks"]["storage"] = f"error: {str(e)}"
+        checks["status"] = "unhealthy"
+    
+    return checks
 
 
 @app.get("/debug")
@@ -74,7 +114,8 @@ async def debug_info():
         "llm_provider": settings.LLM_PROVIDER,
         "openai_model": settings.OPENAI_MODEL,
         "vector_db_type": settings.VECTOR_DB_TYPE,
-        "data_dir": settings.DATA_DIR
+        "data_dir": settings.DATA_DIR,
+        "upload_dir": settings.UPLOAD_DIR
     }
 
 
@@ -104,37 +145,101 @@ async def test_openai():
         return {"success": False, "error": str(e)}
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup."""
-    logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
-    logger.info(f"LLM Provider: {settings.LLM_PROVIDER}")
-    logger.info(f"Vector DB: {settings.VECTOR_DB_TYPE}")
-    logger.info(f"Embedding Provider: {settings.EMBEDDING_PROVIDER}")
+def validate_startup():
+    """
+    Validate all critical services at startup.
+    If any critical service fails, crash the application.
+    """
+    errors = []
     
-    # Force initialization of document processor to register handlers
-    try:
-        from app.services.document_processor import get_document_processor
-        processor = get_document_processor()
-        handler_count = len(processor.handlers)
-        logger.info(f"✅ Document processor initialized with {handler_count} handler(s)")
-        if handler_count == 0:
-            logger.error("⚠️ WARNING: No file handlers registered! File uploads will fail!")
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize document processor: {e}", exc_info=True)
+    # 1. Validate OpenAI API key (required for embeddings and LLM)
+    if not settings.OPENAI_API_KEY:
+        errors.append("OPENAI_API_KEY is not set. This is REQUIRED for the application to function.")
     
-    # Force initialization of vector store
+    # 2. Validate and initialize vector store
     try:
         from app.services.vector_store import get_vector_store
         vector_store = get_vector_store()
-        if vector_store.client:
-            logger.info("✅ Vector store initialized successfully")
+        if vector_store.client is None:
+            errors.append("Vector store client is None. Vector database initialization failed.")
         else:
-            logger.warning("⚠️ Vector store client not initialized (may be expected in some environments)")
+            # Test by listing collections
+            try:
+                if hasattr(vector_store.client, 'list_collections'):
+                    vector_store.client.list_collections()
+                logger.info("✅ Vector store validated successfully")
+            except Exception as e:
+                errors.append(f"Vector store validation failed: {e}")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize vector store: {e}", exc_info=True)
+        errors.append(f"Vector store initialization failed: {e}")
     
-    logger.info("✅ Startup complete")
+    # 3. Validate document processor
+    try:
+        from app.services.document_processor import get_document_processor
+        processor = get_document_processor()
+        if len(processor.handlers) == 0:
+            errors.append("No file handlers registered. Document processing will fail.")
+        else:
+            logger.info(f"✅ Document processor validated ({len(processor.handlers)} handlers)")
+    except Exception as e:
+        errors.append(f"Document processor initialization failed: {e}")
+    
+    # 4. Validate storage directory
+    try:
+        storage_path = Path(settings.UPLOAD_DIR)
+        storage_path.mkdir(parents=True, exist_ok=True)
+        
+        # Test write access
+        test_file = storage_path / ".startup_test"
+        test_file.write_text("test")
+        test_file.unlink()
+        
+        logger.info(f"✅ Storage directory validated: {storage_path}")
+    except Exception as e:
+        errors.append(f"Storage directory validation failed: {e}")
+    
+    # 5. Validate data directory
+    try:
+        data_path = Path(settings.DATA_DIR)
+        data_path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"✅ Data directory validated: {data_path}")
+    except Exception as e:
+        errors.append(f"Data directory validation failed: {e}")
+    
+    # If any critical errors, crash the app
+    if errors:
+        logger.error("=" * 80)
+        logger.error("CRITICAL STARTUP FAILURES - Application will not start")
+        logger.error("=" * 80)
+        for error in errors:
+            logger.error(f"❌ {error}")
+        logger.error("=" * 80)
+        logger.error("Fix these issues before the application can start.")
+        logger.error("=" * 80)
+        sys.exit(1)
+    
+    logger.info("=" * 80)
+    logger.info("✅ ALL STARTUP VALIDATIONS PASSED")
+    logger.info("=" * 80)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup."""
+    logger.info("=" * 80)
+    logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+    logger.info("=" * 80)
+    logger.info(f"LLM Provider: {settings.LLM_PROVIDER}")
+    logger.info(f"Vector DB: {settings.VECTOR_DB_TYPE}")
+    logger.info(f"Embedding Provider: {settings.EMBEDDING_PROVIDER}")
+    logger.info(f"Data Directory: {settings.DATA_DIR}")
+    logger.info(f"Upload Directory: {settings.UPLOAD_DIR}")
+    logger.info("=" * 80)
+    
+    # Validate all critical services - CRASH if any fail
+    validate_startup()
+    
+    logger.info("✅ Application started successfully and ready to serve requests")
 
 
 @app.on_event("shutdown")
@@ -151,5 +256,3 @@ if __name__ == "__main__":
         port=settings.API_PORT,
         reload=settings.DEBUG
     )
-
-
