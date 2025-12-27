@@ -31,4 +31,5 @@ RUN mkdir -p /app/data/businesses /app/data/chromadb && chmod -R 755 /app/data
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use PORT env var if set (Fly.io sets this), otherwise default to 8000
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
