@@ -72,6 +72,16 @@ class Settings(BaseSettings):
     DATA_DIR: str = os.getenv("DATA_DIR", "/app/data")  # Use /app/data in production
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "/app/data/businesses")
     
+    # Cloud Storage (for permanent document storage)
+    USE_CLOUD_STORAGE: bool = os.getenv("USE_CLOUD_STORAGE", "false").lower() == "true"
+    STORAGE_PROVIDER: str = os.getenv("STORAGE_PROVIDER", "s3")  # s3, gcs, azure
+    
+    # AWS S3 Settings
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_S3_BUCKET: Optional[str] = None
+    AWS_S3_REGION: str = os.getenv("AWS_S3_REGION", "us-east-1")
+    
     # Database for conversation history (PostgreSQL/Neon)
     DATABASE_URL: Optional[str] = None
     

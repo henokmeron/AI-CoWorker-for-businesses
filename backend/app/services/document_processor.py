@@ -309,7 +309,7 @@ class DocumentProcessor:
         filename: str
     ) -> str:
         """
-        Save uploaded document to business directory.
+        Save uploaded document to permanent storage (cloud or local).
         
         Args:
             source_path: Temporary upload path
@@ -317,23 +317,25 @@ class DocumentProcessor:
             filename: Original filename
             
         Returns:
-            Path to saved document
+            Path/URL to saved document
         """
-        # Create business directory
-        business_dir = Path(settings.UPLOAD_DIR) / business_id
-        ensure_directory(str(business_dir))
+        from app.services.cloud_storage import get_storage_service
         
         # Generate unique filename to avoid conflicts
         file_ext = get_file_extension(filename)
         unique_name = f"{uuid.uuid4()}.{file_ext}"
-        dest_path = business_dir / unique_name
         
-        # Copy file
-        import shutil
-        shutil.copy2(source_path, dest_path)
+        # Remote path in storage (cloud or local)
+        remote_path = f"{business_id}/{unique_name}"
         
-        logger.info(f"Saved document to {dest_path}")
-        return str(dest_path)
+        # Get storage service (cloud or local)
+        storage = get_storage_service()
+        
+        # Upload to permanent storage
+        saved_path = storage.upload_file(source_path, remote_path)
+        
+        logger.info(f"Saved document to permanent storage: {saved_path}")
+        return saved_path
 
 
 # Global processor instance

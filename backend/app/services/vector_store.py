@@ -12,17 +12,18 @@ chromadb = None
 ChromaSettings = None
 
 try:
-    # Import chromadb directly (no patch needed for 0.4.24+)
+    # Import chromadb 0.4.14 (before onnxruntime became hard dependency)
     import chromadb
     from chromadb.config import Settings as ChromaSettings
     CHROMADB_AVAILABLE = True
     logging.info("✅ ChromaDB imported successfully")
 except ImportError as e:
     logging.error(f"❌ ChromaDB import failed (ImportError): {e}")
-    logging.error("Install with: pip install chromadb==0.4.24")
+    logging.error("Install with: pip install chromadb==0.4.14")
+    CHROMADB_AVAILABLE = False
 except Exception as e:
     logging.error(f"❌ ChromaDB import failed: {e}")
-    logging.error("Vector store will not be available.")
+    CHROMADB_AVAILABLE = False
 
 from ..core.config import settings
 from .embedding_service import get_embedding_service, ChromaEmbeddingFunction
@@ -47,51 +48,79 @@ class VectorStore:
             db_type: Database type (chromadb, qdrant, or None for default)
         """
         self.db_type = db_type or settings.VECTOR_DB_TYPE
+        
+        # STEP 1: Initialize embedding service - REQUIRED
         try:
             self.embedding_service = get_embedding_service()
             logger.info("✅ Embedding service initialized successfully")
         except Exception as e:
-            logger.error(f"❌ Could not initialize embedding service: {e}")
-            logger.error("Vector store will not work without embeddings. Please configure OPENAI_API_KEY or EMBEDDING_PROVIDER.")
-            self.embedding_service = None
+            error_msg = f"Could not initialize embedding service: {e}"
+            logger.error(f"❌ {error_msg}")
+            raise RuntimeError(
+                f"{error_msg}. "
+                "Set OPENAI_API_KEY environment variable in Render."
+            ) from e
+        
+        # STEP 2: Initialize vector database client - REQUIRED
         self.client = self._initialize_client()
         
-        # Log initialization status
+        # STEP 3: Validate client exists (should never be None after _initialize_client)
         if self.client is None:
-            logger.error("⚠️ Vector store client is None - vector operations will not work!")
-            logger.error("This will cause document search and business stats to fail.")
-        else:
-            logger.info("✅ Vector store client initialized successfully")
+            error_msg = "Vector store client is None after initialization - this should never happen"
+            logger.error(f"❌ CRITICAL: {error_msg}")
+            raise RuntimeError(error_msg)
+        
+        logger.info("✅ Vector store client initialized successfully")
     
     def _initialize_client(self):
-        """Initialize vector database client."""
+        """Initialize vector database client. REQUIRED - raises RuntimeError if fails."""
         if self.db_type == "chromadb":
             if not CHROMADB_AVAILABLE:
-                logger.error("ChromaDB is not available - cannot initialize vector store")
-                logger.error("Vector store will not be available. Document search will fail.")
-                return None
+                error_msg = "ChromaDB is not available - cannot initialize vector store"
+                logger.error(error_msg)
+                raise RuntimeError(
+                    f"{error_msg}. "
+                    "Install with: pip install chromadb==0.4.14"
+                )
             
             try:
                 import os
-                # Ensure directory exists
-                os.makedirs(settings.CHROMA_PERSIST_DIR, exist_ok=True)
-                logger.info(f"Initializing ChromaDB at {settings.CHROMA_PERSIST_DIR}")
+                # Use persistent directory - /app/data/chromadb in production
+                persist_dir = settings.CHROMA_PERSIST_DIR
+                if persist_dir.startswith("./"):
+                    persist_dir = os.path.abspath(persist_dir)
+                
+                # Ensure directory exists and is writable
+                os.makedirs(persist_dir, exist_ok=True)
+                logger.info(f"Initializing ChromaDB at {persist_dir}")
                 
                 # Create persistent ChromaDB client
-                # We'll use OpenAI embeddings, not default onnxruntime
+                # Using OpenAI embeddings, not onnxruntime
                 client = chromadb.PersistentClient(
-                    path=settings.CHROMA_PERSIST_DIR,
+                    path=persist_dir,
                     settings=ChromaSettings(
                         anonymized_telemetry=False,
                         allow_reset=True
                     )
                 )
-                logger.info("✅ ChromaDB client created successfully")
+                
+                # Verify client works by listing collections
+                try:
+                    collections = client.list_collections()
+                    logger.info(f"✅ ChromaDB client verified ({len(collections)} collections)")
+                except Exception as verify_error:
+                    error_msg = f"ChromaDB client verification failed: {verify_error}"
+                    logger.error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg) from verify_error
+                
                 return client
+                
+            except RuntimeError:
+                raise  # Re-raise RuntimeError
             except Exception as e:
-                logger.error(f"❌ Failed to initialize ChromaDB client: {e}", exc_info=True)
-                # Return None instead of raising - allows app to start
-                return None
+                error_msg = f"ChromaDB initialization failed: {e}"
+                logger.error(f"❌ {error_msg}", exc_info=True)
+                raise RuntimeError(error_msg) from e
         
         elif self.db_type == "qdrant":
             try:
