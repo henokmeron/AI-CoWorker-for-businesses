@@ -514,9 +514,15 @@ def render_settings():
         st.button("Save Changes", key="save_account")
     
     st.markdown("---")
-    if st.button("Close Settings", key="close_settings"):
-        st.session_state.show_settings = False
-        st.rerun()
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("💬 Chat", key="settings_to_chat", use_container_width=True):
+            st.session_state.show_settings = False
+            st.rerun()
+    with col2:
+        if st.button("Close Settings", key="close_settings", use_container_width=True):
+            st.session_state.show_settings = False
+            st.rerun()
 
 
 def render_edit_gpt_panel():
@@ -957,59 +963,57 @@ else:
                                 </div>
                                 """, unsafe_allow_html=True)
     
-    # File upload area - ONLY shown when "+" button is clicked, positioned above prompt (not in chat)
-    # CRITICAL: This must be hidden by default - only show if explicitly toggled
+    # File upload area - shown above chat input when "+" button is clicked
     if st.session_state.get("show_file_upload", False):
-        # Use a unique key that changes after upload to prevent infinite loop
-        upload_key = f"prompt_file_uploader_{st.session_state.get('upload_counter', 0)}"
-        uploaded_file = st.file_uploader(
-            "📎 Attach file",
-            type=["pdf", "docx", "txt", "xlsx", "doc", "xls", "pptx", "csv"],
-            key=upload_key,
-            help="Supported: PDF, DOCX, TXT, XLSX"
-        )
-        
-        if uploaded_file:
-            business_id = st.session_state.selected_gpt or "temp_chat"
-            # Check if this file was already processed (prevent infinite loop)
-            file_key = f"processed_{uploaded_file.name}_{uploaded_file.size}"
-            if file_key not in st.session_state:
-                st.session_state[file_key] = True
-                with st.spinner(f"Processing {uploaded_file.name}..."):
-                    result = upload_document(business_id, uploaded_file)
-                    if result:
-                        st.success(f"✅ {uploaded_file.name} processed!")
-                        st.session_state.chat_history.append({
-                            "role": "assistant",
-                            "content": f"I've processed '{uploaded_file.name}'. You can now ask me questions about it!",
-                            "sources": []
-                        })
-                        # Increment counter to change uploader key
-                        st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
-                        st.session_state.show_file_upload = False
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Failed to process {uploaded_file.name}")
-                        # Remove the processed flag so user can retry
-                        if file_key in st.session_state:
-                            del st.session_state[file_key]
-        
-        if st.button("✕ Close", key="close_file_upload"):
-            st.session_state.show_file_upload = False
-            st.rerun()
+        with st.container():
+            st.markdown('<div class="file-upload-area">', unsafe_allow_html=True)
+            upload_key = f"prompt_file_uploader_{st.session_state.get('upload_counter', 0)}"
+            uploaded_file = st.file_uploader(
+                "📎 Attach file",
+                type=["pdf", "docx", "txt", "xlsx", "doc", "xls", "pptx", "csv"],
+                key=upload_key,
+                help="Supported: PDF, DOCX, TXT, XLSX"
+            )
+            
+            if uploaded_file:
+                business_id = st.session_state.selected_gpt or "temp_chat"
+                file_key = f"processed_{uploaded_file.name}_{uploaded_file.size}"
+                if file_key not in st.session_state:
+                    st.session_state[file_key] = True
+                    with st.spinner(f"Processing {uploaded_file.name}..."):
+                        result = upload_document(business_id, uploaded_file)
+                        if result:
+                            st.success(f"✅ {uploaded_file.name} processed!")
+                            st.session_state.chat_history.append({
+                                "role": "assistant",
+                                "content": f"I've processed '{uploaded_file.name}'. You can now ask me questions about it!",
+                                "sources": []
+                            })
+                            st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
+                            st.session_state.show_file_upload = False
+                            st.rerun()
+                        else:
+                            error_msg = f"❌ Failed to process {uploaded_file.name}\n\nPossible reasons:\n- File format not supported\n- File is corrupted\n- Backend processing error\n\nPlease try again or check backend logs."
+                            st.error(error_msg)
+                            if file_key in st.session_state:
+                                del st.session_state[file_key]
+            
+            col1, col2 = st.columns([1, 10])
+            with col1:
+                if st.button("✕", key="close_file_upload_btn", help="Close"):
+                    st.session_state.show_file_upload = False
+                    st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
     
-    # "+" button positioned right above chat input, left-aligned (ChatGPT style)
-    # Create a row with the "+" button on the left
-    attach_row = st.columns([0.06, 0.94])
-    with attach_row[0]:
+    # Chat input with attachment button (ChatGPT style - button next to input)
+    # Create a row with attachment button and chat input
+    input_row = st.columns([0.04, 0.96])
+    with input_row[0]:
         if st.button("➕", key="attach_file_btn", help="Attach file", use_container_width=True):
             st.session_state.show_file_upload = not st.session_state.show_file_upload
             st.rerun()
-    with attach_row[1]:
-        st.empty()  # Empty space to align with chat input
-    
-    # Chat input (must be at root level, not in columns)
-    user_query = st.chat_input("Message...")
+    with input_row[1]:
+        user_query = st.chat_input("Message...")
     
     # Handle chat input
     if user_query:

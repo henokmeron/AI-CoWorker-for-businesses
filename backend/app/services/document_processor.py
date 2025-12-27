@@ -100,12 +100,14 @@ class DocumentProcessor:
             
             # Register DOCX handler if available
             try:
-                import python_docx
-                from .file_handlers.base_handler import BaseFileHandler
-                # We'll add a simple DOCX handler if needed
-                logger.info("✅ python-docx available - DOCX files will work")
-            except ImportError:
-                logger.warning("⚠️  python-docx not available - DOCX files will not work")
+                from .file_handlers.docx_handler import DOCXHandler
+                docx_handler = DOCXHandler()
+                self.handlers.append(docx_handler)
+                logger.info(f"✅ Registered DOCX handler (python-docx) - DOCX files will work")
+            except ImportError as e:
+                logger.warning(f"⚠️  python-docx not available - DOCX files will not work: {e}")
+            except Exception as e:
+                logger.error(f"❌ Could not register DOCX handler: {e}")
             
             # Register XLSX handler if available
             try:
