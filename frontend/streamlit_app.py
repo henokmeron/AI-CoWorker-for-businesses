@@ -182,7 +182,9 @@ def api_request(method: str, endpoint: str, **kwargs) -> Optional[requests.Respo
     headers = kwargs.pop("headers", {})
     headers["X-API-Key"] = API_KEY
     
-    if "json" in kwargs:
+    # Only set Content-Type for JSON requests, NOT for file uploads
+    # When files are present, requests library will set multipart/form-data automatically
+    if "json" in kwargs and "files" not in kwargs:
         headers["Content-Type"] = "application/json"
     
     url = f"{BACKEND_URL}{endpoint}"
@@ -242,12 +244,57 @@ def create_business(name: str, description: Optional[str] = None) -> Optional[Di
 
 def upload_document(business_id: str, file) -> Optional[Dict[str, Any]]:
     """Upload a document to a business (GPT)."""
-    files = {"file": (file.name, file.getvalue(), file.type)}
-    data = {"business_id": business_id}
-    response = api_request("POST", f"/api/v1/documents/upload?business_id={business_id}", files=files, data=data)
-    if response and response.status_code == 200:
-        return response.json()
-    return None
+    try:
+        # Prepare file for multipart/form-data upload
+        # Handle different file object types (Streamlit UploadedFile, file-like objects)
+        if hasattr(file, 'getvalue'):
+            # Streamlit UploadedFile
+            file_content = file.getvalue()
+            file_name = file.name
+            file_type = getattr(file, 'type', None)
+        elif hasattr(file, 'read'):
+            # File-like object
+            file_content = file.read()
+            # Reset file pointer if possible
+            if hasattr(file, 'seek'):
+                file.seek(0)
+            file_name = getattr(file, 'name', 'uploaded_file')
+            file_type = getattr(file, 'content_type', None)
+        else:
+            # Assume it's already bytes
+            file_content = file
+            file_name = "uploaded_file"
+            file_type = None
+        
+        # Ensure we have bytes
+        if isinstance(file_content, str):
+            file_content = file_content.encode('utf-8')
+        
+        file_tuple = (file_name, file_content, file_type)
+        
+        # Form data - business_id must be sent as form field (not query param)
+        data = {"business_id": business_id}
+        files = {"file": file_tuple}
+        
+        # Don't include business_id in query string - it's in form data
+        response = api_request("POST", "/api/v1/documents/upload", files=files, data=data)
+        if response and response.status_code == 200:
+            return response.json()
+        elif response:
+            # Log the error for debugging
+            error_text = response.text
+            logger.error(f"Upload failed: {response.status_code} - {error_text}")
+            # Try to extract error message from response
+            try:
+                error_json = response.json()
+                if 'detail' in error_json:
+                    logger.error(f"Error detail: {error_json['detail']}")
+            except:
+                pass
+        return None
+    except Exception as e:
+        logger.error(f"Exception during upload: {e}", exc_info=True)
+        return None
 
 
 def get_documents(business_id: str) -> List[Dict[str, Any]]:

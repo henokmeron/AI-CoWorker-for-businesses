@@ -241,18 +241,24 @@ When answering:
         else:
             # Categorize only mode (default)
             if has_documents and context:
-                system_prompt = """You are a helpful AI assistant that categorizes and analyzes questions based on provided documents.
+                system_prompt = """You are a helpful AI assistant that answers questions based on uploaded documents.
 
 When answering:
-- Categorize the question and provide analysis
-- Use information from the provided documents when available
+- Use information from the provided documents to answer the user's questions
 - Cite sources when referencing documents (e.g., "According to Source 1...")
-- Focus on categorization and analysis rather than direct answers
-- Be concise and accurate"""
+- If the user asks about "attached file" or "uploaded document", refer to the documents provided below
+- Be accurate and specific, using the document content to answer
+- If information isn't in the documents, say so clearly"""
             else:
                 from datetime import datetime
                 current_date = datetime.now().strftime("%B %d, %Y")
                 system_prompt = f"""You are a helpful AI assistant powered by GPT-4o. Answer questions clearly and accurately based on your knowledge as of {current_date}.
+
+IMPORTANT: If the user asks about an "attached file", "uploaded document", or mentions a specific file name, they are referring to documents that should have been uploaded to this conversation. However, no documents were found in the system for this conversation. Please let them know that:
+1. The document may not have been uploaded successfully
+2. They should try uploading the document again
+3. Once uploaded, you can answer questions about it
+
 Be helpful, concise, and informative. When providing information, use current knowledge and avoid referencing outdated dates like "as of 2023" unless specifically asked about historical events. Always use the current date ({current_date}) as your knowledge cutoff."""
 
         messages = [SystemMessage(content=system_prompt)]
