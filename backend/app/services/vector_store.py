@@ -205,7 +205,9 @@ class VectorStore:
                     name=collection_name,
                     embedding_function=embedding_fn
                 )
-                logger.info(f"Retrieved existing collection: {collection_name}")
+                # Log collection stats for debugging
+                count = collection.count()
+                logger.info(f"✅ Retrieved existing collection '{collection_name}' with {count} documents (persistent)")
             except Exception:
                 # Create new collection with OpenAI embeddings
                 collection = self.client.create_collection(
@@ -213,7 +215,7 @@ class VectorStore:
                     embedding_function=embedding_fn,
                     metadata={"business_id": business_id}
                 )
-                logger.info(f"Created new collection: {collection_name} with OpenAI embeddings")
+                logger.info(f"✅ Created new collection '{collection_name}' with OpenAI embeddings (persistent)")
             
             return collection
         

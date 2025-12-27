@@ -120,6 +120,18 @@ class RAGService:
             
             try:
                 logger.info(f"🔍 Searching vector database for business_id='{business_id}', query: {query[:100]}...")
+                
+                # First check if collection exists and has documents
+                try:
+                    collection = self.vector_store.get_collection(business_id)
+                    if collection and hasattr(collection, 'count'):
+                        doc_count = collection.count()
+                        logger.info(f"   📊 Collection 'business_{business_id}' has {doc_count} documents")
+                        if doc_count == 0:
+                            logger.warning(f"   ⚠️  Collection exists but is empty - documents may not have been indexed")
+                except Exception as e:
+                    logger.warning(f"   Could not check collection stats: {e}")
+                
                 retrieved_docs = self.vector_store.search(
                     business_id=business_id,
                     query=query,
@@ -134,6 +146,7 @@ class RAGService:
                     logger.warning(f"   1. No documents have been uploaded for this business_id")
                     logger.warning(f"   2. Documents were uploaded but not indexed properly")
                     logger.warning(f"   3. business_id mismatch between upload and query")
+                    logger.warning(f"   4. Vector database was cleared or not persisted")
                     # Still continue - will answer as general AI but with warning in prompt
             except Exception as e:
                 logger.error(f"❌ Vector store search failed for business_id='{business_id}': {e}", exc_info=True)
