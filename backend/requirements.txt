@@ -12,18 +12,15 @@ langgraph==0.0.20
 openai==1.10.0
 
 # Vector Database
-# Using 0.4.14 - last stable version before onnxruntime hard dependency
 chromadb==0.4.14
 qdrant-client==1.7.0
 
-# Database (PostgreSQL for conversation history)
+# Database
 psycopg2-binary==2.9.9
 sqlalchemy==2.0.25
 alembic==1.13.1
 
 # Document Processing
-# REMOVED unstructured to avoid onnxruntime dependency issues
-# Using direct parsers instead: PyPDF2, python-docx, openpyxl
 python-magic==0.4.27
 pillow==10.2.0
 
@@ -47,5 +44,5 @@ passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
 email-validator==2.1.0
 
-# Cloud Storage (for permanent document storage)
+# Cloud Storage
 boto3==1.34.0
