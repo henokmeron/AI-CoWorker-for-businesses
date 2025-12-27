@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     # Use chromadb by default (works everywhere)
     # Use qdrant for production if configured
     VECTOR_DB_TYPE: str = "chromadb"  # chromadb, qdrant, or pinecone
-    CHROMA_PERSIST_DIR: str = "./data/chromadb"
+    # Use persistent volume path in production (/app/data is mounted from fly.toml)
+    CHROMA_PERSIST_DIR: str = os.getenv("CHROMA_PERSIST_DIR", "/app/data/chromadb")
     
     # Qdrant settings (use Qdrant Cloud free tier or self-hosted)
     QDRANT_URL: Optional[str] = "http://localhost:6333"  # Default to local, override with env var

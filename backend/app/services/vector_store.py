@@ -85,14 +85,26 @@ class VectorStore:
             
             try:
                 import os
-                # Use persistent directory - /app/data/chromadb in production
+                # Use persistent directory - /app/data/chromadb in production (Fly.io volume)
                 persist_dir = settings.CHROMA_PERSIST_DIR
+                
+                # Convert relative paths to absolute (for local dev)
                 if persist_dir.startswith("./"):
                     persist_dir = os.path.abspath(persist_dir)
                 
                 # Ensure directory exists and is writable
                 os.makedirs(persist_dir, exist_ok=True)
-                logger.info(f"Initializing ChromaDB at {persist_dir}")
+                
+                # Verify directory is writable
+                test_file = os.path.join(persist_dir, ".test_write")
+                try:
+                    with open(test_file, 'w') as f:
+                        f.write("test")
+                    os.remove(test_file)
+                except Exception as e:
+                    raise RuntimeError(f"ChromaDB directory not writable: {persist_dir} - {e}")
+                
+                logger.info(f"✅ Initializing ChromaDB at {persist_dir} (persistent volume)")
                 
                 # Create persistent ChromaDB client
                 # Using OpenAI embeddings, not onnxruntime
