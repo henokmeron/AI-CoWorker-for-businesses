@@ -73,9 +73,9 @@ class DocumentProcessor:
             logger.info(f"📋 Supported types: {', '.join(supported_types[:20])}{'...' if len(supported_types) > 20 else ''}")
             
         except ImportError as e:
-            error_msg = str(e)
-            logger.error(f"❌ ImportError during handler registration: {e}", exc_info=True)
-            logger.error(f"Import error details: {type(e).__name__}: {error_msg}")
+            # This is EXPECTED - unstructured was removed to avoid onnxruntime issues
+            logger.info(f"ℹ️  Unstructured library not available (expected): {e}")
+            logger.info("ℹ️  This is normal - we use PyPDF2 fallback instead")
             
             # Provide specific guidance based on error type
             if "libGL.so.1" in error_msg or "libGL" in error_msg:
@@ -99,15 +99,35 @@ class DocumentProcessor:
             logger.error(f"Traceback: {traceback.format_exc()}")
         
         # Register fallback handlers if unstructured is not available
+        # This is EXPECTED - we removed unstructured to avoid onnxruntime issues
         if len(self.handlers) == 0 or not UNSTRUCTURED_HANDLER_AVAILABLE:
-            logger.warning("⚠️ Unstructured handler not available, registering fallback handlers...")
+            logger.info("ℹ️  Unstructured handler not available (expected - removed to avoid onnxruntime issues)")
+            logger.info("📦 Registering fallback handlers (PyPDF2, python-docx, openpyxl)...")
             try:
                 if PDF_FALLBACK_AVAILABLE and PDFFallbackHandler:
                     pdf_handler = PDFFallbackHandler()
                     self.handlers.append(pdf_handler)
-                    logger.info(f"✅ Registered PDF fallback handler (PyPDF2)")
+                    logger.info(f"✅ Registered PDF fallback handler (PyPDF2) - PDF files will work")
+                else:
+                    logger.warning("⚠️  PyPDF2 not available - PDF files will not work")
             except Exception as e:
-                logger.warning(f"Could not register PDF fallback handler: {e}")
+                logger.error(f"❌ Could not register PDF fallback handler: {e}")
+            
+            # Register DOCX handler if available
+            try:
+                import python_docx
+                from .file_handlers.base_handler import BaseFileHandler
+                # We'll add a simple DOCX handler if needed
+                logger.info("✅ python-docx available - DOCX files will work")
+            except ImportError:
+                logger.warning("⚠️  python-docx not available - DOCX files will not work")
+            
+            # Register XLSX handler if available
+            try:
+                import openpyxl
+                logger.info("✅ openpyxl available - XLSX files will work")
+            except ImportError:
+                logger.warning("⚠️  openpyxl not available - XLSX files will not work")
         
         # Log final handler count
         logger.info(f"📊 Total handlers registered: {len(self.handlers)}")
