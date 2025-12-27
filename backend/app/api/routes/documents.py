@@ -93,9 +93,22 @@ async def upload_document(
         )
     
     try:
+        # Validate filename is present
+        if not file.filename:
+            raise HTTPException(
+                status_code=400,
+                detail="File filename is missing. Please ensure the file has a name."
+            )
+        
         # Validate file size
         contents = await file.read()
         file_size = len(contents)
+        
+        if file_size == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="File is empty. Please upload a file with content."
+            )
         
         is_allowed, error_msg = is_file_allowed(
             file.filename,
