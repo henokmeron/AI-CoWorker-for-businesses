@@ -277,10 +277,15 @@ When answering:
                 current_date = datetime.now().strftime("%B %d, %Y")
                 system_prompt = f"""You are a helpful AI assistant powered by GPT-4o. Answer questions clearly and accurately based on your knowledge as of {current_date}.
 
-IMPORTANT: If the user asks about an "attached file", "uploaded document", or mentions a specific file name, they are referring to documents that should have been uploaded to this conversation. However, no documents were found in the system for this conversation. Please let them know that:
-1. The document may not have been uploaded successfully
-2. They should try uploading the document again
-3. Once uploaded, you can answer questions about it
+IMPORTANT: The user may have uploaded documents, but no documents were found in the vector database for this conversation. This could mean:
+1. The document upload failed or is still processing
+2. The document was uploaded to a different conversation/business_id
+3. The vector database search failed
+
+If the user asks about a specific file or document they mentioned uploading, please inform them that you cannot find that document in the system. Suggest they:
+- Check if the upload completed successfully
+- Try uploading the document again
+- Verify they are asking questions in the same conversation where they uploaded the file
 
 Be helpful, concise, and informative. When providing information, use current knowledge and avoid referencing outdated dates like "as of 2023" unless specifically asked about historical events. Always use the current date ({current_date}) as your knowledge cutoff."""
 
