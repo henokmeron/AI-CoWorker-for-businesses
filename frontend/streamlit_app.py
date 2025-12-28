@@ -1030,27 +1030,36 @@ else:
         st.error(f"⚠️ Cannot connect to backend: {e}")
         st.stop()
     
-    # CRITICAL: Reload conversation if we have a conversation_id but no chat history
-    # This happens when switching between sections (My GPTs <-> Conversations)
-    if st.session_state.current_conversation_id and len(st.session_state.chat_history) == 0:
+    # CRITICAL: Load chat history on page load/refresh if we have a conversation_id
+    # This ensures chat history persists across page refreshes
+    if st.session_state.current_conversation_id and (not st.session_state.get("chat_history_loaded", False) or len(st.session_state.chat_history) == 0):
         try:
-            logger.info(f"🔄 Reloading conversation {st.session_state.current_conversation_id} (chat history was empty)")
+            logger.info(f"🔄 Loading conversation {st.session_state.current_conversation_id} (loaded={st.session_state.get('chat_history_loaded', False)})")
             response = api_request("GET", f"/api/v1/conversations/{st.session_state.current_conversation_id}")
             if response and response.status_code == 200:
                 loaded_conv = response.json()
-                st.session_state.chat_history = [
-                    {
-                        "role": msg.get("role"),
-                        "content": msg.get("content"),
-                        "sources": msg.get("sources", [])
-                    }
-                    for msg in loaded_conv.get("messages", [])
-                ]
-                logger.info(f"✅ Reloaded conversation with {len(st.session_state.chat_history)} messages")
+                messages = loaded_conv.get("messages", [])
+                if messages:
+                    st.session_state.chat_history = [
+                        {
+                            "role": msg.get("role"),
+                            "content": msg.get("content"),
+                            "sources": msg.get("sources", [])
+                        }
+                        for msg in messages
+                    ]
+                    st.session_state.chat_history_loaded = True
+                    logger.info(f"✅ Loaded conversation with {len(st.session_state.chat_history)} messages")
+                else:
+                    # Empty conversation - mark as loaded to prevent infinite reload
+                    st.session_state.chat_history_loaded = True
+                    logger.info(f"ℹ️  Conversation {st.session_state.current_conversation_id} is empty")
             else:
-                logger.warning(f"⚠️  Could not reload conversation {st.session_state.current_conversation_id}")
+                logger.warning(f"⚠️  Could not load conversation {st.session_state.current_conversation_id}")
+                st.session_state.chat_history_loaded = True  # Mark as attempted to prevent infinite retry
         except Exception as e:
-            logger.error(f"❌ Failed to reload conversation: {e}", exc_info=True)
+            logger.error(f"❌ Failed to load conversation: {e}", exc_info=True)
+            st.session_state.chat_history_loaded = True  # Mark as attempted
     
     # Chat interface
     chat_container = st.container()
