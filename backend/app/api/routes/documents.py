@@ -191,13 +191,60 @@ async def upload_document(
         ]
         
         # CRITICAL: Store in vector database - this MUST succeed
+        # Log document details before storing
+        logger.info(f"📄 Storing document in vector DB:")
+        logger.info(f"   Document ID: {result['document_id']}")
+        logger.info(f"   Business ID: {business_id}")
+        logger.info(f"   Filename: {file.filename}")
+        logger.info(f"   Chunks: {len(chunk_texts)}")
+        logger.info(f"   Collection: business_{business_id}")
+        
         try:
+            # Get collection stats BEFORE adding
+            try:
+                collection = vector_db.get_collection(business_id)
+                if collection:
+                    count_before = collection.count()
+                    logger.info(f"   📊 Collection has {count_before} documents BEFORE adding this one")
+            except Exception as e:
+                logger.warning(f"   Could not get pre-add collection count: {e}")
+                count_before = 0
+            
             chunk_ids = vector_db.add_documents(
                 business_id=business_id,
                 texts=chunk_texts,
                 metadatas=chunk_metadatas,
                 document_id=result["document_id"]
             )
+            
+            # Verify documents were actually added
+            if chunk_ids and len(chunk_ids) > 0:
+                try:
+                    collection = vector_db.get_collection(business_id)
+                    if collection:
+                        count_after = collection.count()
+                        added_count = count_after - count_before
+                        logger.info(f"   ✅ Successfully added {len(chunk_ids)} chunks")
+                        logger.info(f"   📊 Collection now has {count_after} documents (added {added_count})")
+                        
+                        # Verify this specific document's chunks are in the collection
+                        doc_chunks = [cid for cid in chunk_ids if result["document_id"] in cid]
+                        logger.info(f"   🔍 Document {result['document_id']} has {len(doc_chunks)} chunks in collection")
+                        
+                        # List all document_ids in collection to verify isolation
+                        try:
+                            all_docs = collection.get()
+                            if all_docs and 'metadatas' in all_docs:
+                                unique_doc_ids = set()
+                                for meta in all_docs['metadatas']:
+                                    if meta and 'document_id' in meta:
+                                        unique_doc_ids.add(meta['document_id'])
+                                logger.info(f"   📚 Collection contains {len(unique_doc_ids)} unique documents: {list(unique_doc_ids)[:5]}")
+                        except Exception as e:
+                            logger.warning(f"   Could not list document IDs: {e}")
+                except Exception as e:
+                    logger.warning(f"   Could not verify document addition: {e}")
+            
             if not chunk_ids or len(chunk_ids) == 0:
                 logger.error("Vector database returned no chunk IDs - storage failed")
                 # Mark document as failed but keep the file
