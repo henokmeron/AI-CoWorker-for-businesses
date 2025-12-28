@@ -723,6 +723,7 @@ with st.sidebar:
                         st.session_state.selected_gpt = gpt_id
                         st.session_state.chat_history = []
                         st.session_state.current_conversation_id = None
+                        st.session_state.chat_history_loaded = False  # Reset loaded flag
                         st.session_state.gpt_dropdown_open[gpt_id] = False
                         
                         # Create new conversation on backend
