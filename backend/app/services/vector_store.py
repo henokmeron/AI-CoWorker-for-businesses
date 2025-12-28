@@ -279,8 +279,24 @@ class VectorStore:
             logger.error(f"Failed to generate embeddings: {e}")
             raise ValueError(f"Failed to generate embeddings: {e}")
         
-        # Create IDs for chunks
+        # Create IDs for chunks - MUST be unique across all documents
+        # Use document_id + chunk index to ensure uniqueness
         chunk_ids = [f"{document_id}_chunk_{i}" for i in range(len(texts))]
+        
+        # CRITICAL: Check if any chunk IDs already exist (shouldn't happen, but safety check)
+        if self.db_type == "chromadb":
+            try:
+                existing = collection.get(ids=chunk_ids)
+                if existing and len(existing['ids']) > 0:
+                    logger.warning(f"⚠️  Some chunk IDs already exist - this document may have been uploaded before")
+                    # Generate new unique IDs by adding timestamp
+                    import time
+                    timestamp = int(time.time() * 1000)
+                    chunk_ids = [f"{document_id}_{timestamp}_chunk_{i}" for i in range(len(texts))]
+                    logger.info(f"Generated new unique chunk IDs with timestamp")
+            except Exception:
+                # No existing chunks - this is expected for new documents
+                pass
         
         # Add document_id to all metadatas
         for meta in metadatas:
@@ -288,16 +304,26 @@ class VectorStore:
             meta["business_id"] = business_id
         
         if self.db_type == "chromadb":
-            # Add to ChromaDB (persistent storage)
+            # Get count BEFORE adding to verify accumulation
+            count_before = collection.count()
+            
+            # Add to ChromaDB (persistent storage) - this ADDS, doesn't replace
             collection.add(
                 ids=chunk_ids,
                 embeddings=embeddings,
                 documents=texts,
                 metadatas=metadatas
             )
-            # Verify documents were added
-            new_count = collection.count()
-            logger.info(f"✅ Added {len(chunk_ids)} chunks to collection '{collection.name}' (total: {new_count} documents, persistent)")
+            
+            # Verify documents were added and accumulated
+            count_after = collection.count()
+            added_count = count_after - count_before
+            logger.info(f"✅ Added {len(chunk_ids)} chunks to collection '{collection.name}'")
+            logger.info(f"   Before: {count_before} documents, After: {count_after} documents (added {added_count})")
+            logger.info(f"   Document ID: {document_id}, Business ID: {business_id}")
+            
+            if added_count != len(chunk_ids):
+                logger.warning(f"⚠️  Expected to add {len(chunk_ids)} chunks but only {added_count} were added - some may have been duplicates")
         
         elif self.db_type == "qdrant":
             from qdrant_client.models import PointStruct

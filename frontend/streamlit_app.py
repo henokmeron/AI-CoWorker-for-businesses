@@ -576,22 +576,41 @@ def render_edit_gpt_panel():
         
         # File upload
         st.markdown("**Upload New Document:**")
+        
+        # Use unique key that changes after successful upload to prevent infinite loop
+        upload_key = f"edit_gpt_upload_{st.session_state.editing_gpt_id}_{st.session_state.get('gpt_upload_counter', 0)}"
         uploaded_file = st.file_uploader(
             "Choose file",
             type=["pdf", "docx", "txt", "xlsx", "doc", "xls", "pptx", "csv"],
-            key="edit_gpt_upload",
+            key=upload_key,
             help="Supported: PDF, DOCX, TXT, XLSX"
         )
         
         if uploaded_file:
-            with st.spinner(f"Uploading {uploaded_file.name}..."):
-                result = upload_document(st.session_state.editing_gpt_id, uploaded_file)
-                if result:
-                    st.success(f"✅ {uploaded_file.name} uploaded!")
-                    st.rerun()
-                else:
-                    error_msg = f"❌ Failed to upload {uploaded_file.name}\n\nPossible reasons:\n- File format not supported\n- File is corrupted\n- Backend processing error\n\nPlease try again or check backend logs."
-                    st.error(error_msg)
+            # CRITICAL: Track processed files to prevent infinite re-upload loop
+            file_key = f"gpt_processed_{st.session_state.editing_gpt_id}_{uploaded_file.name}_{uploaded_file.size}"
+            
+            if file_key not in st.session_state:
+                st.session_state[file_key] = True
+                with st.spinner(f"Uploading {uploaded_file.name}..."):
+                    result = upload_document(st.session_state.editing_gpt_id, uploaded_file)
+                    if result and not isinstance(result, dict) or (isinstance(result, dict) and "error" not in result):
+                        st.success(f"✅ {uploaded_file.name} uploaded!")
+                        # Increment counter to change uploader key and prevent re-upload
+                        st.session_state.gpt_upload_counter = st.session_state.get("gpt_upload_counter", 0) + 1
+                        st.rerun()
+                    else:
+                        error_msg = f"❌ Failed to upload {uploaded_file.name}"
+                        if isinstance(result, dict) and "error" in result:
+                            error_msg += f"\n\nError: {result['error']}"
+                        error_msg += "\n\nPossible reasons:\n- File format not supported\n- File is corrupted\n- Backend processing error\n\nPlease try again or check backend logs."
+                        st.error(error_msg)
+                        # Remove processed flag so user can retry
+                        if file_key in st.session_state:
+                            del st.session_state[file_key]
+            else:
+                # File already processed - show message but don't re-upload
+                st.info(f"ℹ️ {uploaded_file.name} was already uploaded. Select a different file or refresh to upload again.")
         
         st.markdown("---")
         
@@ -672,6 +691,10 @@ with st.sidebar:
                         # Only clear chat if switching to a different GPT
                         if st.session_state.selected_gpt != gpt_id:
                             st.session_state.selected_gpt = gpt_id
+                            # Clear conversation cache when switching GPTs
+                            cache_key = f"conversations_cache_{gpt_id}"
+                            if cache_key in st.session_state:
+                                del st.session_state[cache_key]
                             # Preserve conversation if it belongs to this GPT, otherwise clear
                             if st.session_state.current_conversation_id:
                                 # Check if current conversation belongs to this GPT
@@ -772,12 +795,28 @@ with st.sidebar:
         st.rerun()
     
     # Load and display conversations
+    # CRITICAL: Cache conversations to prevent disappearing/reappearing
+    # Only reload if we don't have cached conversations or if GPT changed
+    cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+    should_reload = (
+        cache_key not in st.session_state or
+        st.session_state.get("last_gpt_for_conversations") != st.session_state.selected_gpt
+    )
+    
     try:
-        conversations = get_conversations(
-            business_id=st.session_state.selected_gpt,
-            archived=False
-        )
-        st.session_state.conversations = conversations
+        if should_reload:
+            conversations = get_conversations(
+                business_id=st.session_state.selected_gpt,
+                archived=False
+            )
+            st.session_state.conversations = conversations
+            st.session_state[cache_key] = conversations
+            st.session_state.last_gpt_for_conversations = st.session_state.selected_gpt
+            logger.info(f"✅ Loaded {len(conversations)} conversations for GPT: {st.session_state.selected_gpt}")
+        else:
+            # Use cached conversations to prevent disappearing
+            conversations = st.session_state.get(cache_key, [])
+            st.session_state.conversations = conversations
         
         if conversations:
             for conv in conversations[:20]:
