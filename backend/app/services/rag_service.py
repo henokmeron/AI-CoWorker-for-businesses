@@ -133,18 +133,30 @@ class RAGService:
                     logger.warning(f"   Could not check collection stats: {e}")
                 
                 # CRITICAL: Search with higher k to find documents from ALL uploaded files
-                # Increase k to ensure we search across all documents, not just the last one
-                search_k = max(max_sources * 2, 10)  # Search more chunks to find all documents
+                # Increase k significantly to ensure we search across ALL documents, not just the last one
+                # Use at least 20 chunks to search across multiple documents
+                search_k = max(max_sources * 3, 20)  # Search many more chunks to find all documents
+                logger.info(f"   🔍 Searching {search_k} chunks across ALL documents in collection")
+                
                 retrieved_docs = self.vector_store.search(
                     business_id=business_id,
                     query=query,
                     k=search_k
                 )
-                # Then limit to max_sources for the final result
+                
+                # Log which documents were found
+                if retrieved_docs:
+                    found_doc_ids = set()
+                    for doc in retrieved_docs:
+                        if doc.get('metadata') and 'document_id' in doc.get('metadata', {}):
+                            found_doc_ids.add(doc['metadata']['document_id'])
+                    logger.info(f"   📚 Found chunks from {len(found_doc_ids)} different documents: {list(found_doc_ids)[:5]}")
+                
+                # Then limit to max_sources for the final result, sorted by relevance
                 if len(retrieved_docs) > max_sources:
-                    # Sort by score and take top max_sources
+                    # Sort by score (higher is better) and take top max_sources
                     retrieved_docs = sorted(retrieved_docs, key=lambda x: x.get('score', 0), reverse=True)[:max_sources]
-                    logger.info(f"   Searched {search_k} chunks, returning top {max_sources} results")
+                    logger.info(f"   ✅ Searched {search_k} chunks, returning top {max_sources} results from {len(found_doc_ids)} documents")
                 if retrieved_docs:
                     context = self._format_context(retrieved_docs)
                     logger.info(f"✅ Found {len(retrieved_docs)} relevant document chunks for business_id='{business_id}'")

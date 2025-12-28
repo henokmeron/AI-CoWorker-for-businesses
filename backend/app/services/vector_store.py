@@ -280,22 +280,28 @@ class VectorStore:
             raise ValueError(f"Failed to generate embeddings: {e}")
         
         # Create IDs for chunks - MUST be unique across all documents
-        # Use document_id + chunk index to ensure uniqueness
-        chunk_ids = [f"{document_id}_chunk_{i}" for i in range(len(texts))]
+        # CRITICAL: Use document_id + timestamp + chunk index to ensure absolute uniqueness
+        # This prevents any possibility of ID conflicts even if same document is uploaded twice
+        import time
+        timestamp = int(time.time() * 1000000)  # Microseconds for better uniqueness
+        chunk_ids = [f"{document_id}_{timestamp}_chunk_{i}" for i in range(len(texts))]
+        logger.info(f"Generated {len(chunk_ids)} unique chunk IDs for document {document_id}")
         
-        # CRITICAL: Check if any chunk IDs already exist (shouldn't happen, but safety check)
+        # CRITICAL: Verify no ID conflicts exist (safety check)
         if self.db_type == "chromadb":
             try:
-                existing = collection.get(ids=chunk_ids)
-                if existing and len(existing['ids']) > 0:
-                    logger.warning(f"⚠️  Some chunk IDs already exist - this document may have been uploaded before")
-                    # Generate new unique IDs by adding timestamp
-                    import time
-                    timestamp = int(time.time() * 1000)
+                # Check a sample of IDs to see if any exist
+                sample_ids = chunk_ids[:min(5, len(chunk_ids))]
+                existing = collection.get(ids=sample_ids)
+                if existing and len(existing.get('ids', [])) > 0:
+                    logger.warning(f"⚠️  Some chunk IDs already exist - regenerating with new timestamp")
+                    # Generate new unique IDs with fresh timestamp
+                    timestamp = int(time.time() * 1000000)
                     chunk_ids = [f"{document_id}_{timestamp}_chunk_{i}" for i in range(len(texts))]
-                    logger.info(f"Generated new unique chunk IDs with timestamp")
-            except Exception:
+                    logger.info(f"Regenerated chunk IDs with new timestamp: {timestamp}")
+            except Exception as e:
                 # No existing chunks - this is expected for new documents
+                logger.debug(f"No existing chunks found (expected): {e}")
                 pass
         
         # Add document_id to all metadatas
