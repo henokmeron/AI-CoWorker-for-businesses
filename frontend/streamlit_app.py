@@ -669,9 +669,18 @@ with st.sidebar:
                 with col1:
                     button_style = "primary" if is_selected else "secondary"
                     if st.button(display_name, key=f"gpt_{gpt_id}", use_container_width=True, type=button_style):
-                        st.session_state.selected_gpt = gpt_id
-                        st.session_state.chat_history = []
-                        st.session_state.current_conversation_id = None
+                        # Only clear chat if switching to a different GPT
+                        if st.session_state.selected_gpt != gpt_id:
+                            st.session_state.selected_gpt = gpt_id
+                            # Preserve conversation if it belongs to this GPT, otherwise clear
+                            if st.session_state.current_conversation_id:
+                                # Check if current conversation belongs to this GPT
+                                # If not, clear it
+                                st.session_state.chat_history = []
+                                st.session_state.current_conversation_id = None
+                            else:
+                                # No active conversation, just clear chat
+                                st.session_state.chat_history = []
                         st.rerun()
                 
                 with col2:
@@ -781,26 +790,31 @@ with st.sidebar:
                 with col1:
                     button_style = "primary" if is_current else "secondary"
                     if st.button(display_title, key=f"conv_{conv.get('id')}", use_container_width=True, type=button_style):
-                        # CRITICAL: Clear chat history FIRST to prevent bleeding
-                        st.session_state.chat_history = []
-                        
-                        # Load conversation from backend
-                        response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
-                        if response and response.status_code == 200:
-                            loaded_conv = response.json()
-                            # REPLACE (not append) chat history with loaded messages
-                            st.session_state.chat_history = [
-                                {
-                                    "role": msg.get("role"),
-                                    "content": msg.get("content"),
-                                    "sources": msg.get("sources", [])
-                                }
-                                for msg in loaded_conv.get("messages", [])
-                            ]
-                            st.session_state.current_conversation_id = conv.get('id')
-                            logger.info(f"Loaded conversation {conv.get('id')} with {len(st.session_state.chat_history)} messages")
+                        # Only reload if this is a different conversation
+                        if st.session_state.current_conversation_id != conv.get('id'):
+                            # CRITICAL: Clear chat history FIRST to prevent bleeding
+                            st.session_state.chat_history = []
+                            
+                            # Load conversation from backend
+                            response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
+                            if response and response.status_code == 200:
+                                loaded_conv = response.json()
+                                # REPLACE (not append) chat history with loaded messages
+                                st.session_state.chat_history = [
+                                    {
+                                        "role": msg.get("role"),
+                                        "content": msg.get("content"),
+                                        "sources": msg.get("sources", [])
+                                    }
+                                    for msg in loaded_conv.get("messages", [])
+                                ]
+                                st.session_state.current_conversation_id = conv.get('id')
+                                logger.info(f"✅ Loaded conversation {conv.get('id')} with {len(st.session_state.chat_history)} messages")
+                            else:
+                                logger.error(f"❌ Failed to load conversation {conv.get('id')}")
+                                st.session_state.current_conversation_id = conv.get('id')
                         else:
-                            logger.error(f"Failed to load conversation {conv.get('id')}")
+                            # Same conversation - just ensure it's set
                             st.session_state.current_conversation_id = conv.get('id')
                         st.rerun()
                 
@@ -867,18 +881,30 @@ with st.sidebar:
     avatar_display = initials
     button_type = "primary" if st.session_state.user_logged_in else "secondary"
     
-    # Style the button to look like a circular avatar
+    # Style the button to look like a circular avatar - make it visible
     st.markdown(f"""
     <style>
-        button[data-testid="baseButton-secondary"][aria-label*="Account menu"],
-        button[data-testid="baseButton-primary"][aria-label*="Account menu"] {{
+        /* Avatar button styling - make it clearly visible */
+        button[data-testid="baseButton-secondary"][key="sidebar_avatar"],
+        button[data-testid="baseButton-primary"][key="sidebar_avatar"] {{
             border-radius: 50% !important;
             width: 40px !important;
             height: 40px !important;
             min-width: 40px !important;
             padding: 0 !important;
-            font-size: 14px !important;
+            font-size: 16px !important;
             font-weight: 600 !important;
+            border: 2px solid #565869 !important;
+            background-color: {'#10a37f' if st.session_state.user_logged_in else '#565869'} !important;
+            color: #ffffff !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }}
+        button[data-testid="baseButton-secondary"][key="sidebar_avatar"]:hover,
+        button[data-testid="baseButton-primary"][key="sidebar_avatar"]:hover {{
+            background-color: {'#0d8a6b' if st.session_state.user_logged_in else '#6e6e80'} !important;
+            border-color: #8e8ea0 !important;
         }}
     </style>
     """, unsafe_allow_html=True)
