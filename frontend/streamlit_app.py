@@ -882,11 +882,12 @@ with st.sidebar:
     button_type = "primary" if st.session_state.user_logged_in else "secondary"
     
     # Style the button to look like a circular avatar - make it visible
+    avatar_bg = '#10a37f' if st.session_state.user_logged_in else '#565869'
+    avatar_hover = '#0d8a6b' if st.session_state.user_logged_in else '#6e6e80'
     st.markdown(f"""
     <style>
         /* Avatar button styling - make it clearly visible */
-        button[data-testid="baseButton-secondary"][key="sidebar_avatar"],
-        button[data-testid="baseButton-primary"][key="sidebar_avatar"] {{
+        div[data-testid="stButton"] > button[kind="{'primary' if st.session_state.user_logged_in else 'secondary'}"][data-baseweb="button"] {{
             border-radius: 50% !important;
             width: 40px !important;
             height: 40px !important;
@@ -895,16 +896,24 @@ with st.sidebar:
             font-size: 16px !important;
             font-weight: 600 !important;
             border: 2px solid #565869 !important;
-            background-color: {'#10a37f' if st.session_state.user_logged_in else '#565869'} !important;
+            background-color: {avatar_bg} !important;
             color: #ffffff !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
         }}
-        button[data-testid="baseButton-secondary"][key="sidebar_avatar"]:hover,
-        button[data-testid="baseButton-primary"][key="sidebar_avatar"]:hover {{
-            background-color: {'#0d8a6b' if st.session_state.user_logged_in else '#6e6e80'} !important;
+        div[data-testid="stButton"] > button[kind="{'primary' if st.session_state.user_logged_in else 'secondary'}"][data-baseweb="button"]:hover {{
+            background-color: {avatar_hover} !important;
             border-color: #8e8ea0 !important;
+        }}
+        /* More specific selector for sidebar avatar */
+        .sidebar .element-container:has(button[key="sidebar_avatar"]) button {{
+            border-radius: 50% !important;
+            width: 40px !important;
+            height: 40px !important;
+            background-color: {avatar_bg} !important;
+            color: #ffffff !important;
+            border: 2px solid #565869 !important;
         }}
     </style>
     """, unsafe_allow_html=True)
