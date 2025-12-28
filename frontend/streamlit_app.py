@@ -701,9 +701,11 @@ with st.sidebar:
                                 # If not, clear it
                                 st.session_state.chat_history = []
                                 st.session_state.current_conversation_id = None
+                                st.session_state.chat_history_loaded = False
                             else:
                                 # No active conversation, just clear chat
                                 st.session_state.chat_history = []
+                                st.session_state.chat_history_loaded = False
                         st.rerun()
                 
                 with col2:
