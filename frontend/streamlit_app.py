@@ -966,6 +966,28 @@ else:
         st.error(f"⚠️ Cannot connect to backend: {e}")
         st.stop()
     
+    # CRITICAL: Reload conversation if we have a conversation_id but no chat history
+    # This happens when switching between sections (My GPTs <-> Conversations)
+    if st.session_state.current_conversation_id and len(st.session_state.chat_history) == 0:
+        try:
+            logger.info(f"🔄 Reloading conversation {st.session_state.current_conversation_id} (chat history was empty)")
+            response = api_request("GET", f"/api/v1/conversations/{st.session_state.current_conversation_id}")
+            if response and response.status_code == 200:
+                loaded_conv = response.json()
+                st.session_state.chat_history = [
+                    {
+                        "role": msg.get("role"),
+                        "content": msg.get("content"),
+                        "sources": msg.get("sources", [])
+                    }
+                    for msg in loaded_conv.get("messages", [])
+                ]
+                logger.info(f"✅ Reloaded conversation with {len(st.session_state.chat_history)} messages")
+            else:
+                logger.warning(f"⚠️  Could not reload conversation {st.session_state.current_conversation_id}")
+        except Exception as e:
+            logger.error(f"❌ Failed to reload conversation: {e}", exc_info=True)
+    
     # Chat interface
     chat_container = st.container()
     
