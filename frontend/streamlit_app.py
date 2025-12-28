@@ -72,52 +72,67 @@ st.markdown("""
     header {visibility: hidden;}
     
     /* CRITICAL: Chat message layout - User on RIGHT, AI on LEFT (like ChatGPT) */
-    /* Streamlit chat messages use specific structure - target them correctly */
+    /* Streamlit chat messages structure: div[data-testid="stChatMessage"] contains the message */
     
-    /* User messages container - align to right */
-    div[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageUser"]) {
-        display: flex;
-        justify-content: flex-end;
-        width: 100%;
-        margin-bottom: 1rem;
+    /* Target ALL chat message containers */
+    div[data-testid="stChatMessage"] {
+        display: flex !important;
+        width: 100% !important;
+        margin-bottom: 1rem !important;
     }
     
-    /* User message content - right aligned */
-    div[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageUser"]) > div {
-        max-width: 75%;
-        margin-left: auto;
-        margin-right: 0;
-        background-color: #343541;
-        border-radius: 12px 12px 0 12px;
-        padding: 12px 16px;
-        text-align: left;
-    }
-    
-    /* Assistant messages container - align to left */
-    div[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageAssistant"]) {
-        display: flex;
-        justify-content: flex-start;
-        width: 100%;
-        margin-bottom: 1rem;
-    }
-    
-    /* Assistant message content - left aligned */
-    div[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageAssistant"]) > div {
-        max-width: 75%;
-        margin-right: auto;
-        margin-left: 0;
-        background-color: #444654;
-        border-radius: 12px 12px 12px 0;
-        padding: 12px 16px;
-    }
-    
-    /* Alternative approach - target by avatar presence */
+    /* User messages - align to RIGHT */
+    /* Streamlit adds avatar with alt="user" for user messages */
+    div[data-testid="stChatMessage"]:has(img[alt="user"]),
+    div[data-testid="stChatMessage"]:has(img[alt*="User"]),
     div[data-testid="stChatMessage"]:has(img[alt*="user"]) {
         justify-content: flex-end !important;
+        flex-direction: row-reverse !important;
     }
     
+    /* User message content box - right aligned with styling */
+    div[data-testid="stChatMessage"]:has(img[alt="user"]) > div:last-child,
+    div[data-testid="stChatMessage"]:has(img[alt*="User"]) > div:last-child,
+    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div:last-child {
+        max-width: 75% !important;
+        margin-left: auto !important;
+        margin-right: 0 !important;
+        background-color: #343541 !important;
+        border-radius: 12px 12px 0 12px !important;
+        padding: 12px 16px !important;
+        text-align: left !important;
+    }
+    
+    /* Assistant messages - align to LEFT */
+    /* Streamlit adds avatar with alt="assistant" for assistant messages */
+    div[data-testid="stChatMessage"]:has(img[alt="assistant"]),
+    div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]),
     div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) {
         justify-content: flex-start !important;
+        flex-direction: row !important;
+    }
+    
+    /* Assistant message content box - left aligned with styling */
+    div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div:last-child,
+    div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]) > div:last-child,
+    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div:last-child {
+        max-width: 75% !important;
+        margin-right: auto !important;
+        margin-left: 0 !important;
+        background-color: #444654 !important;
+        border-radius: 12px 12px 12px 0 !important;
+        padding: 12px 16px !important;
+    }
+    
+    /* Fallback: Target by message role attribute if available */
+    div[data-testid="stChatMessage"][data-message-role="user"] {
+        justify-content: flex-end !important;
+        flex-direction: row-reverse !important;
+    }
+    
+    div[data-testid="stChatMessage"][data-message-role="assistant"] {
+        justify-content: flex-start !important;
+        flex-direction: row !important;
     }
     
     /* Sidebar styling */
