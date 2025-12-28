@@ -842,6 +842,7 @@ with st.sidebar:
                         if st.session_state.current_conversation_id != conv.get('id'):
                             # CRITICAL: Clear chat history FIRST to prevent bleeding
                             st.session_state.chat_history = []
+                            st.session_state.chat_history_loaded = False
                             
                             # Load conversation from backend
                             response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
