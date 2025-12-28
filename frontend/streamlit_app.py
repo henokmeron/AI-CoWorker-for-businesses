@@ -1078,18 +1078,21 @@ else:
             
             if uploaded_file:
                 business_id = st.session_state.selected_gpt or "temp_chat"
-                file_key = f"processed_{uploaded_file.name}_{uploaded_file.size}"
+                # CRITICAL: Use more specific file key including business_id to prevent cross-GPT conflicts
+                file_key = f"processed_{business_id}_{uploaded_file.name}_{uploaded_file.size}"
+                
                 if file_key not in st.session_state:
                     st.session_state[file_key] = True
                     with st.spinner(f"Processing {uploaded_file.name}..."):
                         result = upload_document(business_id, uploaded_file)
-                        if result:
+                        if result and not isinstance(result, dict) or (isinstance(result, dict) and "error" not in result):
                             st.success(f"✅ {uploaded_file.name} processed!")
                             st.session_state.chat_history.append({
                                 "role": "assistant",
                                 "content": f"I've processed '{uploaded_file.name}'. You can now ask me questions about it!",
                                 "sources": []
                             })
+                            # Increment counter to change uploader key and prevent re-upload
                             st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
                             st.session_state.show_file_upload = False
                             st.rerun()
@@ -1102,8 +1105,16 @@ else:
                             else:
                                 error_msg += "\n\nPossible reasons:\n- File format not supported\n- File is corrupted\n- Backend processing error\n- Vector database not available\n\nPlease try again or check backend logs."
                             st.error(error_msg)
+                            # Remove processed flag so user can retry
                             if file_key in st.session_state:
                                 del st.session_state[file_key]
+                else:
+                    # File already processed - prevent infinite loop
+                    st.info(f"ℹ️ {uploaded_file.name} was already processed. Select a different file or refresh to upload again.")
+                    # Increment counter to reset uploader and close upload area
+                    st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
+                    st.session_state.show_file_upload = False
+                    st.rerun()
             
             col1, col2 = st.columns([1, 10])
             with col1:
