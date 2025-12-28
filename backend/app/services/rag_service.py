@@ -132,11 +132,19 @@ class RAGService:
                 except Exception as e:
                     logger.warning(f"   Could not check collection stats: {e}")
                 
+                # CRITICAL: Search with higher k to find documents from ALL uploaded files
+                # Increase k to ensure we search across all documents, not just the last one
+                search_k = max(max_sources * 2, 10)  # Search more chunks to find all documents
                 retrieved_docs = self.vector_store.search(
                     business_id=business_id,
                     query=query,
-                    k=max_sources
+                    k=search_k
                 )
+                # Then limit to max_sources for the final result
+                if len(retrieved_docs) > max_sources:
+                    # Sort by score and take top max_sources
+                    retrieved_docs = sorted(retrieved_docs, key=lambda x: x.get('score', 0), reverse=True)[:max_sources]
+                    logger.info(f"   Searched {search_k} chunks, returning top {max_sources} results")
                 if retrieved_docs:
                     context = self._format_context(retrieved_docs)
                     logger.info(f"✅ Found {len(retrieved_docs)} relevant document chunks for business_id='{business_id}'")

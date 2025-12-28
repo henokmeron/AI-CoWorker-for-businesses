@@ -66,20 +66,25 @@ class XLSXHandler(BaseFileHandler):
                 "has_data": False
             }
             
-            # Process each sheet
-            for sheet_name in workbook.sheetnames:
+            # Process each sheet - CRITICAL: Process ALL sheets, not just the first one
+            logger.info(f"Processing {len(workbook.sheetnames)} sheets: {workbook.sheetnames}")
+            for sheet_idx, sheet_name in enumerate(workbook.sheetnames, 1):
                 sheet = workbook[sheet_name]
-                text_content.append(f"--- Sheet: {sheet_name} ---")
+                logger.info(f"Processing sheet {sheet_idx}/{len(workbook.sheetnames)}: '{sheet_name}'")
+                text_content.append(f"=== Sheet {sheet_idx}: {sheet_name} ===")
                 
                 # Extract data from cells
                 sheet_data = []
                 max_row = sheet.max_row
                 max_col = sheet.max_column
                 
+                logger.info(f"  Sheet '{sheet_name}' has {max_row} rows x {max_col} columns")
+                
                 if max_row > 0 and max_col > 0:
                     metadata["has_data"] = True
                     
-                    # Read all cells
+                    # Read all cells - process entire sheet
+                    rows_processed = 0
                     for row in sheet.iter_rows(min_row=1, max_row=max_row, min_col=1, max_col=max_col, values_only=False):
                         row_values = []
                         for cell in row:
@@ -92,10 +97,19 @@ class XLSXHandler(BaseFileHandler):
                         if row_values:
                             # Join row values with separator
                             sheet_data.append(" | ".join(row_values))
+                            rows_processed += 1
+                    
+                    logger.info(f"  Extracted {rows_processed} rows from sheet '{sheet_name}'")
                     
                     if sheet_data:
                         text_content.extend(sheet_data)
                         text_content.append("")  # Empty line between sheets
+                    else:
+                        logger.warning(f"  No data extracted from sheet '{sheet_name}'")
+                else:
+                    logger.warning(f"  Sheet '{sheet_name}' appears empty (max_row={max_row}, max_col={max_col})")
+            
+            logger.info(f"✅ Processed all {len(workbook.sheetnames)} sheets from XLSX file")
             
             full_text = "\n".join(text_content)
             

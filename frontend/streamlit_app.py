@@ -768,9 +768,10 @@ with st.sidebar:
     
     # New Chat button - ACTUALLY CREATE A NEW CONVERSATION
     if st.button("➕ New Chat", use_container_width=True, key="new_chat_btn"):
-        # CRITICAL: Clear EVERYTHING to prevent chat bleeding
+                        # CRITICAL: Clear EVERYTHING to prevent chat bleeding
         st.session_state.current_conversation_id = None
         st.session_state.chat_history = []
+        st.session_state.chat_history_loaded = False  # Reset loaded flag
         
         # Also clear any cached messages
         for key in list(st.session_state.keys()):
@@ -795,28 +796,35 @@ with st.sidebar:
         st.rerun()
     
     # Load and display conversations
-    # CRITICAL: Cache conversations to prevent disappearing/reappearing
-    # Only reload if we don't have cached conversations or if GPT changed
+    # CRITICAL: Always use cached conversations if available, only reload on explicit change
+    # This prevents the disappearing/reappearing issue
     cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
-    should_reload = (
-        cache_key not in st.session_state or
-        st.session_state.get("last_gpt_for_conversations") != st.session_state.selected_gpt
-    )
+    last_gpt_key = "last_gpt_for_conversations"
+    
+    # Only reload if:
+    # 1. No cache exists for this GPT
+    # 2. GPT actually changed (not just rerun)
+    # 3. Cache is explicitly invalidated
+    gpt_changed = st.session_state.get(last_gpt_key) != st.session_state.selected_gpt
+    has_cache = cache_key in st.session_state and len(st.session_state.get(cache_key, [])) > 0
     
     try:
-        if should_reload:
+        if not has_cache or gpt_changed:
+            # Reload from backend
             conversations = get_conversations(
                 business_id=st.session_state.selected_gpt,
                 archived=False
             )
-            st.session_state.conversations = conversations
+            # Always update cache, even if empty
             st.session_state[cache_key] = conversations
-            st.session_state.last_gpt_for_conversations = st.session_state.selected_gpt
+            st.session_state[last_gpt_key] = st.session_state.selected_gpt
+            st.session_state.conversations = conversations
             logger.info(f"✅ Loaded {len(conversations)} conversations for GPT: {st.session_state.selected_gpt}")
         else:
-            # Use cached conversations to prevent disappearing
+            # ALWAYS use cached conversations - this prevents disappearing
             conversations = st.session_state.get(cache_key, [])
             st.session_state.conversations = conversations
+            # Don't log every time to avoid spam, but ensure we're using cache
         
         if conversations:
             for conv in conversations[:20]:
@@ -848,6 +856,7 @@ with st.sidebar:
                                     for msg in loaded_conv.get("messages", [])
                                 ]
                                 st.session_state.current_conversation_id = conv.get('id')
+                                st.session_state.chat_history_loaded = True  # Mark as loaded
                                 logger.info(f"✅ Loaded conversation {conv.get('id')} with {len(st.session_state.chat_history)} messages")
                             else:
                                 logger.error(f"❌ Failed to load conversation {conv.get('id')}")
@@ -920,39 +929,46 @@ with st.sidebar:
     avatar_display = initials
     button_type = "primary" if st.session_state.user_logged_in else "secondary"
     
-    # Style the button to look like a circular avatar - make it visible
-    avatar_bg = '#10a37f' if st.session_state.user_logged_in else '#565869'
+    # Style the button to look like a circular avatar - make it HIGHLY visible
+    avatar_bg = '#10a37f' if st.session_state.user_logged_in else '#8e8ea0'
     avatar_hover = '#0d8a6b' if st.session_state.user_logged_in else '#6e6e80'
+    avatar_border = '#ffffff' if st.session_state.user_logged_in else '#10a37f'
     st.markdown(f"""
     <style>
-        /* Avatar button styling - make it clearly visible */
-        div[data-testid="stButton"] > button[kind="{'primary' if st.session_state.user_logged_in else 'secondary'}"][data-baseweb="button"] {{
+        /* Avatar button styling - HIGHLY VISIBLE with bright colors and border */
+        button[key="sidebar_avatar"] {{
             border-radius: 50% !important;
-            width: 40px !important;
-            height: 40px !important;
-            min-width: 40px !important;
+            width: 45px !important;
+            height: 45px !important;
+            min-width: 45px !important;
             padding: 0 !important;
-            font-size: 16px !important;
-            font-weight: 600 !important;
-            border: 2px solid #565869 !important;
+            font-size: 18px !important;
+            font-weight: 700 !important;
+            border: 3px solid {avatar_border} !important;
             background-color: {avatar_bg} !important;
             color: #ffffff !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
         }}
-        div[data-testid="stButton"] > button[kind="{'primary' if st.session_state.user_logged_in else 'secondary'}"][data-baseweb="button"]:hover {{
+        button[key="sidebar_avatar"]:hover {{
             background-color: {avatar_hover} !important;
-            border-color: #8e8ea0 !important;
+            border-color: #ffffff !important;
+            transform: scale(1.05) !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
         }}
-        /* More specific selector for sidebar avatar */
-        .sidebar .element-container:has(button[key="sidebar_avatar"]) button {{
+        /* Force visibility for all button types */
+        div[data-testid="stButton"] > button[key="sidebar_avatar"],
+        button[data-baseweb="button"][key="sidebar_avatar"] {{
             border-radius: 50% !important;
-            width: 40px !important;
-            height: 40px !important;
+            width: 45px !important;
+            height: 45px !important;
             background-color: {avatar_bg} !important;
             color: #ffffff !important;
-            border: 2px solid #565869 !important;
+            border: 3px solid {avatar_border} !important;
+            font-size: 18px !important;
+            font-weight: 700 !important;
         }}
     </style>
     """, unsafe_allow_html=True)
