@@ -389,10 +389,18 @@ class VectorStore:
                     logger.warning(f"   ⚠️  Collection 'business_{business_id}' is empty - no documents to search")
                     return []
                 
+                # CRITICAL: Filter by business_id to ensure document isolation
+                # Even though collection is per business_id, add explicit filter for safety
+                search_filter = {"business_id": business_id}
+                if filter_metadata:
+                    search_filter.update(filter_metadata)
+                
+                logger.info(f"   🔍 Search filter: {search_filter}")
+                
                 results = collection.query(
                     query_embeddings=[query_embedding],
                     n_results=min(k, doc_count),  # Don't ask for more than available
-                    where=filter_metadata
+                    where=search_filter
                 )
                 
                 # Format results

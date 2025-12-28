@@ -71,6 +71,55 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
+    /* CRITICAL: Chat message layout - User on RIGHT, AI on LEFT (like ChatGPT) */
+    /* Streamlit chat messages use specific structure - target them correctly */
+    
+    /* User messages container - align to right */
+    div[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageUser"]) {
+        display: flex;
+        justify-content: flex-end;
+        width: 100%;
+        margin-bottom: 1rem;
+    }
+    
+    /* User message content - right aligned */
+    div[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageUser"]) > div {
+        max-width: 75%;
+        margin-left: auto;
+        margin-right: 0;
+        background-color: #343541;
+        border-radius: 12px 12px 0 12px;
+        padding: 12px 16px;
+        text-align: left;
+    }
+    
+    /* Assistant messages container - align to left */
+    div[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageAssistant"]) {
+        display: flex;
+        justify-content: flex-start;
+        width: 100%;
+        margin-bottom: 1rem;
+    }
+    
+    /* Assistant message content - left aligned */
+    div[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageAssistant"]) > div {
+        max-width: 75%;
+        margin-right: auto;
+        margin-left: 0;
+        background-color: #444654;
+        border-radius: 12px 12px 12px 0;
+        padding: 12px 16px;
+    }
+    
+    /* Alternative approach - target by avatar presence */
+    div[data-testid="stChatMessage"]:has(img[alt*="user"]) {
+        justify-content: flex-end !important;
+    }
+    
+    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) {
+        justify-content: flex-start !important;
+    }
+    
     /* Sidebar styling */
     .sidebar-section {
         margin-bottom: 1.5rem;
