@@ -21,3 +21,9 @@ primary_region = 'lhr'
   cpu_kind = 'shared'
   cpus = 1
   memory_mb = 1024
+
+# CRITICAL: Persistent volume for document storage and vector database
+# This ensures data persists across restarts and deployments
+[[mounts]]
+  destination = "/app/data"
+  source = "ai_coworker_data"

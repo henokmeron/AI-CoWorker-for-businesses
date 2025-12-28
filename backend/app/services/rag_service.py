@@ -141,12 +141,26 @@ class RAGService:
                     context = self._format_context(retrieved_docs)
                     logger.info(f"✅ Found {len(retrieved_docs)} relevant document chunks for business_id='{business_id}'")
                 else:
-                    logger.warning(f"⚠️  No documents found in vector database for business_id='{business_id}'")
-                    logger.warning(f"   This could mean:")
-                    logger.warning(f"   1. No documents have been uploaded for this business_id")
-                    logger.warning(f"   2. Documents were uploaded but not indexed properly")
-                    logger.warning(f"   3. business_id mismatch between upload and query")
-                    logger.warning(f"   4. Vector database was cleared or not persisted")
+                    # CRITICAL: Log detailed diagnostics when no documents found
+                    logger.error(f"❌ NO DOCUMENTS FOUND for business_id='{business_id}' - This is a problem!")
+                    logger.error(f"   Possible causes:")
+                    logger.error(f"   1. Documents not uploaded for this business_id")
+                    logger.error(f"   2. Documents uploaded but vector DB storage failed")
+                    logger.error(f"   3. business_id mismatch (upload used different ID)")
+                    logger.error(f"   4. Vector database not persisted (volume not mounted)")
+                    logger.error(f"   5. Collection was cleared or reset")
+                    
+                    # Try to get collection stats for debugging
+                    try:
+                        collection = self.vector_store.get_collection(business_id)
+                        if collection and hasattr(collection, 'count'):
+                            count = collection.count()
+                            logger.error(f"   Collection 'business_{business_id}' exists with {count} documents")
+                            if count > 0:
+                                logger.error(f"   ⚠️  Collection has {count} docs but search returned nothing - search may be broken!")
+                    except Exception as e:
+                        logger.error(f"   Could not check collection: {e}")
+                    
                     # Still continue - will answer as general AI but with warning in prompt
             except Exception as e:
                 logger.error(f"❌ Vector store search failed for business_id='{business_id}': {e}", exc_info=True)

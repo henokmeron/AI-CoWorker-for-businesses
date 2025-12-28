@@ -220,6 +220,19 @@ async def upload_document(
                     detail="Failed to store document in vector database. Document file was saved but cannot be searched."
                 )
             logger.info(f"✅ Successfully stored {len(chunk_ids)} chunks in vector database")
+            
+            # CRITICAL: Verify documents are actually in the collection
+            try:
+                collection = vector_db.get_collection(business_id)
+                if collection and hasattr(collection, 'count'):
+                    verified_count = collection.count()
+                    logger.info(f"✅ VERIFIED: Collection 'business_{business_id}' now has {verified_count} documents (persistent)")
+                    if verified_count == 0:
+                        logger.error(f"❌ CRITICAL: Collection is empty after adding documents - persistence may be broken!")
+                else:
+                    logger.warning(f"⚠️  Could not verify collection count (collection type: {type(collection)})")
+            except Exception as e:
+                logger.error(f"❌ Could not verify document storage: {e}", exc_info=True)
         except ValueError as e:
             # Vector store validation error
             logger.error(f"Vector database error: {e}", exc_info=True)
