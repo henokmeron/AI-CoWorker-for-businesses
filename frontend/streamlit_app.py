@@ -62,8 +62,12 @@ if not st.session_state.get("_file_upload_initialized", False):
     st.session_state._file_upload_initialized = True
 if "gpt_dropdown_open" not in st.session_state:
     st.session_state.gpt_dropdown_open = {}
+if "chat_history_loaded" not in st.session_state:
+    st.session_state.chat_history_loaded = False
+if "upload_counter" not in st.session_state:
+    st.session_state.upload_counter = 0
 
-# Custom CSS - ChatGPT-style
+# Custom CSS - ChatGPT-style with PROPER fixes
 st.markdown("""
 <style>
     /* Hide Streamlit default elements */
@@ -71,21 +75,48 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* CRITICAL: Chat message layout - User on RIGHT, AI on LEFT (like ChatGPT) */
-    /* Streamlit chat messages structure: div[data-testid="stChatMessage"] contains the message */
+    /* CRITICAL FIX 1: Chat input at bottom - PROPER implementation */
+    /* Streamlit chat_input creates a container - we need to target it correctly */
+    section[data-testid="stMain"] {
+        padding-bottom: 120px !important;
+    }
     
-    /* Center line to separate user and AI messages - WORKING APPROACH */
+    /* Target the actual chat input container that Streamlit creates */
+    div[data-testid="stChatInputContainer"],
+    div[data-testid="stChatInput"],
+    div[data-testid="stChatInputContainer"] > div,
+    form[data-testid="stChatInputForm"] {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        background: #202123 !important;
+        padding: 1rem !important;
+        z-index: 999 !important;
+        border-top: 2px solid #343541 !important;
+        box-shadow: 0 -4px 12px rgba(0,0,0,0.3) !important;
+        margin: 0 !important;
+    }
+    
+    /* Ensure main content doesn't overlap with fixed input */
+    .main .block-container,
     section[data-testid="stMain"] > div:first-child {
+        padding-bottom: 150px !important;
+    }
+    
+    /* CRITICAL FIX 2: Chat message alignment - User RIGHT, AI LEFT with center line */
+    /* Center line to separate user and AI messages */
+    section[data-testid="stMain"] > div:first-child > div:first-child {
         position: relative;
     }
-    section[data-testid="stMain"] > div:first-child::before {
+    section[data-testid="stMain"] > div:first-child > div:first-child::before {
         content: '';
         position: fixed;
         left: 50%;
         top: 0;
         bottom: 120px;
         width: 2px;
-        background: linear-gradient(to bottom, transparent, #565869 20%, #565869 80%, transparent);
+        background: linear-gradient(to bottom, transparent, #565869 10%, #565869 90%, transparent);
         z-index: 0;
         pointer-events: none;
         transform: translateX(-50%);
@@ -95,108 +126,123 @@ st.markdown("""
     div[data-testid="stChatMessage"] {
         display: flex !important;
         width: 100% !important;
-        margin-bottom: 1rem !important;
+        margin-bottom: 1.5rem !important;
         position: relative;
         z-index: 1;
     }
     
-    /* User messages - align to RIGHT - WORKING SELECTORS */
-    /* Streamlit chat messages have specific structure */
+    /* User messages - align to RIGHT (48% width, 2% margin from right) */
     div[data-testid="stChatMessage"]:has(img[alt="user"]),
     div[data-testid="stChatMessage"]:has(img[alt*="User"]),
-    div[data-testid="stChatMessage"]:has(img[alt*="user"]),
-    div[data-testid="stChatMessage"][aria-label*="user"],
-    div[data-testid="stChatMessage"][aria-label*="User"] {
-        display: flex !important;
+    div[data-testid="stChatMessage"]:has(img[alt*="user"]) {
         justify-content: flex-end !important;
         flex-direction: row-reverse !important;
-        width: 100% !important;
-        margin-left: 0 !important;
-        margin-right: 0 !important;
     }
     
-    /* User message content box - right aligned with styling */
-    div[data-testid="stChatMessage"]:has(img[alt="user"]) > div,
-    div[data-testid="stChatMessage"]:has(img[alt*="User"]) > div,
-    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div,
-    div[data-testid="stChatMessage"][aria-label*="user"] > div,
-    div[data-testid="stChatMessage"][aria-label*="User"] > div {
+    /* User message content box - right aligned */
+    div[data-testid="stChatMessage"]:has(img[alt="user"]) > div:last-child,
+    div[data-testid="stChatMessage"]:has(img[alt*="User"]) > div:last-child,
+    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div:last-child {
         max-width: 48% !important;
-        min-width: 200px !important;
         margin-left: auto !important;
         margin-right: 2% !important;
         background-color: #343541 !important;
         border-radius: 12px 12px 0 12px !important;
-        padding: 12px 16px !important;
+        padding: 14px 18px !important;
         text-align: left !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
     }
     
-    /* Assistant messages - align to LEFT - WORKING SELECTORS */
+    /* Assistant messages - align to LEFT (48% width, 2% margin from left) */
     div[data-testid="stChatMessage"]:has(img[alt="assistant"]),
     div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]),
-    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]),
-    div[data-testid="stChatMessage"][aria-label*="assistant"],
-    div[data-testid="stChatMessage"][aria-label*="Assistant"] {
-        display: flex !important;
+    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) {
         justify-content: flex-start !important;
         flex-direction: row !important;
-        width: 100% !important;
-        margin-left: 0 !important;
-        margin-right: 0 !important;
     }
     
-    /* Assistant message content box - left aligned with styling */
-    div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div,
-    div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]) > div,
-    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div,
-    div[data-testid="stChatMessage"][aria-label*="assistant"] > div,
-    div[data-testid="stChatMessage"][aria-label*="Assistant"] > div {
+    /* Assistant message content box - left aligned */
+    div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div:last-child,
+    div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]) > div:last-child,
+    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div:last-child {
         max-width: 48% !important;
-        min-width: 200px !important;
         margin-right: auto !important;
         margin-left: 2% !important;
         background-color: #444654 !important;
         border-radius: 12px 12px 12px 0 !important;
-        padding: 12px 16px !important;
+        padding: 14px 18px !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
     }
     
-    /* Fallback: Target by message role attribute if available */
+    /* Fallback selectors for browsers that don't support :has() */
     div[data-testid="stChatMessage"][data-message-role="user"] {
         justify-content: flex-end !important;
         flex-direction: row-reverse !important;
     }
-    
     div[data-testid="stChatMessage"][data-message-role="assistant"] {
         justify-content: flex-start !important;
         flex-direction: row !important;
     }
     
-    /* Fixed chat input at bottom - WORKING APPROACH */
-    /* Target the actual Streamlit chat input container */
-    section[data-testid="stMain"] > div:last-child,
-    div[data-testid="stChatInputContainer"],
-    div[data-testid="stChatInput"] {
-        position: fixed !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        background: #202123 !important;
-        padding: 1rem !important;
-        z-index: 9999 !important;
-        border-top: 2px solid #343541 !important;
-        box-shadow: 0 -4px 12px rgba(0,0,0,0.3) !important;
+    /* CRITICAL FIX 3: Avatar visibility - HIGHLY VISIBLE */
+    button[key="sidebar_avatar"] {
+        border-radius: 50% !important;
+        width: 55px !important;
+        height: 55px !important;
+        min-width: 55px !important;
+        padding: 0 !important;
+        font-size: 22px !important;
+        font-weight: 800 !important;
+        border: 5px solid #ffffff !important;
+        background-color: var(--avatar-bg) !important;
+        color: #ffffff !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-shadow: 0 6px 16px rgba(0,0,0,0.6), 0 0 0 3px var(--avatar-border) !important;
+        position: relative !important;
+        margin: 8px auto !important;
     }
     
-    /* Add padding to main content to prevent overlap with fixed input */
-    section[data-testid="stMain"] > div:first-child,
-    .main .block-container,
-    div[data-testid="stAppViewContainer"] > div:first-child {
-        padding-bottom: 120px !important;
+    /* Outer glow ring for maximum visibility */
+    button[key="sidebar_avatar"]::before {
+        content: '';
+        position: absolute;
+        top: -6px;
+        left: -6px;
+        right: -6px;
+        bottom: -6px;
+        border-radius: 50%;
+        border: 3px solid var(--avatar-border);
+        opacity: 0.9;
+        z-index: -1;
+        animation: pulse 2s infinite;
     }
     
-    /* Ensure chat messages container has proper spacing */
-    div[data-testid="stChatMessage"] {
-        margin-bottom: 1.5rem !important;
+    @keyframes pulse {
+        0%, 100% { opacity: 0.9; }
+        50% { opacity: 0.6; }
+    }
+    
+    button[key="sidebar_avatar"]:hover {
+        background-color: var(--avatar-hover) !important;
+        border-color: #ffffff !important;
+        transform: scale(1.15) !important;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.7), 0 0 0 4px var(--avatar-hover) !important;
+    }
+    
+    /* Force visibility for all button types */
+    div[data-testid="stButton"] > button[key="sidebar_avatar"],
+    button[data-baseweb="button"][key="sidebar_avatar"] {
+        border-radius: 50% !important;
+        width: 55px !important;
+        height: 55px !important;
+        background-color: var(--avatar-bg) !important;
+        color: #ffffff !important;
+        border: 5px solid #ffffff !important;
+        font-size: 22px !important;
+        font-weight: 800 !important;
+        box-shadow: 0 6px 16px rgba(0,0,0,0.6) !important;
     }
     
     /* Sidebar styling */
@@ -244,22 +290,6 @@ st.markdown("""
         border-bottom: none;
     }
     
-    /* File attachment button next to prompt */
-    .file-attach-btn {
-        position: absolute;
-        left: 8px;
-        bottom: 8px;
-        z-index: 10;
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        padding: 8px;
-        border-radius: 4px;
-    }
-    .file-attach-btn:hover {
-        background: rgba(255,255,255,0.1);
-    }
-    
     /* Main content */
     .main-header {
         font-size: 2rem;
@@ -276,59 +306,41 @@ st.markdown("""
         margin: 0.5rem 0;
         border-left: 3px solid #10a37f;
     }
-    
-    /* Avatar button in sidebar */
-    .sidebar-avatar {
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
-        background: #343541;
-        border: 2px solid #565869;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        color: white;
-        font-weight: 600;
-        font-size: 12px;
-        margin: 8px auto;
-    }
-    .sidebar-avatar:hover {
-        background: #40414f;
-    }
-    .sidebar-avatar.logged-in {
-        background: #10a37f;
-        border-color: #10a37f;
-    }
 </style>
 """, unsafe_allow_html=True)
 
 
 # Helper functions
 def api_request(method: str, endpoint: str, **kwargs) -> Optional[requests.Response]:
-    """Make API request with authentication."""
+    """Make an API request to the backend."""
+    url = f"{BACKEND_URL}{endpoint}"
     headers = kwargs.pop("headers", {})
     headers["X-API-Key"] = API_KEY
     
-    # Only set Content-Type for JSON requests, NOT for file uploads
-    # When files are present, requests library will set multipart/form-data automatically
-    if "json" in kwargs and "files" not in kwargs:
-        headers["Content-Type"] = "application/json"
-    
-    url = f"{BACKEND_URL}{endpoint}"
+    # Don't set Content-Type for file uploads (multipart/form-data)
+    if "files" not in kwargs:
+        if "json" in kwargs:
+            headers["Content-Type"] = "application/json"
     
     try:
-        response = requests.request(method, url, headers=headers, timeout=30, **kwargs)
-        if response.status_code >= 400:
-            logger.error(f"API Error: {response.status_code} - {response.text}")
+        response = requests.request(
+            method=method,
+            url=url,
+            headers=headers,
+            timeout=60,
+            **kwargs
+        )
         return response
+    except (ConnectionError, Timeout) as e:
+        logger.error(f"Connection error: {e}")
+        return None
     except Exception as e:
-        logger.error(f"Request failed: {e}")
+        logger.error(f"Request error: {e}")
         return None
 
 
 def get_businesses() -> List[Dict[str, Any]]:
-    """Get list of businesses (GPTs)."""
+    """Get all businesses (GPTs)."""
     response = api_request("GET", "/api/v1/businesses")
     if response and response.status_code == 200:
         return response.json()
@@ -374,54 +386,39 @@ def upload_document(business_id: str, file) -> Optional[Dict[str, Any]]:
     """Upload a document to a business (GPT)."""
     try:
         # Prepare file for multipart/form-data upload
-        # Handle different file object types (Streamlit UploadedFile, file-like objects)
         if hasattr(file, 'getvalue'):
-            # Streamlit UploadedFile
             file_content = file.getvalue()
             file_name = file.name
             file_type = getattr(file, 'type', None)
         elif hasattr(file, 'read'):
-            # File-like object
             file_content = file.read()
-            # Reset file pointer if possible
             if hasattr(file, 'seek'):
                 file.seek(0)
             file_name = getattr(file, 'name', 'uploaded_file')
             file_type = getattr(file, 'content_type', None)
         else:
-            # Assume it's already bytes
             file_content = file
             file_name = "uploaded_file"
             file_type = None
         
-        # Ensure we have bytes
         if isinstance(file_content, str):
             file_content = file_content.encode('utf-8')
         
         file_tuple = (file_name, file_content, file_type)
-        
-        # Form data - business_id must be sent as form field (not query param)
         data = {"business_id": business_id}
         files = {"file": file_tuple}
         
-        # Don't include business_id in query string - it's in form data
         response = api_request("POST", "/api/v1/documents/upload", files=files, data=data)
         if response and response.status_code == 200:
             return response.json()
         elif response:
-            # Log the error for debugging
             error_text = response.text
             logger.error(f"Upload failed: {response.status_code} - {error_text}")
-            # Try to extract error message from response and return it
             try:
                 error_json = response.json()
                 if 'detail' in error_json:
-                    error_detail = error_json['detail']
-                    logger.error(f"Error detail: {error_detail}")
-                    # Return error dict so frontend can display it
-                    return {"error": error_detail, "status_code": response.status_code}
+                    return {"error": error_json['detail'], "status_code": response.status_code}
             except:
-                # If not JSON, return the text
                 return {"error": error_text, "status_code": response.status_code}
         return {"error": "Upload failed: No response from server", "status_code": 0}
     except Exception as e:
@@ -457,7 +454,13 @@ def chat_query(business_id: Optional[str], query: str, conversation_history: Lis
     response = api_request("POST", "/api/v1/chat", json=data)
     if response and response.status_code == 200:
         return response.json()
-    return None
+    elif response:
+        try:
+            error_json = response.json()
+            return {"error": error_json.get("detail", "Unknown error")}
+        except:
+            return {"error": response.text}
+    return {"error": "No response from server"}
 
 
 def get_conversations(business_id: Optional[str] = None, archived: Optional[bool] = False) -> List[Dict[str, Any]]:
@@ -492,18 +495,6 @@ def rename_conversation(conversation_id: str, new_title: str) -> bool:
     return response and response.status_code == 200
 
 
-def archive_conversation(conversation_id: str) -> bool:
-    """Archive a conversation."""
-    response = api_request("POST", f"/api/v1/conversations/{conversation_id}/archive")
-    return response and response.status_code == 200
-
-
-def delete_conversation(conversation_id: str) -> bool:
-    """Delete a conversation (NOT the GPT)."""
-    response = api_request("DELETE", f"/api/v1/conversations/{conversation_id}")
-    return response and response.status_code == 200
-
-
 def get_user_initials():
     """Get user initials for avatar."""
     if st.session_state.user_logged_in and st.session_state.user_name:
@@ -511,294 +502,106 @@ def get_user_initials():
         parts = name.split()
         if len(parts) >= 2:
             return (parts[0][0] + parts[-1][0]).upper()
-        elif len(parts) == 1:
-            return parts[0][:2].upper()
-    # Show user icon when not logged in
-    return "👤"
+        return name[0].upper() if name else "?"
+    return "?"
 
 
 def handle_login():
-    """Handle login - redirect to OAuth or show login form."""
+    """Handle user login."""
     with st.form("login_form"):
-        st.markdown("### Login")
         email = st.text_input("Email", key="login_email")
         password = st.text_input("Password", type="password", key="login_password")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.form_submit_button("Login", use_container_width=True):
-                if email and password:
-                    # Call real auth endpoint
-                    data = {"email": email, "password": password}
-                    response = api_request("POST", "/api/v1/auth/login", json=data)
+        submitted = st.form_submit_button("Login")
+        
+        if submitted:
+            # Simple login - in production, use proper auth
+            if email and password:
+                try:
+                    response = api_request("POST", "/api/v1/auth/login", json={"email": email, "password": password})
                     if response and response.status_code == 200:
                         result = response.json()
-                        if result.get("success"):
-                            st.session_state.user_logged_in = True
-                            st.session_state.user_name = result.get("user_name", email.split("@")[0].title())
-                            st.session_state.user_email = result.get("user_email", email)
-                            st.session_state.show_auth_dropdown = False
-                            st.success("Logged in!")
-                            st.rerun()
-                        else:
-                            st.error(result.get("message", "Login failed"))
+                        st.session_state.user_logged_in = True
+                        st.session_state.user_name = result.get("user_name", email.split("@")[0].title())
+                        st.session_state.user_email = result.get("user_email", email)
+                        st.success("Logged in successfully!")
+                        st.rerun()
                     else:
-                        # Login failed - show specific error
-                        error_msg = "Login failed. Please check your credentials."
-                        if response:
-                            try:
-                                error_data = response.json()
-                                if "detail" in error_data:
-                                    error_msg = error_data["detail"]
-                                elif "message" in error_data:
-                                    error_msg = error_data["message"]
-                            except:
-                                # If response is not JSON, check status code
-                                if response.status_code == 401:
-                                    error_msg = "Invalid email or password."
-                                elif response.status_code == 403:
-                                    error_msg = "Access denied. Please check your credentials."
-                                elif response.status_code >= 500:
-                                    error_msg = "Server error. Please try again later."
-                        st.error(error_msg)
-                else:
-                    st.error("Please enter email and password")
-        with col2:
-            if st.form_submit_button("Cancel", use_container_width=True):
-                st.session_state.show_auth_dropdown = False
-                st.rerun()
-    
-    st.markdown("---")
-    st.markdown("**Or sign in with:**")
-    if st.button("🔵 Google", key="google_login", use_container_width=True):
-        # Redirect to Google OAuth (simplified - in production would use proper OAuth flow)
-        google_oauth_url = "https://accounts.google.com/o/oauth2/v2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&response_type=code&scope=email profile"
-        st.markdown(f'<a href="{google_oauth_url}" target="_blank">Click here to sign in with Google</a>', unsafe_allow_html=True)
-        st.info("⚠️ Google OAuth requires backend configuration. For now, please use email/password above.")
-    
-    if st.button("🔷 Microsoft", key="microsoft_login", use_container_width=True):
-        # Redirect to Microsoft OAuth (simplified)
-        microsoft_oauth_url = "https://login.microsoftonline.com/oauth2/v2.0/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&response_type=code&scope=openid email profile"
-        st.markdown(f'<a href="{microsoft_oauth_url}" target="_blank">Click here to sign in with Microsoft</a>', unsafe_allow_html=True)
-        st.info("⚠️ Microsoft OAuth requires backend configuration. For now, please use email/password above.")
+                        st.error("Invalid credentials")
+                except Exception as e:
+                    logger.error(f"Login error: {e}")
+                    st.error("Login failed. Please try again.")
 
 
 def render_settings():
-    """Render tabbed settings panel."""
-    if not st.session_state.show_settings:
-        return
+    """Render settings panel."""
+    st.markdown('<div class="main-header">⚙️ Settings</div>', unsafe_allow_html=True)
     
-    # Header with back button
-    col1, col2 = st.columns([1, 10])
-    with col1:
-        if st.button("←", key="back_to_chat", help="Back to Chat"):
-            st.session_state.show_settings = False
-            st.rerun()
-    with col2:
-        st.markdown("## ⚙️ Settings")
-    
-    # Settings tabs
-    tabs = ["General", "Notifications", "Personalization", "App Connectors", "Data Control", "Security", "Account"]
-    selected_tab = st.radio("", tabs, horizontal=True, key="settings_tabs_radio", label_visibility="collapsed")
-    
-    st.markdown("---")
-    
-    # Tab content
-    if selected_tab == "General":
-        st.subheader("General Settings")
-        st.text_input("Default Language", value="English", key="setting_lang")
-        st.selectbox("Theme", ["Dark", "Light", "Auto"], key="setting_theme")
-        st.slider("Font Size", 12, 20, 14, key="setting_font")
-        
-    elif selected_tab == "Notifications":
-        st.subheader("Notification Settings")
-        st.checkbox("Email notifications", value=True, key="notif_email")
-        st.checkbox("Browser notifications", value=False, key="notif_browser")
-        st.checkbox("Desktop notifications", value=False, key="notif_desktop")
-        
-    elif selected_tab == "Personalization":
-        st.subheader("Personalization")
-        st.text_area("Custom Instructions", key="setting_instructions", height=100)
-        st.selectbox("Response Style", ["Professional", "Casual", "Technical"], key="setting_style")
-        
-    elif selected_tab == "App Connectors":
-        st.subheader("App Connectors")
-        st.info("Connect your apps to enhance AI capabilities")
-        st.checkbox("Gmail", value=False, key="connector_gmail")
-        st.checkbox("Outlook", value=False, key="connector_outlook")
-        st.checkbox("Slack", value=False, key="connector_slack")
-        
-    elif selected_tab == "Data Control":
-        st.subheader("Data Control")
-        st.button("Export All Data", key="export_data")
-        st.button("Delete All Data", key="delete_data", type="secondary")
-        st.info("⚠️ This action cannot be undone")
-        
-    elif selected_tab == "Security":
-        st.subheader("Security Settings")
-        st.text_input("Change Password", type="password", key="setting_password")
-        st.checkbox("Two-Factor Authentication", value=False, key="setting_2fa")
-        st.checkbox("Session Timeout", value=True, key="setting_timeout")
-        
-    elif selected_tab == "Account":
-        st.subheader("Account Settings")
+    with st.form("settings_form"):
         st.text_input("Name", value=st.session_state.user_name or "Guest", key="setting_name")
         st.text_input("Email", value=st.session_state.user_email or "", key="setting_email")
-        st.button("Save Changes", key="save_account")
+        
+        if st.form_submit_button("Save"):
+            st.session_state.user_name = st.session_state.setting_name
+            st.session_state.user_email = st.session_state.setting_email
+            st.success("Settings saved!")
+            st.rerun()
     
-    st.markdown("---")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("💬 Chat", key="settings_to_chat", use_container_width=True):
-            st.session_state.show_settings = False
-            st.rerun()
-    with col2:
-        if st.button("Close Settings", key="close_settings", use_container_width=True):
-            st.session_state.show_settings = False
-            st.rerun()
+    if st.button("← Back"):
+        st.session_state.show_settings = False
+        st.rerun()
 
 
 def render_edit_gpt_panel():
-    """Render Edit GPT side panel."""
-    if not st.session_state.show_edit_gpt or not st.session_state.editing_gpt_id:
+    """Render edit GPT panel."""
+    gpt_id = st.session_state.editing_gpt_id
+    if not gpt_id:
+        st.session_state.show_edit_gpt = False
+        st.rerun()
         return
     
-    gpt = get_business(st.session_state.editing_gpt_id)
+    gpt = get_business(gpt_id)
     if not gpt:
         st.error("GPT not found")
         st.session_state.show_edit_gpt = False
+        st.rerun()
         return
     
-    with st.container():
-        st.markdown("### Edit GPT")
+    st.markdown('<div class="main-header">✏️ Edit GPT</div>', unsafe_allow_html=True)
+    
+    with st.form("edit_gpt_form"):
+        name = st.text_input("Name", value=gpt.get("name", ""), key="edit_gpt_name")
+        description = st.text_area("Description", value=gpt.get("description", ""), key="edit_gpt_description")
         
-        # GPT Name
-        new_name = st.text_input("Name", value=gpt.get("name", ""), key="edit_gpt_name")
-        
-        # GPT Description
-        new_description = st.text_area("Description", value=gpt.get("description", ""), key="edit_gpt_desc", height=100)
-        
-        # Instructions
-        gpt_settings = gpt.get("settings", {})
-        instructions = gpt_settings.get("instructions", "")
-        new_instructions = st.text_area("Instructions", value=instructions, key="edit_gpt_instructions", height=150, 
-                                       help="How should this GPT behave? What is its role?")
-        
-        st.markdown("---")
-        st.markdown("### Knowledge Base")
-        
-        # List existing documents
-        documents = get_documents(st.session_state.editing_gpt_id)
-        if documents:
-            st.markdown("**Uploaded Documents:**")
-            for doc in documents:
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.text(doc.get("filename", "Unknown"))
-                with col2:
-                    if st.button("🗑️", key=f"del_doc_{doc.get('id')}", help="Delete"):
-                        if delete_document(st.session_state.editing_gpt_id, doc.get("id")):
-                            st.success("Deleted!")
-                            st.rerun()
-        else:
-            st.info("No documents uploaded yet")
-        
-        # File upload
-        st.markdown("**Upload New Document:**")
-        
-        # Use unique key that changes after successful upload to prevent infinite loop
-        upload_key = f"edit_gpt_upload_{st.session_state.editing_gpt_id}_{st.session_state.get('gpt_upload_counter', 0)}"
-        uploaded_file = st.file_uploader(
-            "Choose file",
-            type=["pdf", "docx", "txt", "xlsx", "doc", "xls", "pptx", "csv"],
-            key=upload_key,
-            help="Supported: PDF, DOCX, TXT, XLSX"
-        )
-        
-        if uploaded_file:
-            # CRITICAL: Track processed files to prevent infinite re-upload loop
-            file_key = f"gpt_processed_{st.session_state.editing_gpt_id}_{uploaded_file.name}_{uploaded_file.size}"
-            
-            if file_key not in st.session_state:
-                st.session_state[file_key] = True
-                with st.spinner(f"Uploading {uploaded_file.name}..."):
-                    result = upload_document(st.session_state.editing_gpt_id, uploaded_file)
-                    if result and not isinstance(result, dict) or (isinstance(result, dict) and "error" not in result):
-                        st.success(f"✅ {uploaded_file.name} uploaded!")
-                        # Increment counter to change uploader key and prevent re-upload
-                        st.session_state.gpt_upload_counter = st.session_state.get("gpt_upload_counter", 0) + 1
-                        st.rerun()
-                    else:
-                        error_msg = f"❌ Failed to upload {uploaded_file.name}"
-                        if isinstance(result, dict) and "error" in result:
-                            error_msg += f"\n\nError: {result['error']}"
-                        error_msg += "\n\nPossible reasons:\n- File format not supported\n- File is corrupted\n- Backend processing error\n\nPlease try again or check backend logs."
-                        st.error(error_msg)
-                        # Remove processed flag so user can retry
-                        if file_key in st.session_state:
-                            del st.session_state[file_key]
-            else:
-                # File already processed - show message but don't re-upload
-                st.info(f"ℹ️ {uploaded_file.name} was already uploaded. Select a different file or refresh to upload again.")
-        
-        st.markdown("---")
-        
-        # Save button
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("💾 Save", key="save_gpt_edit", use_container_width=True):
-                new_settings = gpt_settings.copy()
-                new_settings["instructions"] = new_instructions
-                
-                updated = update_business(
-                    st.session_state.editing_gpt_id,
-                    name=new_name,
-                    description=new_description,
-                    settings=new_settings
-                )
-                if updated:
-                    st.success("GPT updated!")
-                    st.session_state.show_edit_gpt = False
-                    st.rerun()
-        
-        with col2:
-            if st.button("✕ Close", key="close_gpt_edit", use_container_width=True):
+        if st.form_submit_button("Save"):
+            if update_business(gpt_id, name=name, description=description):
+                st.success("GPT updated!")
                 st.session_state.show_edit_gpt = False
+                st.session_state.editing_gpt_id = None
                 st.rerun()
-
-
-# Sidebar - ChatGPT style
-with st.sidebar:
-    # Top section: My GPTs
-    st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-section-title">My GPTs</div>', unsafe_allow_html=True)
+            else:
+                st.error("Failed to update GPT")
     
-    # New GPT button
-    if st.button("➕ Create GPT", use_container_width=True, key="new_gpt_btn"):
-        st.session_state.show_create_gpt = True
+    if st.button("← Back"):
+        st.session_state.show_edit_gpt = False
+        st.session_state.editing_gpt_id = None
         st.rerun()
+
+
+# Sidebar
+with st.sidebar:
+    st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section-title">MY GPTS</div>', unsafe_allow_html=True)
     
-    # Show create GPT form if needed
-    if st.session_state.get("show_create_gpt", False):
-        with st.form("create_gpt_form"):
-            gpt_name = st.text_input("GPT Name", key="gpt_name_input")
-            gpt_desc = st.text_area("Description (optional)", key="gpt_desc_input")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.form_submit_button("Create", use_container_width=True):
-                    if gpt_name:
-                        gpt = create_business(gpt_name, gpt_desc)
-                        if gpt:
-                            st.success("GPT created!")
-                            st.session_state.show_create_gpt = False
-                            st.rerun()
-                    else:
-                        st.error("Please enter a name")
-            with col2:
-                if st.form_submit_button("Cancel", use_container_width=True):
-                    st.session_state.show_create_gpt = False
-                    st.rerun()
+    # Create GPT button
+    if st.button("➕ Create GPT", use_container_width=True, key="create_gpt_btn"):
+        name = st.text_input("GPT Name", key="new_gpt_name_input")
+        if name:
+            new_gpt = create_business(name)
+            if new_gpt:
+                st.success("GPT created!")
+                st.rerun()
     
-    # Load and display GPTs with dropdown menus
+    # Load and display GPTs
     try:
         gpts = get_businesses()
         st.session_state.gpts = gpts
@@ -806,79 +609,36 @@ with st.sidebar:
         if gpts:
             for gpt in gpts:
                 gpt_id = gpt.get('id')
-                gpt_name = gpt.get('name', 'Untitled')
-                display_name = gpt_name[:30] + "..." if len(gpt_name) > 30 else gpt_name
+                gpt_name = gpt.get('name', 'Unnamed GPT')
                 is_selected = st.session_state.selected_gpt == gpt_id
                 
-                # GPT row with button and dropdown
                 col1, col2 = st.columns([8, 1])
-                
                 with col1:
                     button_style = "primary" if is_selected else "secondary"
-                    if st.button(display_name, key=f"gpt_{gpt_id}", use_container_width=True, type=button_style):
-                        # Only clear chat if switching to a different GPT
-                        if st.session_state.selected_gpt != gpt_id:
-                            st.session_state.selected_gpt = gpt_id
-                            # Clear conversation cache when switching GPTs
-                            cache_key = f"conversations_cache_{gpt_id}"
-                            if cache_key in st.session_state:
-                                del st.session_state[cache_key]
-                            # Preserve conversation if it belongs to this GPT, otherwise clear
-                            if st.session_state.current_conversation_id:
-                                # Check if current conversation belongs to this GPT
-                                # If not, clear it
-                                st.session_state.chat_history = []
-                                st.session_state.current_conversation_id = None
-                                st.session_state.chat_history_loaded = False
-                            else:
-                                # No active conversation, just clear chat
-                                st.session_state.chat_history = []
-                                st.session_state.chat_history_loaded = False
+                    if st.button(gpt_name, key=f"gpt_{gpt_id}", use_container_width=True, type=button_style):
+                        st.session_state.selected_gpt = gpt_id
+                        st.session_state.current_conversation_id = None
+                        st.session_state.chat_history = []
+                        st.session_state.chat_history_loaded = False
                         st.rerun()
                 
                 with col2:
-                    # Dropdown trigger button (⋮)
-                    if st.button("⋮", key=f"gpt_dd_{gpt_id}", help="GPT options"):
-                        # Toggle dropdown for this GPT
-                        if gpt_id in st.session_state.gpt_dropdown_open:
-                            st.session_state.gpt_dropdown_open[gpt_id] = not st.session_state.gpt_dropdown_open[gpt_id]
-                        else:
-                            st.session_state.gpt_dropdown_open[gpt_id] = True
+                    if st.button("⋮", key=f"gpt_menu_{gpt_id}", help="Options"):
+                        st.session_state.gpt_dropdown_open[gpt_id] = not st.session_state.gpt_dropdown_open.get(gpt_id, False)
                         st.rerun()
                 
-                # Show dropdown menu if open
                 if st.session_state.gpt_dropdown_open.get(gpt_id, False):
-                    if st.button("💬 New chat", key=f"gpt_new_{gpt_id}", use_container_width=True):
-                        # CRITICAL: Clear everything for this GPT
-                        st.session_state.selected_gpt = gpt_id
-                        st.session_state.chat_history = []
-                        st.session_state.current_conversation_id = None
-                        st.session_state.chat_history_loaded = False  # Reset loaded flag
-                        st.session_state.gpt_dropdown_open[gpt_id] = False
-                        
-                        # Create new conversation on backend
-                        new_conv = create_conversation(gpt_id, title=f"New Chat {datetime.now().strftime('%I:%M %p')}")
-                        if new_conv:
-                            st.session_state.current_conversation_id = new_conv.get('id')
-                        
-                        st.rerun()
-                    
-                    if st.button("ℹ️ About", key=f"gpt_about_{gpt_id}", use_container_width=True):
-                        st.info(f"**{gpt.get('name')}**\n\n{gpt.get('description', 'No description')}")
-                        st.session_state.gpt_dropdown_open[gpt_id] = False
-                        st.rerun()
-                    
-                    if st.button("✏️ Edit GPT", key=f"gpt_edit_{gpt_id}", use_container_width=True):
+                    st.markdown("---")
+                    if st.button("✏️ Edit", key=f"gpt_edit_{gpt_id}", use_container_width=True):
                         st.session_state.editing_gpt_id = gpt_id
                         st.session_state.show_edit_gpt = True
                         st.session_state.gpt_dropdown_open[gpt_id] = False
                         st.rerun()
-                    
-                    if st.button("👁️ Hide", key=f"gpt_hide_{gpt_id}", use_container_width=True):
-                        st.info("Hide feature coming soon!")
+                    if st.button("🗑️ Delete", key=f"gpt_delete_{gpt_id}", use_container_width=True):
+                        # Delete functionality would go here
+                        st.info("Delete feature coming soon")
                         st.session_state.gpt_dropdown_open[gpt_id] = False
                         st.rerun()
-                    
                     if st.button("✕ Close", key=f"gpt_close_{gpt_id}", use_container_width=True):
                         st.session_state.gpt_dropdown_open[gpt_id] = False
                         st.rerun()
@@ -899,17 +659,17 @@ with st.sidebar:
     
     # New Chat button - ACTUALLY CREATE A NEW CONVERSATION
     if st.button("➕ New Chat", use_container_width=True, key="new_chat_btn"):
-                        # CRITICAL: Clear EVERYTHING to prevent chat bleeding
+        # CRITICAL: Clear EVERYTHING to prevent chat bleeding
         st.session_state.current_conversation_id = None
         st.session_state.chat_history = []
-        st.session_state.chat_history_loaded = False  # Reset loaded flag
+        st.session_state.chat_history_loaded = False
         
-        # Also clear any cached messages
+        # Clear processed file flags
         for key in list(st.session_state.keys()):
             if key.startswith("processed_") or key.startswith("show_menu_") or key.startswith("renaming_"):
                 del st.session_state[key]
         
-        # Create a new conversation on the backend (starts empty)
+        # Create a new conversation on the backend
         business_id = st.session_state.selected_gpt or "temp_chat"
         new_conv_title = f"New Chat {datetime.now().strftime('%I:%M %p')}"
         
@@ -917,11 +677,10 @@ with st.sidebar:
             new_conv = create_conversation(business_id, title=new_conv_title)
             if new_conv:
                 st.session_state.current_conversation_id = new_conv.get('id')
-                st.session_state.chat_history = []  # Clear chat history for new conversation
+                st.session_state.chat_history = []
                 st.session_state.chat_history_loaded = False
-                st.success("✅ New chat started!")
                 
-                # CRITICAL: Immediately refresh conversations list to show new chat in sidebar
+                # CRITICAL: Immediately refresh conversations list
                 cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
                 try:
                     conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
@@ -940,35 +699,22 @@ with st.sidebar:
         st.rerun()
     
     # Load and display conversations
-    # CRITICAL: Always use cached conversations if available, only reload on explicit change
-    # This prevents the disappearing/reappearing issue
     cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
     last_gpt_key = "last_gpt_for_conversations"
     
-    # Only reload if:
-    # 1. No cache exists for this GPT
-    # 2. GPT actually changed (not just rerun)
-    # 3. Cache is explicitly invalidated
     gpt_changed = st.session_state.get(last_gpt_key) != st.session_state.selected_gpt
     has_cache = cache_key in st.session_state and len(st.session_state.get(cache_key, [])) > 0
     
     try:
         if not has_cache or gpt_changed:
-            # Reload from backend
-            conversations = get_conversations(
-                business_id=st.session_state.selected_gpt,
-                archived=False
-            )
-            # Always update cache, even if empty
+            conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
             st.session_state[cache_key] = conversations
             st.session_state[last_gpt_key] = st.session_state.selected_gpt
             st.session_state.conversations = conversations
             logger.info(f"✅ Loaded {len(conversations)} conversations for GPT: {st.session_state.selected_gpt}")
         else:
-            # ALWAYS use cached conversations - this prevents disappearing
             conversations = st.session_state.get(cache_key, [])
             st.session_state.conversations = conversations
-            # Don't log every time to avoid spam, but ensure we're using cache
         
         if conversations:
             for conv in conversations[:20]:
@@ -981,17 +727,13 @@ with st.sidebar:
                 with col1:
                     button_style = "primary" if is_current else "secondary"
                     if st.button(display_title, key=f"conv_{conv.get('id')}", use_container_width=True, type=button_style):
-                        # Only reload if this is a different conversation
                         if st.session_state.current_conversation_id != conv.get('id'):
-                            # CRITICAL: Clear chat history FIRST to prevent bleeding
                             st.session_state.chat_history = []
                             st.session_state.chat_history_loaded = False
                             
-                            # Load conversation from backend
                             response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
                             if response and response.status_code == 200:
                                 loaded_conv = response.json()
-                                # REPLACE (not append) chat history with loaded messages
                                 st.session_state.chat_history = [
                                     {
                                         "role": msg.get("role"),
@@ -1001,57 +743,40 @@ with st.sidebar:
                                     for msg in loaded_conv.get("messages", [])
                                 ]
                                 st.session_state.current_conversation_id = conv.get('id')
-                                st.session_state.chat_history_loaded = True  # Mark as loaded
+                                st.session_state.chat_history_loaded = True
                                 logger.info(f"✅ Loaded conversation {conv.get('id')} with {len(st.session_state.chat_history)} messages")
                             else:
-                                logger.error(f"❌ Failed to load conversation {conv.get('id')}")
+                                st.session_state.chat_history = []
                                 st.session_state.current_conversation_id = conv.get('id')
-                        else:
-                            # Same conversation - just ensure it's set
-                            st.session_state.current_conversation_id = conv.get('id')
-                        st.rerun()
+                                st.session_state.chat_history_loaded = True
+                            st.rerun()
                 
                 with col2:
-                    if st.button("⋯", key=f"menu_{conv.get('id')}", help="More options"):
-                        st.session_state[f"show_menu_{conv.get('id')}"] = True
+                    if st.button("⋮", key=f"conv_menu_{conv.get('id')}", help="Options"):
+                        st.session_state[f"show_menu_{conv.get('id')}"] = not st.session_state.get(f"show_menu_{conv.get('id')}", False)
                         st.rerun()
                 
                 if st.session_state.get(f"show_menu_{conv.get('id')}", False):
-                    if st.button("✏️ Rename", key=f"rename_{conv.get('id')}"):
+                    st.markdown("---")
+                    if st.button("✏️ Rename", key=f"rename_{conv.get('id')}", use_container_width=True):
                         st.session_state[f"renaming_{conv.get('id')}"] = True
                         st.session_state[f"show_menu_{conv.get('id')}"] = False
                         st.rerun()
                     
-                    if st.button("📦 Archive", key=f"arch_{conv.get('id')}"):
-                        if archive_conversation(conv.get('id')):
-                            st.success("Archived!")
-                            st.session_state[f"show_menu_{conv.get('id')}"] = False
-                            st.rerun()
-                    
-                    if st.button("🗑️ Delete", key=f"del_{conv.get('id')}", type="secondary"):
-                        if delete_conversation(conv.get('id')):
-                            st.success("Deleted!")
-                            st.session_state[f"show_menu_{conv.get('id')}"] = False
-                            st.rerun()
-                    
-                    if st.button("✕ Close", key=f"close_{conv.get('id')}"):
-                        st.session_state[f"show_menu_{conv.get('id')}"] = False
-                        st.rerun()
-                
-                if st.session_state.get(f"renaming_{conv.get('id')}", False):
-                    new_title = st.text_input("New name:", value=conv_title, key=f"rename_input_{conv.get('id')}")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("✓", key=f"save_rename_{conv.get('id')}"):
-                            if new_title and new_title.strip():
-                                if rename_conversation(conv.get('id'), new_title.strip()):
-                                    st.success("Renamed!")
-                                    st.session_state[f"renaming_{conv.get('id')}"] = False
-                                    st.rerun()
-                    with col2:
-                        if st.button("✕", key=f"cancel_rename_{conv.get('id')}"):
-                            st.session_state[f"renaming_{conv.get('id')}"] = False
-                            st.rerun()
+                    if st.session_state.get(f"renaming_{conv.get('id')}", False):
+                        new_title = st.text_input("New name:", value=conv_title, key=f"rename_input_{conv.get('id')}")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("✓", key=f"save_rename_{conv.get('id')}"):
+                                if new_title and new_title.strip():
+                                    if rename_conversation(conv.get('id'), new_title.strip()):
+                                        st.success("Renamed!")
+                                        st.session_state[f"renaming_{conv.get('id')}"] = False
+                                        st.rerun()
+                        with col2:
+                            if st.button("✕", key=f"cancel_rename_{conv.get('id')}"):
+                                st.session_state[f"renaming_{conv.get('id')}"] = False
+                                st.rerun()
         else:
             st.info("No conversations yet. Start chatting!")
     except Exception as e:
@@ -1075,68 +800,17 @@ with st.sidebar:
     button_type = "primary" if st.session_state.user_logged_in else "secondary"
     
     # Style the button to look like a circular avatar - make it HIGHLY visible
-    avatar_bg = '#10a37f' if st.session_state.user_logged_in else '#8e8ea0'
-    avatar_hover = '#0d8a6b' if st.session_state.user_logged_in else '#6e6e80'
-    avatar_border = '#ffffff' if st.session_state.user_logged_in else '#10a37f'
+    avatar_bg = '#10a37f' if st.session_state.user_logged_in else '#ff6b6b'
+    avatar_hover = '#0d8a6b' if st.session_state.user_logged_in else '#ee5a5a'
+    avatar_border = '#ffffff' if st.session_state.user_logged_in else '#ffffff'
+    
+    # Set CSS variables for avatar styling
     st.markdown(f"""
     <style>
-        /* Avatar button styling - HIGHLY VISIBLE with bright colors and border */
-        /* Outer circle for high contrast */
-        button[key="sidebar_avatar"] {{
-            border-radius: 50% !important;
-            width: 50px !important;
-            height: 50px !important;
-            min-width: 50px !important;
-            padding: 0 !important;
-            font-size: 20px !important;
-            font-weight: 700 !important;
-            border: 4px solid #ffffff !important;
-            background-color: {avatar_bg} !important;
-            color: #ffffff !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 0 2px {avatar_bg} !important;
-            position: relative !important;
-        }}
-        /* Add outer glow ring for maximum visibility */
-        button[key="sidebar_avatar"]::before {{
-            content: '';
-            position: absolute;
-            top: -4px;
-            left: -4px;
-            right: -4px;
-            bottom: -4px;
-            border-radius: 50%;
-            border: 2px solid {avatar_border};
-            opacity: 0.8;
-            z-index: -1;
-        }}
-        button[key="sidebar_avatar"]:hover {{
-            background-color: {avatar_hover} !important;
-            border-color: #ffffff !important;
-            transform: scale(1.1) !important;
-            box-shadow: 0 6px 16px rgba(0,0,0,0.6), 0 0 0 3px {avatar_hover} !important;
-        }}
-        /* Force visibility for all button types - STRONGER SELECTORS */
-        div[data-testid="stButton"] > button[key="sidebar_avatar"],
-        button[data-baseweb="button"][key="sidebar_avatar"],
-        button[key="sidebar_avatar"],
-        div[data-testid="stButton"] button:has-text("{avatar_display}") {{
-            border-radius: 50% !important;
-            width: 55px !important;
-            height: 55px !important;
-            min-width: 55px !important;
-            min-height: 55px !important;
-            background-color: {avatar_bg} !important;
-            color: #ffffff !important;
-            border: 5px solid #ffffff !important;
-            font-size: 22px !important;
-            font-weight: 900 !important;
-            box-shadow: 0 6px 20px rgba(0,0,0,0.7), 0 0 0 3px {avatar_border} !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
+        :root {{
+            --avatar-bg: {avatar_bg};
+            --avatar-hover: {avatar_hover};
+            --avatar-border: {avatar_border};
         }}
     </style>
     """, unsafe_allow_html=True)
@@ -1170,7 +844,6 @@ with st.sidebar:
                 st.session_state.show_auth_dropdown = False
                 st.rerun()
         else:
-            # Show login form
             handle_login()
 
 
@@ -1179,7 +852,6 @@ if st.session_state.show_settings:
     render_settings()
 elif st.session_state.show_edit_gpt:
     render_edit_gpt_panel()
-    # Show chat in background (dimmed)
     st.markdown('<div style="opacity: 0.3;">', unsafe_allow_html=True)
     st.markdown('<div class="main-header">💬 Chat</div>', unsafe_allow_html=True)
     st.info("Close Edit GPT panel to continue chatting")
@@ -1199,22 +871,14 @@ else:
         st.stop()
     
     # CRITICAL: Load chat history on page load/refresh if we have a conversation_id
-    # This ensures chat history persists across page refreshes
-    # ALWAYS reload if we have a conversation_id and chat_history is empty or not loaded
-    should_reload = (
-        st.session_state.current_conversation_id and 
-        (not st.session_state.get("chat_history_loaded", False) or len(st.session_state.chat_history) == 0)
-    )
-    
-    if should_reload:
+    if st.session_state.current_conversation_id and (not st.session_state.get("chat_history_loaded", False) or len(st.session_state.chat_history) == 0):
         try:
-            logger.info(f"🔄 Loading conversation {st.session_state.current_conversation_id} (loaded={st.session_state.get('chat_history_loaded', False)}, history_len={len(st.session_state.chat_history)})")
+            logger.info(f"🔄 Loading conversation {st.session_state.current_conversation_id}")
             response = api_request("GET", f"/api/v1/conversations/{st.session_state.current_conversation_id}")
             if response and response.status_code == 200:
                 loaded_conv = response.json()
                 messages = loaded_conv.get("messages", [])
                 if messages:
-                    # REPLACE chat history with loaded messages
                     st.session_state.chat_history = [
                         {
                             "role": msg.get("role"),
@@ -1226,16 +890,14 @@ else:
                     st.session_state.chat_history_loaded = True
                     logger.info(f"✅ Loaded conversation with {len(st.session_state.chat_history)} messages")
                 else:
-                    # Empty conversation - mark as loaded to prevent infinite reload
-                    st.session_state.chat_history = []
                     st.session_state.chat_history_loaded = True
                     logger.info(f"ℹ️  Conversation {st.session_state.current_conversation_id} is empty")
             else:
-                logger.warning(f"⚠️  Could not load conversation {st.session_state.current_conversation_id} - status: {response.status_code if response else 'None'}")
-                st.session_state.chat_history_loaded = True  # Mark as attempted to prevent infinite retry
+                logger.warning(f"⚠️  Could not load conversation {st.session_state.current_conversation_id}")
+                st.session_state.chat_history_loaded = True
         except Exception as e:
             logger.error(f"❌ Failed to load conversation: {e}", exc_info=True)
-            st.session_state.chat_history_loaded = True  # Mark as attempted
+            st.session_state.chat_history_loaded = True
     
     # Chat interface - Display chat history FIRST
     chat_container = st.container()
@@ -1279,7 +941,6 @@ else:
             
             if uploaded_file:
                 business_id = st.session_state.selected_gpt or "temp_chat"
-                # CRITICAL: Use more specific file key including business_id to prevent cross-GPT conflicts
                 file_key = f"processed_{business_id}_{uploaded_file.name}_{uploaded_file.size}"
                 
                 if file_key not in st.session_state:
@@ -1296,35 +957,27 @@ else:
                             }
                             st.session_state.chat_history.append(confirmation_msg)
                             
-                            # CRITICAL: Save confirmation message to backend if we have a conversation
+                            # Save confirmation message to backend if we have a conversation
                             if st.session_state.current_conversation_id:
                                 try:
-                                    # The backend should save messages automatically, but we ensure it's there
                                     api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages", 
                                               json={"role": "assistant", "content": confirmation_msg["content"], "sources": []})
                                 except:
-                                    pass  # Non-critical - message is in session state
+                                    pass
                             
-                            # Increment counter to change uploader key and prevent re-upload
                             st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
                             st.session_state.show_file_upload = False
                             st.rerun()
                         else:
-                            # Get detailed error from response
                             error_msg = f"❌ Failed to process {uploaded_file.name}"
                             if isinstance(result, dict) and "error" in result:
                                 error_detail = result["error"]
-                                error_msg += f"\n\nError: {error_detail}\n\nPossible reasons:\n- File format not supported\n- File is corrupted\n- Backend processing error\n- Vector database not available\n\nPlease check backend logs for details."
-                            else:
-                                error_msg += "\n\nPossible reasons:\n- File format not supported\n- File is corrupted\n- Backend processing error\n- Vector database not available\n\nPlease try again or check backend logs."
+                                error_msg += f"\n\nError: {error_detail}"
                             st.error(error_msg)
-                            # Remove processed flag so user can retry
                             if file_key in st.session_state:
                                 del st.session_state[file_key]
                 else:
-                    # File already processed - prevent infinite loop
-                    st.info(f"ℹ️ {uploaded_file.name} was already processed. Select a different file or refresh to upload again.")
-                    # Increment counter to reset uploader and close upload area
+                    st.info(f"ℹ️ {uploaded_file.name} was already processed.")
                     st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
                     st.session_state.show_file_upload = False
                     st.rerun()
@@ -1336,52 +989,17 @@ else:
                     st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
     
-    # FIXED CHAT INPUT AT BOTTOM (ChatGPT style)
-    # Use JavaScript to position chat input at bottom after Streamlit renders it
-    st.markdown("""
-    <script>
-    (function() {
-        function fixChatInput() {
-            // Find the chat input container
-            const chatInput = document.querySelector('div[data-testid="stChatInputContainer"]');
-            if (chatInput) {
-                // Make it fixed at bottom
-                chatInput.style.position = 'fixed';
-                chatInput.style.bottom = '0';
-                chatInput.style.left = '0';
-                chatInput.style.right = '0';
-                chatInput.style.background = '#202123';
-                chatInput.style.padding = '1rem';
-                chatInput.style.zIndex = '9999';
-                chatInput.style.borderTop = '2px solid #343541';
-                chatInput.style.boxShadow = '0 -4px 12px rgba(0,0,0,0.3)';
-                
-                // Add padding to main content
-                const mainContent = document.querySelector('section[data-testid="stMain"] > div:first-child');
-                if (mainContent) {
-                    mainContent.style.paddingBottom = '120px';
-                }
-            }
-        }
-        // Run immediately and on DOM changes
-        fixChatInput();
-        setTimeout(fixChatInput, 100);
-        setTimeout(fixChatInput, 500);
-        // Watch for Streamlit reruns
-        const observer = new MutationObserver(fixChatInput);
-        observer.observe(document.body, { childList: true, subtree: true });
-    })();
-    </script>
-    """, unsafe_allow_html=True)
-    
-    # Create a row with attachment button and chat input
-    input_row = st.columns([0.05, 0.95])
-    with input_row[0]:
-        if st.button("➕", key="attach_file_btn", help="Attach file", use_container_width=True):
-            st.session_state.show_file_upload = not st.session_state.show_file_upload
-            st.rerun()
-    with input_row[1]:
-        user_query = st.chat_input("Message...")
+    # CRITICAL FIX: Chat input at bottom with attachment button
+    # Use columns to create layout with attachment button
+    input_container = st.container()
+    with input_container:
+        input_cols = st.columns([0.05, 0.95])
+        with input_cols[0]:
+            if st.button("➕", key="attach_file_btn", help="Attach file", use_container_width=True):
+                st.session_state.show_file_upload = not st.session_state.show_file_upload
+                st.rerun()
+        with input_cols[1]:
+            user_query = st.chat_input("Message...")
     
     # Handle chat input
     if user_query:
@@ -1391,7 +1009,7 @@ else:
             conv = create_conversation(st.session_state.selected_gpt, title=conv_title)
             if conv:
                 st.session_state.current_conversation_id = conv.get("id")
-                # CRITICAL: Immediately refresh conversations list to show new chat in sidebar
+                # Immediately refresh conversations list
                 cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
                 try:
                     conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
@@ -1409,7 +1027,7 @@ else:
         }
         st.session_state.chat_history.append(user_msg)
         
-        # CRITICAL: Save user message to backend immediately for persistence
+        # Save user message to backend immediately
         if st.session_state.current_conversation_id:
             try:
                 api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
@@ -1417,15 +1035,14 @@ else:
             except Exception as e:
                 logger.warning(f"Could not save user message to backend: {e}")
         
-        # Get response
+        # Get response - CRITICAL: This must work and display
         with st.spinner("Thinking..."):
             try:
-                # Use same business_id logic as file upload: selected_gpt or "temp_chat"
                 business_id_for_query = st.session_state.selected_gpt or "temp_chat"
                 response = chat_query(
                     business_id_for_query,
                     user_query,
-                    st.session_state.chat_history[:-1],  # Exclude the message we just added
+                    st.session_state.chat_history[:-1],
                     st.session_state.current_conversation_id,
                     reply_as_me=st.session_state.reply_as_me
                 )
@@ -1438,7 +1055,7 @@ else:
                     }
                     st.session_state.chat_history.append(assistant_msg)
                     
-                    # CRITICAL: Save assistant message to backend immediately for persistence
+                    # Save assistant message to backend immediately
                     if st.session_state.current_conversation_id:
                         try:
                             api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
@@ -1457,7 +1074,6 @@ else:
                     }
                     st.session_state.chat_history.append(assistant_msg)
                     
-                    # Save error message to backend too
                     if st.session_state.current_conversation_id:
                         try:
                             api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
@@ -1473,5 +1089,42 @@ else:
                     "sources": []
                 })
         
+        # CRITICAL: Force rerun to display the response
         st.rerun()
-
+    
+    # JavaScript to ensure chat input is at bottom (fallback if CSS doesn't work)
+    st.markdown("""
+    <script>
+    (function() {
+        function moveChatInputToBottom() {
+            // Find Streamlit chat input container
+            const chatInput = document.querySelector('div[data-testid="stChatInputContainer"]') || 
+                             document.querySelector('form[data-testid="stChatInputForm"]') ||
+                             document.querySelector('div[data-testid="stChatInput"]');
+            
+            if (chatInput) {
+                chatInput.style.position = 'fixed';
+                chatInput.style.bottom = '0';
+                chatInput.style.left = '0';
+                chatInput.style.right = '0';
+                chatInput.style.zIndex = '999';
+                chatInput.style.background = '#202123';
+                chatInput.style.borderTop = '2px solid #343541';
+                chatInput.style.padding = '1rem';
+                chatInput.style.boxShadow = '0 -4px 12px rgba(0,0,0,0.3)';
+            }
+        }
+        
+        // Run immediately
+        moveChatInputToBottom();
+        
+        // Run after a short delay to catch dynamically loaded elements
+        setTimeout(moveChatInputToBottom, 100);
+        setTimeout(moveChatInputToBottom, 500);
+        
+        // Also run on mutations
+        const observer = new MutationObserver(moveChatInputToBottom);
+        observer.observe(document.body, { childList: true, subtree: true });
+    })();
+    </script>
+    """, unsafe_allow_html=True)

@@ -395,18 +395,22 @@ class VectorStore:
                     logger.warning(f"   ⚠️  Collection 'business_{business_id}' is empty - no documents to search")
                     return []
                 
-                # CRITICAL: Filter by business_id to ensure document isolation
-                # Even though collection is per business_id, add explicit filter for safety
-                search_filter = {"business_id": business_id}
-                if filter_metadata:
-                    search_filter.update(filter_metadata)
+                # CRITICAL: DO NOT filter by business_id in metadata - collection IS the filter
+                # The collection name itself is "business_{business_id}", so all documents in it belong to that business
+                # Adding a metadata filter would prevent finding documents if metadata is missing or incorrect
+                # Search ALL documents in the collection - they all belong to this business_id
+                # Only use filter_metadata if provided (for other filters, not business_id)
+                search_filter = filter_metadata if filter_metadata else None
                 
-                logger.info(f"   🔍 Search filter: {search_filter}")
+                if search_filter:
+                    logger.info(f"   🔍 Search filter: {search_filter}")
+                else:
+                    logger.info(f"   🔍 No metadata filter - searching ALL {doc_count} documents in collection")
                 
                 results = collection.query(
                     query_embeddings=[query_embedding],
                     n_results=min(k, doc_count),  # Don't ask for more than available
-                    where=search_filter
+                    where=search_filter  # None means no filter - search all documents
                 )
                 
                 # Format results
