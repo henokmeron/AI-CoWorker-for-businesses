@@ -75,27 +75,38 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* CRITICAL FIX 1: Chat input at bottom - PROPER implementation */
-    /* Streamlit chat_input creates a container - we need to target it correctly */
+    /* CRITICAL FIX 1: Chat input at bottom - PROPER implementation with sidebar support */
+    /* Streamlit sidebar is typically 21rem (336px) when open */
     section[data-testid="stMain"] {
         padding-bottom: 120px !important;
     }
     
     /* Target the actual chat input container that Streamlit creates */
+    /* CRITICAL: Account for sidebar width - sidebar is ~21rem when open */
     div[data-testid="stChatInputContainer"],
     div[data-testid="stChatInput"],
     div[data-testid="stChatInputContainer"] > div,
-    form[data-testid="stChatInputForm"] {
+    form[data-testid="stChatInputForm"],
+    div[data-testid="stChatInputContainer"] > form {
         position: fixed !important;
         bottom: 0 !important;
-        left: 0 !important;
+        left: 21rem !important; /* Start after sidebar when open */
         right: 0 !important;
         background: #202123 !important;
         padding: 1rem !important;
         z-index: 999 !important;
-        border-top: 2px solid #343541 !important;
+        border-top: 3px solid #ffffff !important; /* WHITE BORDER as requested */
+        border-left: 2px solid #343541 !important;
         box-shadow: 0 -4px 12px rgba(0,0,0,0.3) !important;
         margin: 0 !important;
+    }
+    
+    /* When sidebar is collapsed, adjust left position */
+    section[data-testid="stSidebar"][aria-expanded="false"] ~ div[data-testid="stAppViewContainer"] 
+    div[data-testid="stChatInputContainer"],
+    section[data-testid="stSidebar"][aria-expanded="false"] ~ div[data-testid="stAppViewContainer"] 
+    form[data-testid="stChatInputForm"] {
+        left: 0 !important; /* Full width when sidebar closed */
     }
     
     /* Ensure main content doesn't overlap with fixed input */
@@ -105,14 +116,14 @@ st.markdown("""
     }
     
     /* CRITICAL FIX 2: Chat message alignment - User RIGHT, AI LEFT with center line */
-    /* Center line to separate user and AI messages */
-    section[data-testid="stMain"] > div:first-child > div:first-child {
+    /* Center line to separate user and AI messages - positioned relative to main content */
+    section[data-testid="stMain"] {
         position: relative;
     }
-    section[data-testid="stMain"] > div:first-child > div:first-child::before {
+    section[data-testid="stMain"]::before {
         content: '';
         position: fixed;
-        left: 50%;
+        left: calc(21rem + 50%);
         top: 0;
         bottom: 120px;
         width: 2px;
@@ -122,7 +133,13 @@ st.markdown("""
         transform: translateX(-50%);
     }
     
-    /* Target ALL chat message containers */
+    /* When sidebar is collapsed, adjust center line */
+    section[data-testid="stSidebar"][aria-expanded="false"] ~ div[data-testid="stAppViewContainer"] 
+    section[data-testid="stMain"]::before {
+        left: 50%;
+    }
+    
+    /* Target ALL chat message containers - use more specific selectors */
     div[data-testid="stChatMessage"] {
         display: flex !important;
         width: 100% !important;
@@ -131,7 +148,8 @@ st.markdown("""
         z-index: 1;
     }
     
-    /* User messages - align to RIGHT (48% width, 2% margin from right) */
+    /* User messages - align to RIGHT - use multiple selector strategies */
+    /* Strategy 1: :has() selector for modern browsers */
     div[data-testid="stChatMessage"]:has(img[alt="user"]),
     div[data-testid="stChatMessage"]:has(img[alt*="User"]),
     div[data-testid="stChatMessage"]:has(img[alt*="user"]) {
@@ -139,10 +157,18 @@ st.markdown("""
         flex-direction: row-reverse !important;
     }
     
-    /* User message content box - right aligned */
+    /* Strategy 2: Direct child selector - user messages have specific structure */
+    div[data-testid="stChatMessage"] > div:first-child:has(img[alt="user"]),
+    div[data-testid="stChatMessage"] > div:first-child:has(img[alt*="user"]) {
+        order: 2;
+    }
+    
+    /* User message content box - right aligned with proper styling */
     div[data-testid="stChatMessage"]:has(img[alt="user"]) > div:last-child,
     div[data-testid="stChatMessage"]:has(img[alt*="User"]) > div:last-child,
-    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div:last-child {
+    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div:last-child,
+    div[data-testid="stChatMessage"]:has(img[alt="user"]) > div:nth-child(2),
+    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div:nth-child(2) {
         max-width: 48% !important;
         margin-left: auto !important;
         margin-right: 2% !important;
@@ -153,7 +179,7 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
     }
     
-    /* Assistant messages - align to LEFT (48% width, 2% margin from left) */
+    /* Assistant messages - align to LEFT */
     div[data-testid="stChatMessage"]:has(img[alt="assistant"]),
     div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]),
     div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) {
@@ -164,7 +190,9 @@ st.markdown("""
     /* Assistant message content box - left aligned */
     div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div:last-child,
     div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]) > div:last-child,
-    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div:last-child {
+    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div:last-child,
+    div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div:nth-child(2),
+    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div:nth-child(2) {
         max-width: 48% !important;
         margin-right: auto !important;
         margin-left: 2% !important;
@@ -174,75 +202,95 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
     }
     
-    /* Fallback selectors for browsers that don't support :has() */
-    div[data-testid="stChatMessage"][data-message-role="user"] {
+    /* Fallback: Use attribute selectors and class-based targeting */
+    div[data-testid="stChatMessage"][data-message-role="user"],
+    div[data-testid="stChatMessage"] [class*="user"] {
         justify-content: flex-end !important;
         flex-direction: row-reverse !important;
     }
-    div[data-testid="stChatMessage"][data-message-role="assistant"] {
+    div[data-testid="stChatMessage"][data-message-role="assistant"],
+    div[data-testid="stChatMessage"] [class*="assistant"] {
         justify-content: flex-start !important;
         flex-direction: row !important;
     }
     
-    /* CRITICAL FIX 3: Avatar visibility - HIGHLY VISIBLE */
-    button[key="sidebar_avatar"] {
+    /* Additional fallback: Target by message structure */
+    div[data-testid="stChatMessage"]:nth-child(odd) {
+        /* This is a last resort - will be overridden by more specific selectors */
+    }
+    
+    /* CRITICAL FIX 3: Avatar visibility - HIGHLY VISIBLE with white border */
+    /* Target all possible avatar button selectors */
+    button[key="sidebar_avatar"],
+    div[data-testid="stButton"] > button[key="sidebar_avatar"],
+    button[data-baseweb="button"][key="sidebar_avatar"],
+    section[data-testid="stSidebar"] button[key="sidebar_avatar"] {
         border-radius: 50% !important;
-        width: 55px !important;
-        height: 55px !important;
-        min-width: 55px !important;
+        width: 60px !important;
+        height: 60px !important;
+        min-width: 60px !important;
+        min-height: 60px !important;
         padding: 0 !important;
-        font-size: 22px !important;
-        font-weight: 800 !important;
-        border: 5px solid #ffffff !important;
-        background-color: var(--avatar-bg) !important;
+        font-size: 24px !important;
+        font-weight: 900 !important;
+        border: 4px solid #ffffff !important;
+        background-color: var(--avatar-bg, #ff6b6b) !important;
         color: #ffffff !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        box-shadow: 0 6px 16px rgba(0,0,0,0.6), 0 0 0 3px var(--avatar-border) !important;
+        box-shadow: 0 0 0 3px rgba(255,255,255,0.8), 0 6px 20px rgba(0,0,0,0.8) !important;
         position: relative !important;
         margin: 8px auto !important;
+        line-height: 1 !important;
+        text-align: center !important;
+    }
+    
+    /* Ensure avatar text/icon is visible */
+    button[key="sidebar_avatar"] *,
+    button[key="sidebar_avatar"]::before {
+        color: #ffffff !important;
+        font-weight: 900 !important;
     }
     
     /* Outer glow ring for maximum visibility */
     button[key="sidebar_avatar"]::before {
         content: '';
         position: absolute;
-        top: -6px;
-        left: -6px;
-        right: -6px;
-        bottom: -6px;
+        top: -8px;
+        left: -8px;
+        right: -8px;
+        bottom: -8px;
         border-radius: 50%;
-        border: 3px solid var(--avatar-border);
+        border: 4px solid #ffffff;
         opacity: 0.9;
         z-index: -1;
         animation: pulse 2s infinite;
+        box-shadow: 0 0 10px rgba(255,255,255,0.5);
     }
     
     @keyframes pulse {
-        0%, 100% { opacity: 0.9; }
-        50% { opacity: 0.6; }
+        0%, 100% { 
+            opacity: 0.9;
+            transform: scale(1);
+        }
+        50% { 
+            opacity: 0.7;
+            transform: scale(1.05);
+        }
     }
     
     button[key="sidebar_avatar"]:hover {
-        background-color: var(--avatar-hover) !important;
+        background-color: var(--avatar-hover, #ee5a5a) !important;
         border-color: #ffffff !important;
-        transform: scale(1.15) !important;
-        box-shadow: 0 8px 20px rgba(0,0,0,0.7), 0 0 0 4px var(--avatar-hover) !important;
+        transform: scale(1.1) !important;
+        box-shadow: 0 0 0 4px rgba(255,255,255,1), 0 8px 24px rgba(0,0,0,0.9) !important;
     }
     
-    /* Force visibility for all button types */
-    div[data-testid="stButton"] > button[key="sidebar_avatar"],
-    button[data-baseweb="button"][key="sidebar_avatar"] {
-        border-radius: 50% !important;
-        width: 55px !important;
-        height: 55px !important;
-        background-color: var(--avatar-bg) !important;
-        color: #ffffff !important;
-        border: 5px solid #ffffff !important;
-        font-size: 22px !important;
-        font-weight: 800 !important;
-        box-shadow: 0 6px 16px rgba(0,0,0,0.6) !important;
+    /* Force visibility - override any Streamlit defaults */
+    button[key="sidebar_avatar"] {
+        visibility: visible !important;
+        opacity: 1 !important;
     }
     
     /* Sidebar styling */
@@ -1092,7 +1140,7 @@ else:
         # CRITICAL: Force rerun to display the response
         st.rerun()
     
-    # JavaScript to ensure chat input is at bottom (fallback if CSS doesn't work)
+    # JavaScript to fix chat input position and chat alignment
     st.markdown("""
     <script>
     (function() {
@@ -1102,29 +1150,125 @@ else:
                              document.querySelector('form[data-testid="stChatInputForm"]') ||
                              document.querySelector('div[data-testid="stChatInput"]');
             
+            // Check if sidebar is open (sidebar is typically 21rem = 336px)
+            const sidebar = document.querySelector('section[data-testid="stSidebar"]');
+            const sidebarOpen = sidebar && sidebar.getAttribute('aria-expanded') !== 'false';
+            const sidebarWidth = sidebarOpen ? '21rem' : '0';
+            
             if (chatInput) {
                 chatInput.style.position = 'fixed';
                 chatInput.style.bottom = '0';
-                chatInput.style.left = '0';
+                chatInput.style.left = sidebarWidth; // Account for sidebar
                 chatInput.style.right = '0';
                 chatInput.style.zIndex = '999';
                 chatInput.style.background = '#202123';
-                chatInput.style.borderTop = '2px solid #343541';
+                chatInput.style.borderTop = '3px solid #ffffff'; // WHITE BORDER
+                chatInput.style.borderLeft = '2px solid #343541';
                 chatInput.style.padding = '1rem';
                 chatInput.style.boxShadow = '0 -4px 12px rgba(0,0,0,0.3)';
+                
+                // Also style the input field itself for visibility
+                const inputField = chatInput.querySelector('input') || chatInput.querySelector('textarea');
+                if (inputField) {
+                    inputField.style.border = '2px solid #565869';
+                    inputField.style.borderRadius = '8px';
+                    inputField.style.padding = '0.75rem';
+                }
             }
         }
         
-        // Run immediately
-        moveChatInputToBottom();
+        function fixChatAlignment() {
+            // Find all chat messages
+            const messages = document.querySelectorAll('div[data-testid="stChatMessage"]');
+            
+            messages.forEach(msg => {
+                // Check if it's a user message (has user avatar/image)
+                const userImg = msg.querySelector('img[alt="user"], img[alt*="User"], img[alt*="user"]');
+                const assistantImg = msg.querySelector('img[alt="assistant"], img[alt*="Assistant"], img[alt*="assistant"]');
+                
+                if (userImg) {
+                    // User message - align RIGHT
+                    msg.style.display = 'flex';
+                    msg.style.justifyContent = 'flex-end';
+                    msg.style.flexDirection = 'row-reverse';
+                    
+                    // Style the message content box
+                    const contentBox = msg.querySelector('div:last-child') || msg.querySelector('div:nth-child(2)');
+                    if (contentBox) {
+                        contentBox.style.maxWidth = '48%';
+                        contentBox.style.marginLeft = 'auto';
+                        contentBox.style.marginRight = '2%';
+                        contentBox.style.backgroundColor = '#343541';
+                        contentBox.style.borderRadius = '12px 12px 0 12px';
+                        contentBox.style.padding = '14px 18px';
+                        contentBox.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+                    }
+                } else if (assistantImg) {
+                    // Assistant message - align LEFT
+                    msg.style.display = 'flex';
+                    msg.style.justifyContent = 'flex-start';
+                    msg.style.flexDirection = 'row';
+                    
+                    // Style the message content box
+                    const contentBox = msg.querySelector('div:last-child') || msg.querySelector('div:nth-child(2)');
+                    if (contentBox) {
+                        contentBox.style.maxWidth = '48%';
+                        contentBox.style.marginRight = 'auto';
+                        contentBox.style.marginLeft = '2%';
+                        contentBox.style.backgroundColor = '#444654';
+                        contentBox.style.borderRadius = '12px 12px 12px 0';
+                        contentBox.style.padding = '14px 18px';
+                        contentBox.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+                    }
+                }
+            });
+        }
         
-        // Run after a short delay to catch dynamically loaded elements
-        setTimeout(moveChatInputToBottom, 100);
-        setTimeout(moveChatInputToBottom, 500);
+        function fixAvatarVisibility() {
+            const avatar = document.querySelector('button[key="sidebar_avatar"]');
+            if (avatar) {
+                avatar.style.borderRadius = '50%';
+                avatar.style.width = '60px';
+                avatar.style.height = '60px';
+                avatar.style.minWidth = '60px';
+                avatar.style.minHeight = '60px';
+                avatar.style.border = '4px solid #ffffff';
+                avatar.style.backgroundColor = avatar.textContent === '?' ? '#ff6b6b' : '#10a37f';
+                avatar.style.color = '#ffffff';
+                avatar.style.fontSize = '24px';
+                avatar.style.fontWeight = '900';
+                avatar.style.boxShadow = '0 0 0 3px rgba(255,255,255,0.8), 0 6px 20px rgba(0,0,0,0.8)';
+                avatar.style.visibility = 'visible';
+                avatar.style.opacity = '1';
+            }
+        }
+        
+        function applyAllFixes() {
+            moveChatInputToBottom();
+            fixChatAlignment();
+            fixAvatarVisibility();
+        }
+        
+        // Run immediately
+        applyAllFixes();
+        
+        // Run after delays to catch dynamically loaded elements
+        setTimeout(applyAllFixes, 100);
+        setTimeout(applyAllFixes, 500);
+        setTimeout(applyAllFixes, 1000);
         
         // Also run on mutations
-        const observer = new MutationObserver(moveChatInputToBottom);
+        const observer = new MutationObserver(applyAllFixes);
         observer.observe(document.body, { childList: true, subtree: true });
+        
+        // Watch for sidebar toggle
+        const sidebar = document.querySelector('section[data-testid="stSidebar"]');
+        if (sidebar) {
+            const sidebarObserver = new MutationObserver(() => {
+                setTimeout(applyAllFixes, 100);
+            });
+            sidebarObserver.observe(sidebar, { attributes: true, attributeFilter: ['aria-expanded'] });
+        }
     })();
     </script>
     """, unsafe_allow_html=True)
