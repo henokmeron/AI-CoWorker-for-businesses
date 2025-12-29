@@ -82,7 +82,7 @@ st.markdown("""
     }
     
     /* Target the actual chat input container that Streamlit creates */
-    /* CRITICAL: Account for sidebar width - sidebar is ~21rem when open */
+    /* CRITICAL: Use calc() to properly center and account for sidebar */
     div[data-testid="stChatInputContainer"],
     div[data-testid="stChatInput"],
     div[data-testid="stChatInputContainer"] > div,
@@ -94,19 +94,42 @@ st.markdown("""
         right: 0 !important;
         background: #202123 !important;
         padding: 1rem !important;
+        padding-right: 2rem !important; /* Extra padding to ensure send button is visible */
         z-index: 999 !important;
         border-top: 3px solid #ffffff !important; /* WHITE BORDER as requested */
         border-left: 2px solid #343541 !important;
         box-shadow: 0 -4px 12px rgba(0,0,0,0.3) !important;
         margin: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        max-width: calc(100% - 21rem) !important; /* Ensure it doesn't overflow */
     }
     
-    /* When sidebar is collapsed, adjust left position */
+    /* When sidebar is collapsed, adjust left position and max-width */
     section[data-testid="stSidebar"][aria-expanded="false"] ~ div[data-testid="stAppViewContainer"] 
     div[data-testid="stChatInputContainer"],
     section[data-testid="stSidebar"][aria-expanded="false"] ~ div[data-testid="stAppViewContainer"] 
     form[data-testid="stChatInputForm"] {
         left: 0 !important; /* Full width when sidebar closed */
+        max-width: 100% !important;
+    }
+    
+    /* Ensure the input field and send button are properly contained */
+    div[data-testid="stChatInputContainer"] > div,
+    form[data-testid="stChatInputForm"] > div {
+        width: 100% !important;
+        max-width: 100% !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 0.5rem !important;
+    }
+    
+    /* Ensure send button is always visible */
+    div[data-testid="stChatInputContainer"] button,
+    form[data-testid="stChatInputForm"] button {
+        flex-shrink: 0 !important;
+        min-width: auto !important;
     }
     
     /* Ensure main content doesn't overlap with fixed input */
@@ -550,8 +573,9 @@ def get_user_initials():
         parts = name.split()
         if len(parts) >= 2:
             return (parts[0][0] + parts[-1][0]).upper()
-        return name[0].upper() if name else "?"
-    return "?"
+        return name[0].upper() if name else "👤"
+    # Return a user icon emoji instead of "?" for better visibility
+    return "👤"
 
 
 def handle_login():
@@ -844,13 +868,14 @@ with st.sidebar:
     initials = get_user_initials()
     
     # Avatar button - visible button with initials or user icon
-    avatar_display = initials
+    # Use emoji or initials, never "?"
+    avatar_display = initials if initials != "?" else "👤"
     button_type = "primary" if st.session_state.user_logged_in else "secondary"
     
     # Style the button to look like a circular avatar - make it HIGHLY visible
     avatar_bg = '#10a37f' if st.session_state.user_logged_in else '#ff6b6b'
     avatar_hover = '#0d8a6b' if st.session_state.user_logged_in else '#ee5a5a'
-    avatar_border = '#ffffff' if st.session_state.user_logged_in else '#ffffff'
+    avatar_border = '#ffffff'
     
     # Set CSS variables for avatar styling
     st.markdown(f"""
@@ -863,6 +888,7 @@ with st.sidebar:
     </style>
     """, unsafe_allow_html=True)
     
+    # Create avatar button with explicit styling
     if st.button(f"{avatar_display}", key="sidebar_avatar", help="Account menu", use_container_width=True, type=button_type):
         st.session_state.show_auth_dropdown = not st.session_state.show_auth_dropdown
         st.rerun()
@@ -1150,22 +1176,41 @@ else:
                              document.querySelector('form[data-testid="stChatInputForm"]') ||
                              document.querySelector('div[data-testid="stChatInput"]');
             
-            // Check if sidebar is open (sidebar is typically 21rem = 336px)
+            // Check if sidebar is open - check multiple ways
             const sidebar = document.querySelector('section[data-testid="stSidebar"]');
-            const sidebarOpen = sidebar && sidebar.getAttribute('aria-expanded') !== 'false';
+            let sidebarOpen = true; // Default to open
+            if (sidebar) {
+                const expanded = sidebar.getAttribute('aria-expanded');
+                const computedStyle = window.getComputedStyle(sidebar);
+                sidebarOpen = expanded !== 'false' && computedStyle.display !== 'none' && computedStyle.width !== '0px';
+            }
             const sidebarWidth = sidebarOpen ? '21rem' : '0';
             
             if (chatInput) {
                 chatInput.style.position = 'fixed';
                 chatInput.style.bottom = '0';
-                chatInput.style.left = sidebarWidth; // Account for sidebar
+                chatInput.style.left = sidebarWidth;
                 chatInput.style.right = '0';
                 chatInput.style.zIndex = '999';
                 chatInput.style.background = '#202123';
                 chatInput.style.borderTop = '3px solid #ffffff'; // WHITE BORDER
-                chatInput.style.borderLeft = '2px solid #343541';
+                chatInput.style.borderLeft = sidebarOpen ? '2px solid #343541' : 'none';
                 chatInput.style.padding = '1rem';
+                chatInput.style.paddingRight = '2rem'; // Extra padding for send button
                 chatInput.style.boxShadow = '0 -4px 12px rgba(0,0,0,0.3)';
+                chatInput.style.maxWidth = sidebarOpen ? 'calc(100% - 21rem)' : '100%';
+                chatInput.style.display = 'flex';
+                chatInput.style.alignItems = 'center';
+                
+                // Ensure the inner container doesn't overflow
+                const innerContainer = chatInput.querySelector('div') || chatInput.querySelector('form');
+                if (innerContainer) {
+                    innerContainer.style.width = '100%';
+                    innerContainer.style.maxWidth = '100%';
+                    innerContainer.style.display = 'flex';
+                    innerContainer.style.alignItems = 'center';
+                    innerContainer.style.gap = '0.5rem';
+                }
                 
                 // Also style the input field itself for visibility
                 const inputField = chatInput.querySelector('input') || chatInput.querySelector('textarea');
@@ -1173,27 +1218,69 @@ else:
                     inputField.style.border = '2px solid #565869';
                     inputField.style.borderRadius = '8px';
                     inputField.style.padding = '0.75rem';
+                    inputField.style.flex = '1';
+                    inputField.style.minWidth = '0'; // Allow shrinking
+                }
+                
+                // Ensure send button is visible and doesn't get cut off
+                const sendButton = chatInput.querySelector('button[type="submit"]') || 
+                                 chatInput.querySelector('button:has(svg)') ||
+                                 Array.from(chatInput.querySelectorAll('button')).find(btn => 
+                                     btn.querySelector('svg') || btn.textContent.includes('Send') || btn.textContent.includes('→')
+                                 );
+                if (sendButton) {
+                    sendButton.style.flexShrink = '0';
+                    sendButton.style.minWidth = 'auto';
+                    sendButton.style.visibility = 'visible';
+                    sendButton.style.opacity = '1';
                 }
             }
         }
         
         function fixChatAlignment() {
-            // Find all chat messages
+            // Find all chat messages - use more aggressive selection
             const messages = document.querySelectorAll('div[data-testid="stChatMessage"]');
             
-            messages.forEach(msg => {
-                // Check if it's a user message (has user avatar/image)
+            messages.forEach((msg, index) => {
+                // Multiple strategies to detect user vs assistant
+                // Strategy 1: Check for avatar images
                 const userImg = msg.querySelector('img[alt="user"], img[alt*="User"], img[alt*="user"]');
                 const assistantImg = msg.querySelector('img[alt="assistant"], img[alt*="Assistant"], img[alt*="assistant"]');
                 
-                if (userImg) {
+                // Strategy 2: Check message structure - user messages often have different structure
+                const msgContent = msg.textContent || '';
+                const isUserMessage = userImg || 
+                                     msg.querySelector('[class*="user"]') ||
+                                     (index % 2 === 0 && !assistantImg); // Fallback: even indices might be user
+                
+                if (userImg || (isUserMessage && !assistantImg)) {
                     // User message - align RIGHT
                     msg.style.display = 'flex';
                     msg.style.justifyContent = 'flex-end';
                     msg.style.flexDirection = 'row-reverse';
+                    msg.style.width = '100%';
+                    msg.style.marginBottom = '1.5rem';
                     
-                    // Style the message content box
-                    const contentBox = msg.querySelector('div:last-child') || msg.querySelector('div:nth-child(2)');
+                    // Find and style the message content box - try multiple selectors
+                    let contentBox = msg.querySelector('div:last-child') || 
+                                   msg.querySelector('div:nth-child(2)') ||
+                                   msg.querySelector('[class*="message"]') ||
+                                   Array.from(msg.children).find(child => 
+                                       child.tagName === 'DIV' && child.children.length > 0
+                                   );
+                    
+                    if (!contentBox) {
+                        // Create a wrapper if needed
+                        const textNodes = Array.from(msg.childNodes).filter(node => 
+                            node.nodeType === 3 && node.textContent.trim()
+                        );
+                        if (textNodes.length > 0) {
+                            contentBox = document.createElement('div');
+                            textNodes.forEach(node => contentBox.appendChild(node.cloneNode(true)));
+                            msg.appendChild(contentBox);
+                        }
+                    }
+                    
                     if (contentBox) {
                         contentBox.style.maxWidth = '48%';
                         contentBox.style.marginLeft = 'auto';
@@ -1202,15 +1289,35 @@ else:
                         contentBox.style.borderRadius = '12px 12px 0 12px';
                         contentBox.style.padding = '14px 18px';
                         contentBox.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+                        contentBox.style.textAlign = 'left';
                     }
-                } else if (assistantImg) {
+                } else if (assistantImg || (!isUserMessage)) {
                     // Assistant message - align LEFT
                     msg.style.display = 'flex';
                     msg.style.justifyContent = 'flex-start';
                     msg.style.flexDirection = 'row';
+                    msg.style.width = '100%';
+                    msg.style.marginBottom = '1.5rem';
                     
-                    // Style the message content box
-                    const contentBox = msg.querySelector('div:last-child') || msg.querySelector('div:nth-child(2)');
+                    // Find and style the message content box
+                    let contentBox = msg.querySelector('div:last-child') || 
+                                   msg.querySelector('div:nth-child(2)') ||
+                                   msg.querySelector('[class*="message"]') ||
+                                   Array.from(msg.children).find(child => 
+                                       child.tagName === 'DIV' && child.children.length > 0
+                                   );
+                    
+                    if (!contentBox) {
+                        const textNodes = Array.from(msg.childNodes).filter(node => 
+                            node.nodeType === 3 && node.textContent.trim()
+                        );
+                        if (textNodes.length > 0) {
+                            contentBox = document.createElement('div');
+                            textNodes.forEach(node => contentBox.appendChild(node.cloneNode(true)));
+                            msg.appendChild(contentBox);
+                        }
+                    }
+                    
                     if (contentBox) {
                         contentBox.style.maxWidth = '48%';
                         contentBox.style.marginRight = 'auto';
@@ -1227,19 +1334,32 @@ else:
         function fixAvatarVisibility() {
             const avatar = document.querySelector('button[key="sidebar_avatar"]');
             if (avatar) {
+                // Get the text content to determine if logged in
+                const avatarText = (avatar.textContent || avatar.innerText || '').trim();
+                const isLoggedIn = avatarText !== '?' && avatarText !== '👤' && avatarText.length > 0;
+                
                 avatar.style.borderRadius = '50%';
                 avatar.style.width = '60px';
                 avatar.style.height = '60px';
                 avatar.style.minWidth = '60px';
                 avatar.style.minHeight = '60px';
                 avatar.style.border = '4px solid #ffffff';
-                avatar.style.backgroundColor = avatar.textContent === '?' ? '#ff6b6b' : '#10a37f';
+                avatar.style.backgroundColor = isLoggedIn ? '#10a37f' : '#ff6b6b';
                 avatar.style.color = '#ffffff';
                 avatar.style.fontSize = '24px';
                 avatar.style.fontWeight = '900';
                 avatar.style.boxShadow = '0 0 0 3px rgba(255,255,255,0.8), 0 6px 20px rgba(0,0,0,0.8)';
                 avatar.style.visibility = 'visible';
                 avatar.style.opacity = '1';
+                avatar.style.display = 'flex';
+                avatar.style.alignItems = 'center';
+                avatar.style.justifyContent = 'center';
+                
+                // If it's still showing "?", replace with emoji
+                if (avatarText === '?') {
+                    avatar.textContent = '👤';
+                    avatar.innerHTML = '👤';
+                }
             }
         }
         
