@@ -74,20 +74,21 @@ st.markdown("""
     /* CRITICAL: Chat message layout - User on RIGHT, AI on LEFT (like ChatGPT) */
     /* Streamlit chat messages structure: div[data-testid="stChatMessage"] contains the message */
     
-    /* Center line to separate user and AI messages */
-    .stApp > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child {
+    /* Center line to separate user and AI messages - WORKING APPROACH */
+    section[data-testid="stMain"] > div:first-child {
         position: relative;
     }
-    .stApp > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child::before {
+    section[data-testid="stMain"] > div:first-child::before {
         content: '';
-        position: absolute;
+        position: fixed;
         left: 50%;
         top: 0;
-        bottom: 0;
+        bottom: 120px;
         width: 2px;
         background: linear-gradient(to bottom, transparent, #565869 20%, #565869 80%, transparent);
         z-index: 0;
         pointer-events: none;
+        transform: translateX(-50%);
     }
     
     /* Target ALL chat message containers */
@@ -99,20 +100,29 @@ st.markdown("""
         z-index: 1;
     }
     
-    /* User messages - align to RIGHT */
-    /* Streamlit adds avatar with alt="user" for user messages */
+    /* User messages - align to RIGHT - WORKING SELECTORS */
+    /* Streamlit chat messages have specific structure */
     div[data-testid="stChatMessage"]:has(img[alt="user"]),
     div[data-testid="stChatMessage"]:has(img[alt*="User"]),
-    div[data-testid="stChatMessage"]:has(img[alt*="user"]) {
+    div[data-testid="stChatMessage"]:has(img[alt*="user"]),
+    div[data-testid="stChatMessage"][aria-label*="user"],
+    div[data-testid="stChatMessage"][aria-label*="User"] {
+        display: flex !important;
         justify-content: flex-end !important;
         flex-direction: row-reverse !important;
+        width: 100% !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
     }
     
     /* User message content box - right aligned with styling */
-    div[data-testid="stChatMessage"]:has(img[alt="user"]) > div:last-child,
-    div[data-testid="stChatMessage"]:has(img[alt*="User"]) > div:last-child,
-    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div:last-child {
+    div[data-testid="stChatMessage"]:has(img[alt="user"]) > div,
+    div[data-testid="stChatMessage"]:has(img[alt*="User"]) > div,
+    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div,
+    div[data-testid="stChatMessage"][aria-label*="user"] > div,
+    div[data-testid="stChatMessage"][aria-label*="User"] > div {
         max-width: 48% !important;
+        min-width: 200px !important;
         margin-left: auto !important;
         margin-right: 2% !important;
         background-color: #343541 !important;
@@ -121,20 +131,28 @@ st.markdown("""
         text-align: left !important;
     }
     
-    /* Assistant messages - align to LEFT */
-    /* Streamlit adds avatar with alt="assistant" for assistant messages */
+    /* Assistant messages - align to LEFT - WORKING SELECTORS */
     div[data-testid="stChatMessage"]:has(img[alt="assistant"]),
     div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]),
-    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) {
+    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]),
+    div[data-testid="stChatMessage"][aria-label*="assistant"],
+    div[data-testid="stChatMessage"][aria-label*="Assistant"] {
+        display: flex !important;
         justify-content: flex-start !important;
         flex-direction: row !important;
+        width: 100% !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
     }
     
     /* Assistant message content box - left aligned with styling */
-    div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div:last-child,
-    div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]) > div:last-child,
-    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div:last-child {
+    div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div,
+    div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]) > div,
+    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div,
+    div[data-testid="stChatMessage"][aria-label*="assistant"] > div,
+    div[data-testid="stChatMessage"][aria-label*="Assistant"] > div {
         max-width: 48% !important;
+        min-width: 200px !important;
         margin-right: auto !important;
         margin-left: 2% !important;
         background-color: #444654 !important;
@@ -153,21 +171,32 @@ st.markdown("""
         flex-direction: row !important;
     }
     
-    /* Fixed chat input at bottom */
-    div[data-testid="stChatInputContainer"] {
+    /* Fixed chat input at bottom - WORKING APPROACH */
+    /* Target the actual Streamlit chat input container */
+    section[data-testid="stMain"] > div:last-child,
+    div[data-testid="stChatInputContainer"],
+    div[data-testid="stChatInput"] {
         position: fixed !important;
         bottom: 0 !important;
         left: 0 !important;
         right: 0 !important;
         background: #202123 !important;
         padding: 1rem !important;
-        z-index: 999 !important;
-        border-top: 1px solid #343541 !important;
+        z-index: 9999 !important;
+        border-top: 2px solid #343541 !important;
+        box-shadow: 0 -4px 12px rgba(0,0,0,0.3) !important;
     }
     
-    /* Add padding to chat container to prevent overlap with fixed input */
-    .main .block-container {
-        padding-bottom: 100px !important;
+    /* Add padding to main content to prevent overlap with fixed input */
+    section[data-testid="stMain"] > div:first-child,
+    .main .block-container,
+    div[data-testid="stAppViewContainer"] > div:first-child {
+        padding-bottom: 120px !important;
+    }
+    
+    /* Ensure chat messages container has proper spacing */
+    div[data-testid="stChatMessage"] {
+        margin-bottom: 1.5rem !important;
     }
     
     /* Sidebar styling */
@@ -1089,18 +1118,25 @@ with st.sidebar:
             transform: scale(1.1) !important;
             box-shadow: 0 6px 16px rgba(0,0,0,0.6), 0 0 0 3px {avatar_hover} !important;
         }}
-        /* Force visibility for all button types */
+        /* Force visibility for all button types - STRONGER SELECTORS */
         div[data-testid="stButton"] > button[key="sidebar_avatar"],
-        button[data-baseweb="button"][key="sidebar_avatar"] {{
+        button[data-baseweb="button"][key="sidebar_avatar"],
+        button[key="sidebar_avatar"],
+        div[data-testid="stButton"] button:has-text("{avatar_display}") {{
             border-radius: 50% !important;
-            width: 50px !important;
-            height: 50px !important;
+            width: 55px !important;
+            height: 55px !important;
+            min-width: 55px !important;
+            min-height: 55px !important;
             background-color: {avatar_bg} !important;
             color: #ffffff !important;
-            border: 4px solid #ffffff !important;
-            font-size: 20px !important;
-            font-weight: 700 !important;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+            border: 5px solid #ffffff !important;
+            font-size: 22px !important;
+            font-weight: 900 !important;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.7), 0 0 0 3px {avatar_border} !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
         }}
     </style>
     """, unsafe_allow_html=True)
@@ -1164,14 +1200,21 @@ else:
     
     # CRITICAL: Load chat history on page load/refresh if we have a conversation_id
     # This ensures chat history persists across page refreshes
-    if st.session_state.current_conversation_id and (not st.session_state.get("chat_history_loaded", False) or len(st.session_state.chat_history) == 0):
+    # ALWAYS reload if we have a conversation_id and chat_history is empty or not loaded
+    should_reload = (
+        st.session_state.current_conversation_id and 
+        (not st.session_state.get("chat_history_loaded", False) or len(st.session_state.chat_history) == 0)
+    )
+    
+    if should_reload:
         try:
-            logger.info(f"🔄 Loading conversation {st.session_state.current_conversation_id} (loaded={st.session_state.get('chat_history_loaded', False)})")
+            logger.info(f"🔄 Loading conversation {st.session_state.current_conversation_id} (loaded={st.session_state.get('chat_history_loaded', False)}, history_len={len(st.session_state.chat_history)})")
             response = api_request("GET", f"/api/v1/conversations/{st.session_state.current_conversation_id}")
             if response and response.status_code == 200:
                 loaded_conv = response.json()
                 messages = loaded_conv.get("messages", [])
                 if messages:
+                    # REPLACE chat history with loaded messages
                     st.session_state.chat_history = [
                         {
                             "role": msg.get("role"),
@@ -1184,10 +1227,11 @@ else:
                     logger.info(f"✅ Loaded conversation with {len(st.session_state.chat_history)} messages")
                 else:
                     # Empty conversation - mark as loaded to prevent infinite reload
+                    st.session_state.chat_history = []
                     st.session_state.chat_history_loaded = True
                     logger.info(f"ℹ️  Conversation {st.session_state.current_conversation_id} is empty")
             else:
-                logger.warning(f"⚠️  Could not load conversation {st.session_state.current_conversation_id}")
+                logger.warning(f"⚠️  Could not load conversation {st.session_state.current_conversation_id} - status: {response.status_code if response else 'None'}")
                 st.session_state.chat_history_loaded = True  # Mark as attempted to prevent infinite retry
         except Exception as e:
             logger.error(f"❌ Failed to load conversation: {e}", exc_info=True)
@@ -1293,8 +1337,44 @@ else:
             st.markdown('</div>', unsafe_allow_html=True)
     
     # FIXED CHAT INPUT AT BOTTOM (ChatGPT style)
-    # Create a row with attachment button and chat input - positioned at bottom
-    st.markdown('<div style="position: fixed; bottom: 0; left: 0; right: 0; background: #202123; padding: 1rem; z-index: 999; border-top: 1px solid #343541;">', unsafe_allow_html=True)
+    # Use JavaScript to position chat input at bottom after Streamlit renders it
+    st.markdown("""
+    <script>
+    (function() {
+        function fixChatInput() {
+            // Find the chat input container
+            const chatInput = document.querySelector('div[data-testid="stChatInputContainer"]');
+            if (chatInput) {
+                // Make it fixed at bottom
+                chatInput.style.position = 'fixed';
+                chatInput.style.bottom = '0';
+                chatInput.style.left = '0';
+                chatInput.style.right = '0';
+                chatInput.style.background = '#202123';
+                chatInput.style.padding = '1rem';
+                chatInput.style.zIndex = '9999';
+                chatInput.style.borderTop = '2px solid #343541';
+                chatInput.style.boxShadow = '0 -4px 12px rgba(0,0,0,0.3)';
+                
+                // Add padding to main content
+                const mainContent = document.querySelector('section[data-testid="stMain"] > div:first-child');
+                if (mainContent) {
+                    mainContent.style.paddingBottom = '120px';
+                }
+            }
+        }
+        // Run immediately and on DOM changes
+        fixChatInput();
+        setTimeout(fixChatInput, 100);
+        setTimeout(fixChatInput, 500);
+        // Watch for Streamlit reruns
+        const observer = new MutationObserver(fixChatInput);
+        observer.observe(document.body, { childList: true, subtree: true });
+    })();
+    </script>
+    """, unsafe_allow_html=True)
+    
+    # Create a row with attachment button and chat input
     input_row = st.columns([0.05, 0.95])
     with input_row[0]:
         if st.button("➕", key="attach_file_btn", help="Attach file", use_container_width=True):
@@ -1302,7 +1382,6 @@ else:
             st.rerun()
     with input_row[1]:
         user_query = st.chat_input("Message...")
-    st.markdown('</div>', unsafe_allow_html=True)
     
     # Handle chat input
     if user_query:
