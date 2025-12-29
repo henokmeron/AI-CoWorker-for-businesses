@@ -888,7 +888,20 @@ with st.sidebar:
             new_conv = create_conversation(business_id, title=new_conv_title)
             if new_conv:
                 st.session_state.current_conversation_id = new_conv.get('id')
+                st.session_state.chat_history = []  # Clear chat history for new conversation
+                st.session_state.chat_history_loaded = False
                 st.success("✅ New chat started!")
+                
+                # CRITICAL: Immediately refresh conversations list to show new chat in sidebar
+                cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+                try:
+                    conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                    st.session_state[cache_key] = conversations
+                    st.session_state.conversations = conversations
+                    st.session_state["last_gpt_for_conversations"] = st.session_state.selected_gpt
+                    logger.info(f"✅ Created new conversation and refreshed list: {len(conversations)} conversations")
+                except Exception as e:
+                    logger.warning(f"Could not refresh conversations list: {e}")
             else:
                 st.warning("Could not create conversation on server, continuing locally")
         except Exception as e:
