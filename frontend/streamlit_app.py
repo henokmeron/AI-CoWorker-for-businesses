@@ -74,11 +74,29 @@ st.markdown("""
     /* CRITICAL: Chat message layout - User on RIGHT, AI on LEFT (like ChatGPT) */
     /* Streamlit chat messages structure: div[data-testid="stChatMessage"] contains the message */
     
+    /* Center line to separate user and AI messages */
+    .stApp > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child {
+        position: relative;
+    }
+    .stApp > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child > div:first-child::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: linear-gradient(to bottom, transparent, #565869 20%, #565869 80%, transparent);
+        z-index: 0;
+        pointer-events: none;
+    }
+    
     /* Target ALL chat message containers */
     div[data-testid="stChatMessage"] {
         display: flex !important;
         width: 100% !important;
         margin-bottom: 1rem !important;
+        position: relative;
+        z-index: 1;
     }
     
     /* User messages - align to RIGHT */
@@ -94,9 +112,9 @@ st.markdown("""
     div[data-testid="stChatMessage"]:has(img[alt="user"]) > div:last-child,
     div[data-testid="stChatMessage"]:has(img[alt*="User"]) > div:last-child,
     div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div:last-child {
-        max-width: 75% !important;
+        max-width: 48% !important;
         margin-left: auto !important;
-        margin-right: 0 !important;
+        margin-right: 2% !important;
         background-color: #343541 !important;
         border-radius: 12px 12px 0 12px !important;
         padding: 12px 16px !important;
@@ -116,9 +134,9 @@ st.markdown("""
     div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div:last-child,
     div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]) > div:last-child,
     div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div:last-child {
-        max-width: 75% !important;
+        max-width: 48% !important;
         margin-right: auto !important;
-        margin-left: 0 !important;
+        margin-left: 2% !important;
         background-color: #444654 !important;
         border-radius: 12px 12px 12px 0 !important;
         padding: 12px 16px !important;
@@ -133,6 +151,23 @@ st.markdown("""
     div[data-testid="stChatMessage"][data-message-role="assistant"] {
         justify-content: flex-start !important;
         flex-direction: row !important;
+    }
+    
+    /* Fixed chat input at bottom */
+    div[data-testid="stChatInputContainer"] {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        background: #202123 !important;
+        padding: 1rem !important;
+        z-index: 999 !important;
+        border-top: 1px solid #343541 !important;
+    }
+    
+    /* Add padding to chat container to prevent overlap with fixed input */
+    .main .block-container {
+        padding-bottom: 100px !important;
     }
     
     /* Sidebar styling */
@@ -1004,39 +1039,55 @@ with st.sidebar:
     st.markdown(f"""
     <style>
         /* Avatar button styling - HIGHLY VISIBLE with bright colors and border */
+        /* Outer circle for high contrast */
         button[key="sidebar_avatar"] {{
             border-radius: 50% !important;
-            width: 45px !important;
-            height: 45px !important;
-            min-width: 45px !important;
+            width: 50px !important;
+            height: 50px !important;
+            min-width: 50px !important;
             padding: 0 !important;
-            font-size: 18px !important;
+            font-size: 20px !important;
             font-weight: 700 !important;
-            border: 3px solid {avatar_border} !important;
+            border: 4px solid #ffffff !important;
             background-color: {avatar_bg} !important;
             color: #ffffff !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 0 2px {avatar_bg} !important;
+            position: relative !important;
+        }}
+        /* Add outer glow ring for maximum visibility */
+        button[key="sidebar_avatar"]::before {{
+            content: '';
+            position: absolute;
+            top: -4px;
+            left: -4px;
+            right: -4px;
+            bottom: -4px;
+            border-radius: 50%;
+            border: 2px solid {avatar_border};
+            opacity: 0.8;
+            z-index: -1;
         }}
         button[key="sidebar_avatar"]:hover {{
             background-color: {avatar_hover} !important;
             border-color: #ffffff !important;
-            transform: scale(1.05) !important;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+            transform: scale(1.1) !important;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.6), 0 0 0 3px {avatar_hover} !important;
         }}
         /* Force visibility for all button types */
         div[data-testid="stButton"] > button[key="sidebar_avatar"],
         button[data-baseweb="button"][key="sidebar_avatar"] {{
             border-radius: 50% !important;
-            width: 45px !important;
-            height: 45px !important;
+            width: 50px !important;
+            height: 50px !important;
             background-color: {avatar_bg} !important;
             color: #ffffff !important;
-            border: 3px solid {avatar_border} !important;
-            font-size: 18px !important;
+            border: 4px solid #ffffff !important;
+            font-size: 20px !important;
             font-weight: 700 !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
         }}
     </style>
     """, unsafe_allow_html=True)
@@ -1129,7 +1180,7 @@ else:
             logger.error(f"❌ Failed to load conversation: {e}", exc_info=True)
             st.session_state.chat_history_loaded = True  # Mark as attempted
     
-    # Chat interface
+    # Chat interface - Display chat history FIRST
     chat_container = st.container()
     
     # Display chat history
@@ -1180,11 +1231,23 @@ else:
                         result = upload_document(business_id, uploaded_file)
                         if result and not isinstance(result, dict) or (isinstance(result, dict) and "error" not in result):
                             st.success(f"✅ {uploaded_file.name} processed!")
-                            st.session_state.chat_history.append({
+                            # Add confirmation message to chat
+                            confirmation_msg = {
                                 "role": "assistant",
                                 "content": f"I've processed '{uploaded_file.name}'. You can now ask me questions about it!",
                                 "sources": []
-                            })
+                            }
+                            st.session_state.chat_history.append(confirmation_msg)
+                            
+                            # CRITICAL: Save confirmation message to backend if we have a conversation
+                            if st.session_state.current_conversation_id:
+                                try:
+                                    # The backend should save messages automatically, but we ensure it's there
+                                    api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages", 
+                                              json={"role": "assistant", "content": confirmation_msg["content"], "sources": []})
+                                except:
+                                    pass  # Non-critical - message is in session state
+                            
                             # Increment counter to change uploader key and prevent re-upload
                             st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
                             st.session_state.show_file_upload = False
@@ -1216,15 +1279,17 @@ else:
                     st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
     
-    # Chat input with attachment button (ChatGPT style - button next to input)
-    # Create a row with attachment button and chat input
-    input_row = st.columns([0.04, 0.96])
+    # FIXED CHAT INPUT AT BOTTOM (ChatGPT style)
+    # Create a row with attachment button and chat input - positioned at bottom
+    st.markdown('<div style="position: fixed; bottom: 0; left: 0; right: 0; background: #202123; padding: 1rem; z-index: 999; border-top: 1px solid #343541;">', unsafe_allow_html=True)
+    input_row = st.columns([0.05, 0.95])
     with input_row[0]:
         if st.button("➕", key="attach_file_btn", help="Attach file", use_container_width=True):
             st.session_state.show_file_upload = not st.session_state.show_file_upload
             st.rerun()
     with input_row[1]:
         user_query = st.chat_input("Message...")
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # Handle chat input
     if user_query:
@@ -1234,13 +1299,31 @@ else:
             conv = create_conversation(st.session_state.selected_gpt, title=conv_title)
             if conv:
                 st.session_state.current_conversation_id = conv.get("id")
+                # CRITICAL: Immediately refresh conversations list to show new chat in sidebar
+                cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+                try:
+                    conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                    st.session_state[cache_key] = conversations
+                    st.session_state.conversations = conversations
+                    st.session_state["last_gpt_for_conversations"] = st.session_state.selected_gpt
+                    logger.info(f"✅ Created new conversation and refreshed list: {len(conversations)} conversations")
+                except Exception as e:
+                    logger.warning(f"Could not refresh conversations list: {e}")
         
-        # Add user message
+        # Add user message to session state
         user_msg = {
             "role": "user",
             "content": user_query
         }
         st.session_state.chat_history.append(user_msg)
+        
+        # CRITICAL: Save user message to backend immediately for persistence
+        if st.session_state.current_conversation_id:
+            try:
+                api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
+                          json={"role": "user", "content": user_query, "sources": []})
+            except Exception as e:
+                logger.warning(f"Could not save user message to backend: {e}")
         
         # Get response
         with st.spinner("Thinking..."):
@@ -1250,7 +1333,7 @@ else:
                 response = chat_query(
                     business_id_for_query,
                     user_query,
-                    st.session_state.chat_history[:-1],
+                    st.session_state.chat_history[:-1],  # Exclude the message we just added
                     st.session_state.current_conversation_id,
                     reply_as_me=st.session_state.reply_as_me
                 )
@@ -1262,18 +1345,41 @@ else:
                         "sources": response.get("sources", [])
                     }
                     st.session_state.chat_history.append(assistant_msg)
+                    
+                    # CRITICAL: Save assistant message to backend immediately for persistence
+                    if st.session_state.current_conversation_id:
+                        try:
+                            api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
+                                      json={"role": "assistant", "content": assistant_msg["content"], "sources": assistant_msg.get("sources", [])})
+                            logger.info(f"✅ Saved assistant message to conversation {st.session_state.current_conversation_id}")
+                        except Exception as e:
+                            logger.warning(f"Could not save assistant message to backend: {e}")
                 else:
                     error_msg = "Sorry, I encountered an error. Please check the backend logs or try again."
                     if response and isinstance(response, dict) and "error" in response:
                         error_msg = response["error"]
-                    st.session_state.chat_history.append({
+                    assistant_msg = {
                         "role": "assistant",
                         "content": error_msg,
                         "sources": []
-                    })
+                    }
+                    st.session_state.chat_history.append(assistant_msg)
+                    
+                    # Save error message to backend too
+                    if st.session_state.current_conversation_id:
+                        try:
+                            api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
+                                      json={"role": "assistant", "content": error_msg, "sources": []})
+                        except:
+                            pass
             except Exception as e:
                 logger.error(f"Chat error: {e}", exc_info=True)
-                st.error(f"Error: {str(e)}")
+                error_msg = f"Error: {str(e)}"
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": error_msg,
+                    "sources": []
+                })
         
         st.rerun()
 
