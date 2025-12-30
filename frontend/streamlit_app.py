@@ -753,19 +753,19 @@ with st.sidebar:
         avatar_display = "👤"
     button_type = "primary" if st.session_state.user_logged_in else "secondary"
     
-    # Style the button to look like a circular avatar - BLUE COLOR
-    avatar_bg = '#3b82f6' if st.session_state.user_logged_in else '#3b82f6'  # Blue for both
-    avatar_hover = '#2563eb' if st.session_state.user_logged_in else '#2563eb'  # Darker blue
-    avatar_border = '#3b82f6'  # Blue border
-    
-    # Set CSS variables for avatar styling
-    st.markdown(f"""
+    # Style the button to look like a circular avatar - FORCE BLUE COLOR
+    # Set CSS variables for avatar styling - ALWAYS BLUE
+    st.markdown("""
     <style>
-        :root {{
-            --avatar-bg: {avatar_bg};
-            --avatar-hover: {avatar_hover};
-            --avatar-border: {avatar_border};
-        }}
+        :root {
+            --avatar-bg: #3b82f6;
+            --avatar-hover: #2563eb;
+            --avatar-border: #3b82f6;
+        }
+        button[key="sidebar_avatar"] {
+            background-color: #3b82f6 !important;
+            border: 4px solid #3b82f6 !important;
+        }
     </style>
     """, unsafe_allow_html=True)
     
