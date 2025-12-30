@@ -75,14 +75,12 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* CRITICAL FIX 1: Chat input at bottom - PROPER implementation with sidebar support */
-    /* Streamlit sidebar is typically 21rem (336px) when open */
+    /* CRITICAL FIX 1: Chat input at bottom - STAYS CENTERED regardless of sidebar */
     section[data-testid="stMain"] {
         padding-bottom: 120px !important;
     }
     
-    /* Target the actual chat input container that Streamlit creates */
-    /* CRITICAL: Use responsive positioning that adapts to sidebar state */
+    /* Remove ALL default Streamlit input styling that causes duplication */
     div[data-testid="stChatInputContainer"],
     div[data-testid="stChatInput"],
     form[data-testid="stChatInputForm"] {
@@ -92,8 +90,6 @@ st.markdown("""
         right: 0 !important;
         background: #202123 !important;
         padding: 1rem !important;
-        padding-left: calc(21rem + 1rem) !important; /* Account for sidebar when open */
-        padding-right: 1rem !important;
         z-index: 999 !important;
         border-top: 3px solid #ffffff !important;
         box-shadow: 0 -4px 12px rgba(0,0,0,0.3) !important;
@@ -101,18 +97,9 @@ st.markdown("""
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        transition: padding-left 0.3s ease !important;
     }
     
-    /* When sidebar is collapsed, remove left padding */
-    section[data-testid="stSidebar"][aria-expanded="false"] ~ div[data-testid="stAppViewContainer"] 
-    div[data-testid="stChatInputContainer"],
-    section[data-testid="stSidebar"][aria-expanded="false"] ~ div[data-testid="stAppViewContainer"] 
-    form[data-testid="stChatInputForm"] {
-        padding-left: 1rem !important;
-    }
-    
-    /* Ensure the input field and send button are properly contained */
+    /* Remove duplicate borders and backgrounds */
     div[data-testid="stChatInputContainer"] > div,
     form[data-testid="stChatInputForm"] > div {
         width: 100% !important;
@@ -121,9 +108,12 @@ st.markdown("""
         align-items: center !important;
         gap: 0.5rem !important;
         justify-content: center !important;
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
     }
     
-    /* Center the input field with max-width constraint */
+    /* Center the input field itself - this stays centered regardless of sidebar */
     div[data-testid="stChatInputContainer"] input,
     form[data-testid="stChatInputForm"] input,
     div[data-testid="stChatInputContainer"] textarea,
@@ -132,6 +122,11 @@ st.markdown("""
         width: 100% !important;
         flex: 1 1 auto !important;
         margin: 0 auto !important;
+        background: #343541 !important;
+        border: 2px solid #565869 !important;
+        border-radius: 8px !important;
+        padding: 0.75rem !important;
+        color: #ececf1 !important;
     }
     
     /* Ensure send button is always visible and properly positioned */
@@ -144,6 +139,8 @@ st.markdown("""
         margin-left: 0.5rem !important;
         visibility: visible !important;
         opacity: 1 !important;
+        position: relative !important;
+        z-index: 1000 !important;
     }
     
     /* Ensure main content doesn't overlap with fixed input */
@@ -162,23 +159,27 @@ st.markdown("""
         z-index: 1;
     }
     
-    /* User messages - align to RIGHT */
-    /* Primary strategy: Check for user avatar image */
+    /* User messages - align to RIGHT - use multiple reliable selectors */
     div[data-testid="stChatMessage"]:has(img[alt="user"]),
     div[data-testid="stChatMessage"]:has(img[alt*="User"]),
-    div[data-testid="stChatMessage"]:has(img[alt*="user"]) {
+    div[data-testid="stChatMessage"]:has(img[alt*="user"]),
+    div[data-testid="stChatMessage"]:has(img[src*="user"]),
+    div[data-testid="stChatMessage"][aria-label*="user"],
+    div[data-testid="stChatMessage"][aria-label*="User"] {
         justify-content: flex-end !important;
         flex-direction: row-reverse !important;
     }
     
-    /* User message content box - right aligned with proper styling */
+    /* User message content box - right aligned */
     div[data-testid="stChatMessage"]:has(img[alt="user"]) > div:last-child,
     div[data-testid="stChatMessage"]:has(img[alt*="User"]) > div:last-child,
     div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div:last-child,
     div[data-testid="stChatMessage"]:has(img[alt="user"]) > div:nth-child(2),
     div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div:nth-child(2),
     div[data-testid="stChatMessage"]:has(img[alt="user"]) > div[class*="message"],
-    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div[class*="message"] {
+    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div[class*="message"],
+    div[data-testid="stChatMessage"]:has(img[alt="user"]) > div[class*="stMarkdown"],
+    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div[class*="stMarkdown"] {
         max-width: 48% !important;
         margin-left: auto !important;
         margin-right: 2% !important;
@@ -192,7 +193,10 @@ st.markdown("""
     /* Assistant messages - align to LEFT */
     div[data-testid="stChatMessage"]:has(img[alt="assistant"]),
     div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]),
-    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) {
+    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]),
+    div[data-testid="stChatMessage"]:has(img[src*="assistant"]),
+    div[data-testid="stChatMessage"][aria-label*="assistant"],
+    div[data-testid="stChatMessage"][aria-label*="Assistant"] {
         justify-content: flex-start !important;
         flex-direction: row !important;
     }
@@ -204,7 +208,9 @@ st.markdown("""
     div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div:nth-child(2),
     div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div:nth-child(2),
     div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div[class*="message"],
-    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div[class*="message"] {
+    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div[class*="message"],
+    div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div[class*="stMarkdown"],
+    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div[class*="stMarkdown"] {
         max-width: 48% !important;
         margin-right: auto !important;
         margin-left: 2% !important;
@@ -214,7 +220,7 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
     }
     
-    /* CRITICAL FIX 3: Avatar visibility - HIGHLY VISIBLE with white border */
+    /* CRITICAL FIX 3: Avatar visibility - BLUE COLOR, HIGHLY VISIBLE */
     /* Target all possible avatar button selectors */
     button[key="sidebar_avatar"],
     div[data-testid="stButton"] > button[key="sidebar_avatar"],
@@ -232,13 +238,13 @@ st.markdown("""
         padding: 0 !important;
         font-size: 24px !important;
         font-weight: 900 !important;
-        border: 4px solid #ffffff !important;
-        background-color: var(--avatar-bg, #ff6b6b) !important;
+        border: 4px solid #3b82f6 !important; /* Blue border */
+        background-color: var(--avatar-bg, #3b82f6) !important; /* Blue background */
         color: #ffffff !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        box-shadow: 0 0 0 3px rgba(255,255,255,0.8), 0 6px 20px rgba(0,0,0,0.8) !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5), 0 6px 20px rgba(0,0,0,0.8) !important;
         position: relative !important;
         margin: 8px auto !important;
         line-height: 1 !important;
@@ -261,10 +267,10 @@ st.markdown("""
     }
     
     button[key="sidebar_avatar"]:hover {
-        background-color: var(--avatar-hover, #ee5a5a) !important;
-        border-color: #ffffff !important;
+        background-color: var(--avatar-hover, #2563eb) !important; /* Darker blue on hover */
+        border-color: #3b82f6 !important;
         transform: scale(1.05) !important;
-        box-shadow: 0 0 0 4px rgba(255,255,255,1), 0 8px 24px rgba(0,0,0,0.9) !important;
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.8), 0 8px 24px rgba(0,0,0,0.9) !important;
     }
     
     /* Sidebar styling */
@@ -825,10 +831,10 @@ with st.sidebar:
         avatar_display = "👤"
     button_type = "primary" if st.session_state.user_logged_in else "secondary"
     
-    # Style the button to look like a circular avatar - make it HIGHLY visible
-    avatar_bg = '#10a37f' if st.session_state.user_logged_in else '#ff6b6b'
-    avatar_hover = '#0d8a6b' if st.session_state.user_logged_in else '#ee5a5a'
-    avatar_border = '#ffffff'
+    # Style the button to look like a circular avatar - BLUE COLOR
+    avatar_bg = '#3b82f6' if st.session_state.user_logged_in else '#3b82f6'  # Blue for both
+    avatar_hover = '#2563eb' if st.session_state.user_logged_in else '#2563eb'  # Darker blue
+    avatar_border = '#3b82f6'  # Blue border
     
     # Set CSS variables for avatar styling
     st.markdown(f"""
@@ -967,7 +973,13 @@ else:
             )
             
             if uploaded_file:
-                business_id = st.session_state.selected_gpt or "temp_chat"
+                # CRITICAL FIX: Use conversation_id as business_id for document isolation
+                # This ensures each conversation has its own document collection
+                if st.session_state.current_conversation_id:
+                    business_id = st.session_state.current_conversation_id
+                else:
+                    # If no conversation exists yet, use selected_gpt or create temp
+                    business_id = st.session_state.selected_gpt or "temp_chat"
                 file_key = f"processed_{business_id}_{uploaded_file.name}_{uploaded_file.size}"
                 
                 if file_key not in st.session_state:
@@ -1047,14 +1059,21 @@ else:
                 except Exception as e:
                     logger.warning(f"Could not refresh conversations list: {e}")
         
-        # Add user message to session state
-        user_msg = {
-            "role": "user",
-            "content": user_query
-        }
-        st.session_state.chat_history.append(user_msg)
+        # CRITICAL FIX: Check if we've already added this message (to avoid duplicates)
+        # Use a combination of query and conversation to create unique key
+        query_key = f"processing_{st.session_state.current_conversation_id or 'new'}_{user_query[:50]}"
+        if query_key not in st.session_state:
+            # First time - add user message and mark as processing
+            st.session_state[query_key] = True
+            user_msg = {
+                "role": "user",
+                "content": user_query
+            }
+            st.session_state.chat_history.append(user_msg)
+            # Rerun to show user message immediately
+            st.rerun()
         
-        # Save user message to backend immediately
+        # Save user message to backend
         if st.session_state.current_conversation_id:
             try:
                 api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
@@ -1065,7 +1084,13 @@ else:
         # Get response - CRITICAL: This must work and display
         with st.spinner("Thinking..."):
             try:
-                business_id_for_query = st.session_state.selected_gpt or "temp_chat"
+                # CRITICAL FIX: Use conversation_id as business_id for document isolation
+                # This ensures each conversation only searches its own documents
+                if st.session_state.current_conversation_id:
+                    business_id_for_query = st.session_state.current_conversation_id
+                else:
+                    business_id_for_query = st.session_state.selected_gpt or "temp_chat"
+                
                 response = chat_query(
                     business_id_for_query,
                     user_query,
@@ -1116,6 +1141,10 @@ else:
                     "sources": []
                 })
         
+        # Clean up processing flag
+        if query_key in st.session_state:
+            del st.session_state[query_key]
+        
         # CRITICAL: Force rerun to display the response
         st.rerun()
     
@@ -1129,17 +1158,8 @@ else:
                              document.querySelector('form[data-testid="stChatInputForm"]') ||
                              document.querySelector('div[data-testid="stChatInput"]');
             
-            // Check if sidebar is open - check multiple ways
-            const sidebar = document.querySelector('section[data-testid="stSidebar"]');
-            let sidebarOpen = true; // Default to open
-            if (sidebar) {
-                const expanded = sidebar.getAttribute('aria-expanded');
-                const computedStyle = window.getComputedStyle(sidebar);
-                sidebarOpen = expanded !== 'false' && computedStyle.display !== 'none' && computedStyle.width !== '0px' && computedStyle.width !== '0';
-            }
-            const sidebarWidth = sidebarOpen ? 21 : 0; // in rem
-            
             if (chatInput) {
+                // CRITICAL: Keep input field CENTERED regardless of sidebar state
                 chatInput.style.position = 'fixed';
                 chatInput.style.bottom = '0';
                 chatInput.style.left = '0';
@@ -1148,15 +1168,12 @@ else:
                 chatInput.style.background = '#202123';
                 chatInput.style.borderTop = '3px solid #ffffff';
                 chatInput.style.padding = '1rem';
-                chatInput.style.paddingLeft = sidebarOpen ? `${sidebarWidth + 1}rem` : '1rem';
-                chatInput.style.paddingRight = '1rem';
                 chatInput.style.boxShadow = '0 -4px 12px rgba(0,0,0,0.3)';
                 chatInput.style.display = 'flex';
                 chatInput.style.alignItems = 'center';
                 chatInput.style.justifyContent = 'center';
-                chatInput.style.transition = 'padding-left 0.3s ease';
                 
-                // Ensure the inner container doesn't overflow
+                // Remove duplicate borders and backgrounds from inner containers
                 const innerContainer = chatInput.querySelector('div') || chatInput.querySelector('form');
                 if (innerContainer) {
                     innerContainer.style.width = '100%';
@@ -1165,9 +1182,12 @@ else:
                     innerContainer.style.alignItems = 'center';
                     innerContainer.style.justifyContent = 'center';
                     innerContainer.style.gap = '0.5rem';
+                    innerContainer.style.background = 'transparent';
+                    innerContainer.style.border = 'none';
+                    innerContainer.style.padding = '0';
                 }
                 
-                // Also style the input field itself for visibility and centering
+                // Center the input field itself - this stays centered
                 const inputField = chatInput.querySelector('input') || chatInput.querySelector('textarea');
                 if (inputField) {
                     inputField.style.border = '2px solid #565869';
@@ -1177,6 +1197,8 @@ else:
                     inputField.style.maxWidth = '768px';
                     inputField.style.minWidth = '0';
                     inputField.style.margin = '0 auto';
+                    inputField.style.background = '#343541';
+                    inputField.style.color = '#ececf1';
                 }
                 
                 // Ensure send button is visible and doesn't get cut off
@@ -1190,6 +1212,8 @@ else:
                     sendButton.style.marginLeft = '0.5rem';
                     sendButton.style.visibility = 'visible';
                     sendButton.style.opacity = '1';
+                    sendButton.style.position = 'relative';
+                    sendButton.style.zIndex = '1000';
                 }
             }
         }
@@ -1297,8 +1321,8 @@ else:
                 avatar.style.height = '60px';
                 avatar.style.minWidth = '60px';
                 avatar.style.minHeight = '60px';
-                avatar.style.border = '4px solid #ffffff';
-                avatar.style.backgroundColor = isLoggedIn ? '#10a37f' : '#ff6b6b';
+                avatar.style.border = '4px solid #3b82f6'; // Blue border
+                avatar.style.backgroundColor = '#3b82f6'; // Blue background
                 avatar.style.color = '#ffffff';
                 avatar.style.fontSize = '24px';
                 avatar.style.fontWeight = '900';
