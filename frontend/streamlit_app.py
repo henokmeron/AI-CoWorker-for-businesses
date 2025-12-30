@@ -75,72 +75,41 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* CRITICAL FIX 1: Chat input at bottom - STAYS CENTERED regardless of sidebar */
+    /* CRITICAL FIX 1: Chat input - ONLY fix Container, make inner elements static */
     section[data-testid="stMain"] {
         padding-bottom: 120px !important;
     }
     
-    /* Remove ALL default Streamlit input styling that causes duplication */
-    div[data-testid="stChatInputContainer"],
-    div[data-testid="stChatInput"],
-    form[data-testid="stChatInputForm"] {
+    /* ONLY fix the container - this prevents white duplicate bar */
+    div[data-testid="stChatInputContainer"] {
         position: fixed !important;
         bottom: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        width: min(980px, calc(100vw - 24px)) !important;
+        z-index: 9999 !important;
         background: #202123 !important;
         padding: 1rem !important;
-        z-index: 999 !important;
         border-top: 3px solid #ffffff !important;
         box-shadow: 0 -4px 12px rgba(0,0,0,0.3) !important;
-        margin: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
     }
     
-    /* Remove duplicate borders and backgrounds */
-    div[data-testid="stChatInputContainer"] > div,
-    form[data-testid="stChatInputForm"] > div {
-        width: 100% !important;
-        max-width: 100% !important;
-        display: flex !important;
-        align-items: center !important;
-        gap: 0.5rem !important;
-        justify-content: center !important;
+    /* Make inner elements static/transparent to prevent duplication */
+    div[data-testid="stChatInput"],
+    form[data-testid="stChatInputForm"] {
+        position: static !important;
+        left: auto !important;
+        right: auto !important;
         background: transparent !important;
-        border: none !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        margin: 0 !important;
         padding: 0 !important;
     }
     
-    /* Center the input field itself - this stays centered regardless of sidebar */
-    div[data-testid="stChatInputContainer"] input,
-    form[data-testid="stChatInputForm"] input,
-    div[data-testid="stChatInputContainer"] textarea,
-    form[data-testid="stChatInputForm"] textarea {
-        max-width: 768px !important;
-        width: 100% !important;
-        flex: 1 1 auto !important;
-        margin: 0 auto !important;
-        background: #343541 !important;
-        border: 2px solid #565869 !important;
-        border-radius: 8px !important;
-        padding: 0.75rem !important;
-        color: #ececf1 !important;
-    }
-    
-    /* Ensure send button is always visible and properly positioned */
-    div[data-testid="stChatInputContainer"] button[type="submit"],
-    form[data-testid="stChatInputForm"] button[type="submit"],
-    div[data-testid="stChatInputContainer"] button:has(svg),
-    form[data-testid="stChatInputForm"] button:has(svg) {
-        flex-shrink: 0 !important;
-        min-width: 48px !important;
-        margin-left: 0.5rem !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        position: relative !important;
-        z-index: 1000 !important;
+    /* Prevent horizontal scroll */
+    body {
+        overflow-x: hidden !important;
     }
     
     /* Ensure main content doesn't overlap with fixed input */
@@ -149,75 +118,29 @@ st.markdown("""
         padding-bottom: 150px !important;
     }
     
-    /* CRITICAL FIX 2: Chat message alignment - User RIGHT, AI LEFT */
-    /* Target ALL chat message containers */
-    div[data-testid="stChatMessage"] {
-        display: flex !important;
-        width: 100% !important;
-        margin-bottom: 1.5rem !important;
-        position: relative;
-        z-index: 1;
-    }
-    
-    /* User messages - align to RIGHT - use multiple reliable selectors */
-    div[data-testid="stChatMessage"]:has(img[alt="user"]),
-    div[data-testid="stChatMessage"]:has(img[alt*="User"]),
-    div[data-testid="stChatMessage"]:has(img[alt*="user"]),
-    div[data-testid="stChatMessage"]:has(img[src*="user"]),
-    div[data-testid="stChatMessage"][aria-label*="user"],
-    div[data-testid="stChatMessage"][aria-label*="User"] {
-        justify-content: flex-end !important;
-        flex-direction: row-reverse !important;
-    }
-    
-    /* User message content box - right aligned */
-    div[data-testid="stChatMessage"]:has(img[alt="user"]) > div:last-child,
-    div[data-testid="stChatMessage"]:has(img[alt*="User"]) > div:last-child,
-    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div:last-child,
-    div[data-testid="stChatMessage"]:has(img[alt="user"]) > div:nth-child(2),
-    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div:nth-child(2),
-    div[data-testid="stChatMessage"]:has(img[alt="user"]) > div[class*="message"],
-    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div[class*="message"],
-    div[data-testid="stChatMessage"]:has(img[alt="user"]) > div[class*="stMarkdown"],
-    div[data-testid="stChatMessage"]:has(img[alt*="user"]) > div[class*="stMarkdown"] {
+    /* CRITICAL FIX 2: Chat message alignment - Custom classes */
+    .msg {
         max-width: 48% !important;
+        padding: 14px 18px !important;
+        border-radius: 12px !important;
+        margin-bottom: 1.5rem !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
+        word-wrap: break-word !important;
+    }
+    
+    .msg.user {
         margin-left: auto !important;
         margin-right: 2% !important;
         background-color: #343541 !important;
         border-radius: 12px 12px 0 12px !important;
-        padding: 14px 18px !important;
         text-align: left !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
     }
     
-    /* Assistant messages - align to LEFT */
-    div[data-testid="stChatMessage"]:has(img[alt="assistant"]),
-    div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]),
-    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]),
-    div[data-testid="stChatMessage"]:has(img[src*="assistant"]),
-    div[data-testid="stChatMessage"][aria-label*="assistant"],
-    div[data-testid="stChatMessage"][aria-label*="Assistant"] {
-        justify-content: flex-start !important;
-        flex-direction: row !important;
-    }
-    
-    /* Assistant message content box - left aligned */
-    div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div:last-child,
-    div[data-testid="stChatMessage"]:has(img[alt*="Assistant"]) > div:last-child,
-    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div:last-child,
-    div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div:nth-child(2),
-    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div:nth-child(2),
-    div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div[class*="message"],
-    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div[class*="message"],
-    div[data-testid="stChatMessage"]:has(img[alt="assistant"]) > div[class*="stMarkdown"],
-    div[data-testid="stChatMessage"]:has(img[alt*="assistant"]) > div[class*="stMarkdown"] {
-        max-width: 48% !important;
+    .msg.ai {
         margin-right: auto !important;
         margin-left: 2% !important;
         background-color: #444654 !important;
         border-radius: 12px 12px 12px 0 !important;
-        padding: 14px 18px !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
     }
     
     /* CRITICAL FIX 3: Avatar visibility - BLUE COLOR, HIGHLY VISIBLE */
@@ -686,46 +609,45 @@ with st.sidebar:
     st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
     st.markdown('<div class="sidebar-section-title">Conversations</div>', unsafe_allow_html=True)
     
-    # New Chat button - ACTUALLY CREATE A NEW CONVERSATION
-    if st.button("➕ New Chat", use_container_width=True, key="new_chat_btn"):
-        # CRITICAL: Clear EVERYTHING to prevent chat bleeding
-        st.session_state.current_conversation_id = None
-        st.session_state.chat_history = []
-        st.session_state.chat_history_loaded = False
-        
-        # Clear processed file flags
-        for key in list(st.session_state.keys()):
-            if key.startswith("processed_") or key.startswith("show_menu_") or key.startswith("renaming_"):
-                del st.session_state[key]
-        
-        # Create a new conversation on the backend
-        business_id = st.session_state.selected_gpt or "temp_chat"
-        new_conv_title = f"New Chat {datetime.now().strftime('%I:%M %p')}"
-        
-        try:
-            new_conv = create_conversation(business_id, title=new_conv_title)
-            if new_conv:
-                st.session_state.current_conversation_id = new_conv.get('id')
-                st.session_state.chat_history = []
-                st.session_state.chat_history_loaded = False
-                
-                # CRITICAL: Immediately refresh conversations list
-                cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
-                try:
-                    conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
-                    st.session_state[cache_key] = conversations
-                    st.session_state.conversations = conversations
-                    st.session_state["last_gpt_for_conversations"] = st.session_state.selected_gpt
-                    logger.info(f"✅ Created new conversation and refreshed list: {len(conversations)} conversations")
-                except Exception as e:
-                    logger.warning(f"Could not refresh conversations list: {e}")
-            else:
-                st.warning("Could not create conversation on server, continuing locally")
-        except Exception as e:
-            logger.error(f"Error creating new conversation: {e}")
-            st.warning("Continuing with local chat (not saved to server)")
-        
-        st.rerun()
+        # New Chat button - ACTUALLY CREATE A NEW CONVERSATION
+        if st.button("➕ New Chat", use_container_width=True, key="new_chat_btn"):
+            # CRITICAL: Clear EVERYTHING to prevent chat bleeding
+            st.session_state.current_conversation_id = None
+            st.session_state.chat_history = []
+            st.session_state.chat_history_loaded = False
+            
+            # Clear processed file flags
+            for key in list(st.session_state.keys()):
+                if key.startswith("processed_") or key.startswith("show_menu_") or key.startswith("renaming_"):
+                    del st.session_state[key]
+            
+            # CRITICAL: Force-create conversation BEFORE allowing upload/query
+            new_conv_title = f"New Chat {datetime.now().strftime('%I:%M %p')}"
+            
+            try:
+                new_conv = create_conversation(st.session_state.selected_gpt, title=new_conv_title)
+                if new_conv:
+                    st.session_state.current_conversation_id = new_conv.get('id')
+                    st.session_state.chat_history = []
+                    st.session_state.chat_history_loaded = False
+                    
+                    # CRITICAL: Immediately refresh conversations list
+                    cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+                    try:
+                        conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                        st.session_state[cache_key] = conversations
+                        st.session_state.conversations = conversations
+                        st.session_state["last_gpt_for_conversations"] = st.session_state.selected_gpt
+                        logger.info(f"✅ Created new conversation and refreshed list: {len(conversations)} conversations")
+                    except Exception as e:
+                        logger.warning(f"Could not refresh conversations list: {e}")
+                else:
+                    st.error("Could not create conversation on server. Please try again.")
+            except Exception as e:
+                logger.error(f"Error creating new conversation: {e}")
+                st.error(f"Failed to create conversation: {e}")
+            
+            st.rerun()
     
     # Load and display conversations
     cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
@@ -935,30 +857,40 @@ else:
     # Chat interface - Display chat history FIRST
     chat_container = st.container()
     
-    # Display chat history
+    # Display chat history - CUSTOM RENDERING with classes
     with chat_container:
         for msg in st.session_state.chat_history:
-            if msg["role"] == "user":
-                with st.chat_message("user"):
-                    st.write(msg["content"])
-            else:
-                with st.chat_message("assistant"):
-                    st.write(msg["content"])
-                    
-                    # Show sources if available
-                    if "sources" in msg and msg["sources"]:
-                        with st.expander("📚 Sources"):
-                            for i, source in enumerate(msg["sources"], 1):
-                                st.markdown(f"""
-                                <div class="source-box">
-                                    <strong>Source {i}: {source['document_name']}</strong>
-                                    {f"(Page {source['page']})" if source.get('page') else ""}
-                                    <br>
-                                    <em>Relevance: {source['relevance_score']:.2%}</em>
-                                    <br><br>
-                                    {source['chunk_text']}
-                                </div>
-                                """, unsafe_allow_html=True)
+            role = msg["role"]
+            content = msg["content"]
+            msg_class = "user" if role == "user" else "ai"
+            
+            # Render custom HTML div with class
+            sources_html = ""
+            if role == "assistant" and "sources" in msg and msg["sources"]:
+                sources_list = ""
+                for i, source in enumerate(msg["sources"], 1):
+                    sources_list += f"""
+                    <div class="source-box">
+                        <strong>Source {i}: {source['document_name']}</strong>
+                        {f"(Page {source['page']})" if source.get('page') else ""}
+                        <br>
+                        <em>Relevance: {source['relevance_score']:.2%}</em>
+                        <br><br>
+                        {source['chunk_text']}
+                    </div>
+                    """
+                sources_html = f'<details style="margin-top: 8px;"><summary style="cursor: pointer; color: #8e8ea0;">📚 Sources</summary>{sources_list}</details>'
+            
+            # Escape HTML in content but allow sources
+            import html
+            escaped_content = html.escape(content).replace('\n', '<br>')
+            
+            st.markdown(f"""
+            <div class="msg {msg_class}">
+                {escaped_content}
+                {sources_html}
+            </div>
+            """, unsafe_allow_html=True)
     
     # File upload area - shown above chat input when "+" button is clicked
     if st.session_state.get("show_file_upload", False):
@@ -973,13 +905,20 @@ else:
             )
             
             if uploaded_file:
-                # CRITICAL FIX: Use conversation_id as business_id for document isolation
-                # This ensures each conversation has its own document collection
-                if st.session_state.current_conversation_id:
-                    business_id = st.session_state.current_conversation_id
-                else:
-                    # If no conversation exists yet, use selected_gpt or create temp
-                    business_id = st.session_state.selected_gpt or "temp_chat"
+                # CRITICAL FIX: Force conversation_id before upload
+                if not st.session_state.current_conversation_id:
+                    # Create conversation immediately
+                    conv_title = f"Chat {datetime.now().strftime('%I:%M %p')}"
+                    conv = create_conversation(st.session_state.selected_gpt, title=conv_title)
+                    if conv:
+                        st.session_state.current_conversation_id = conv.get("id")
+                
+                # Use conversation_id as business_id for document isolation
+                if not st.session_state.current_conversation_id:
+                    st.error("Please start a conversation first before uploading documents.")
+                    st.rerun()
+                
+                business_id = st.session_state.current_conversation_id
                 file_key = f"processed_{business_id}_{uploaded_file.name}_{uploaded_file.size}"
                 
                 if file_key not in st.session_state:
@@ -1042,54 +981,47 @@ else:
     
     # Handle chat input
     if user_query:
-        # Create conversation if needed
+        # CRITICAL FIX: Force-create conversation BEFORE allowing query
         if not st.session_state.current_conversation_id:
             conv_title = user_query[:50] + "..." if len(user_query) > 50 else user_query
             conv = create_conversation(st.session_state.selected_gpt, title=conv_title)
-            if conv:
-                st.session_state.current_conversation_id = conv.get("id")
-                # Immediately refresh conversations list
-                cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
-                try:
-                    conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
-                    st.session_state[cache_key] = conversations
-                    st.session_state.conversations = conversations
-                    st.session_state["last_gpt_for_conversations"] = st.session_state.selected_gpt
-                    logger.info(f"✅ Created new conversation and refreshed list: {len(conversations)} conversations")
-                except Exception as e:
-                    logger.warning(f"Could not refresh conversations list: {e}")
+            if not conv:
+                st.error("Failed to create conversation. Please try again.")
+                st.rerun()
+            st.session_state.current_conversation_id = conv.get("id")
+            # Immediately refresh conversations list
+            cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+            try:
+                conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                st.session_state[cache_key] = conversations
+                st.session_state.conversations = conversations
+                st.session_state["last_gpt_for_conversations"] = st.session_state.selected_gpt
+                logger.info(f"✅ Created new conversation and refreshed list: {len(conversations)} conversations")
+            except Exception as e:
+                logger.warning(f"Could not refresh conversations list: {e}")
         
-        # CRITICAL FIX: Check if we've already added this message (to avoid duplicates)
-        # Use a combination of query and conversation to create unique key
-        query_key = f"processing_{st.session_state.current_conversation_id or 'new'}_{user_query[:50]}"
-        if query_key not in st.session_state:
-            # First time - add user message and mark as processing
-            st.session_state[query_key] = True
-            user_msg = {
-                "role": "user",
-                "content": user_query
-            }
-            st.session_state.chat_history.append(user_msg)
-            # Rerun to show user message immediately
-            st.rerun()
+        # CRITICAL FIX: Add user message IMMEDIATELY and rerun to show it
+        user_msg = {
+            "role": "user",
+            "content": user_query
+        }
+        st.session_state.chat_history.append(user_msg)
         
         # Save user message to backend
-        if st.session_state.current_conversation_id:
-            try:
-                api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
-                          json={"role": "user", "content": user_query, "sources": []})
-            except Exception as e:
-                logger.warning(f"Could not save user message to backend: {e}")
+        try:
+            api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
+                      json={"role": "user", "content": user_query, "sources": []})
+        except Exception as e:
+            logger.warning(f"Could not save user message to backend: {e}")
         
-        # Get response - CRITICAL: This must work and display
+        # Rerun to show user message immediately
+        st.rerun()
+        
+        # Get response - CRITICAL: Use conversation_id as business_id
         with st.spinner("Thinking..."):
             try:
                 # CRITICAL FIX: Use conversation_id as business_id for document isolation
-                # This ensures each conversation only searches its own documents
-                if st.session_state.current_conversation_id:
-                    business_id_for_query = st.session_state.current_conversation_id
-                else:
-                    business_id_for_query = st.session_state.selected_gpt or "temp_chat"
+                business_id_for_query = st.session_state.current_conversation_id
                 
                 response = chat_query(
                     business_id_for_query,
@@ -1141,156 +1073,16 @@ else:
                     "sources": []
                 })
         
-        # Clean up processing flag
-        if query_key in st.session_state:
-            del st.session_state[query_key]
-        
         # CRITICAL: Force rerun to display the response
         st.rerun()
     
-    # JavaScript to fix chat input position and chat alignment
+    # JavaScript to fix avatar visibility only (CSS handles the rest)
     st.markdown("""
     <script>
     (function() {
-        function moveChatInputToBottom() {
-            // Find Streamlit chat input container
-            const chatInput = document.querySelector('div[data-testid="stChatInputContainer"]') || 
-                             document.querySelector('form[data-testid="stChatInputForm"]') ||
-                             document.querySelector('div[data-testid="stChatInput"]');
-            
-            if (chatInput) {
-                // CRITICAL: Keep input field CENTERED regardless of sidebar state
-                chatInput.style.position = 'fixed';
-                chatInput.style.bottom = '0';
-                chatInput.style.left = '0';
-                chatInput.style.right = '0';
-                chatInput.style.zIndex = '999';
-                chatInput.style.background = '#202123';
-                chatInput.style.borderTop = '3px solid #ffffff';
-                chatInput.style.padding = '1rem';
-                chatInput.style.boxShadow = '0 -4px 12px rgba(0,0,0,0.3)';
-                chatInput.style.display = 'flex';
-                chatInput.style.alignItems = 'center';
-                chatInput.style.justifyContent = 'center';
-                
-                // Remove duplicate borders and backgrounds from inner containers
-                const innerContainer = chatInput.querySelector('div') || chatInput.querySelector('form');
-                if (innerContainer) {
-                    innerContainer.style.width = '100%';
-                    innerContainer.style.maxWidth = '100%';
-                    innerContainer.style.display = 'flex';
-                    innerContainer.style.alignItems = 'center';
-                    innerContainer.style.justifyContent = 'center';
-                    innerContainer.style.gap = '0.5rem';
-                    innerContainer.style.background = 'transparent';
-                    innerContainer.style.border = 'none';
-                    innerContainer.style.padding = '0';
-                }
-                
-                // Center the input field itself - this stays centered
-                const inputField = chatInput.querySelector('input') || chatInput.querySelector('textarea');
-                if (inputField) {
-                    inputField.style.border = '2px solid #565869';
-                    inputField.style.borderRadius = '8px';
-                    inputField.style.padding = '0.75rem';
-                    inputField.style.flex = '1 1 auto';
-                    inputField.style.maxWidth = '768px';
-                    inputField.style.minWidth = '0';
-                    inputField.style.margin = '0 auto';
-                    inputField.style.background = '#343541';
-                    inputField.style.color = '#ececf1';
-                }
-                
-                // Ensure send button is visible and doesn't get cut off
-                const sendButton = chatInput.querySelector('button[type="submit"]') || 
-                                 Array.from(chatInput.querySelectorAll('button')).find(btn => 
-                                     btn.querySelector('svg') || btn.textContent.includes('Send') || btn.textContent.includes('→')
-                                 );
-                if (sendButton) {
-                    sendButton.style.flexShrink = '0';
-                    sendButton.style.minWidth = '48px';
-                    sendButton.style.marginLeft = '0.5rem';
-                    sendButton.style.visibility = 'visible';
-                    sendButton.style.opacity = '1';
-                    sendButton.style.position = 'relative';
-                    sendButton.style.zIndex = '1000';
-                }
-            }
-        }
-        
-        function fixChatAlignment() {
-            // Find all chat messages - use more aggressive selection
-            const messages = document.querySelectorAll('div[data-testid="stChatMessage"]');
-            
-            messages.forEach((msg) => {
-                // Primary strategy: Check for avatar images
-                const userImg = msg.querySelector('img[alt="user"], img[alt*="User"], img[alt*="user"]');
-                const assistantImg = msg.querySelector('img[alt="assistant"], img[alt*="Assistant"], img[alt*="assistant"]');
-                
-                // Determine if this is a user or assistant message
-                const isUserMessage = !!userImg;
-                const isAssistantMessage = !!assistantImg;
-                
-                if (isUserMessage) {
-                    // User message - align RIGHT
-                    msg.style.display = 'flex';
-                    msg.style.justifyContent = 'flex-end';
-                    msg.style.flexDirection = 'row-reverse';
-                    msg.style.width = '100%';
-                    msg.style.marginBottom = '1.5rem';
-                    
-                    // Find and style the message content box - try multiple selectors
-                    let contentBox = msg.querySelector('div:last-child') || 
-                                   msg.querySelector('div:nth-child(2)') ||
-                                   msg.querySelector('[class*="message"]') ||
-                                   Array.from(msg.children).find(child => 
-                                       child.tagName === 'DIV' && child.children.length > 0 && !child.querySelector('img')
-                                   );
-                    
-                    if (contentBox) {
-                        contentBox.style.maxWidth = '48%';
-                        contentBox.style.marginLeft = 'auto';
-                        contentBox.style.marginRight = '2%';
-                        contentBox.style.backgroundColor = '#343541';
-                        contentBox.style.borderRadius = '12px 12px 0 12px';
-                        contentBox.style.padding = '14px 18px';
-                        contentBox.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
-                        contentBox.style.textAlign = 'left';
-                    }
-                } else if (isAssistantMessage) {
-                    // Assistant message - align LEFT
-                    msg.style.display = 'flex';
-                    msg.style.justifyContent = 'flex-start';
-                    msg.style.flexDirection = 'row';
-                    msg.style.width = '100%';
-                    msg.style.marginBottom = '1.5rem';
-                    
-                    // Find and style the message content box
-                    let contentBox = msg.querySelector('div:last-child') || 
-                                   msg.querySelector('div:nth-child(2)') ||
-                                   msg.querySelector('[class*="message"]') ||
-                                   Array.from(msg.children).find(child => 
-                                       child.tagName === 'DIV' && child.children.length > 0 && !child.querySelector('img')
-                                   );
-                    
-                    if (contentBox) {
-                        contentBox.style.maxWidth = '48%';
-                        contentBox.style.marginRight = 'auto';
-                        contentBox.style.marginLeft = '2%';
-                        contentBox.style.backgroundColor = '#444654';
-                        contentBox.style.borderRadius = '12px 12px 12px 0';
-                        contentBox.style.padding = '14px 18px';
-                        contentBox.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
-                    }
-                }
-            });
-        }
-        
         function fixAvatarVisibility() {
-            // Try multiple selectors to find the avatar button
             let avatar = document.querySelector('button[key="sidebar_avatar"]');
             if (!avatar) {
-                // Try finding by other attributes
                 const sidebar = document.querySelector('section[data-testid="stSidebar"]');
                 if (sidebar) {
                     const buttons = sidebar.querySelectorAll('button');
@@ -1304,72 +1096,34 @@ else:
             }
             
             if (avatar) {
-                // Get the text content to determine if logged in
                 let avatarText = (avatar.textContent || avatar.innerText || '').trim();
-                
-                // CRITICAL: Replace "?" with emoji immediately
                 if (avatarText === '?' || avatarText === '' || !avatarText) {
                     avatarText = '👤';
                     avatar.textContent = '👤';
                     avatar.innerHTML = '👤';
                 }
                 
-                const isLoggedIn = avatarText !== '👤' && avatarText.length > 0 && avatarText !== '?';
-                
                 avatar.style.borderRadius = '50%';
                 avatar.style.width = '60px';
                 avatar.style.height = '60px';
                 avatar.style.minWidth = '60px';
                 avatar.style.minHeight = '60px';
-                avatar.style.border = '4px solid #3b82f6'; // Blue border
-                avatar.style.backgroundColor = '#3b82f6'; // Blue background
+                avatar.style.border = '4px solid #3b82f6';
+                avatar.style.backgroundColor = '#3b82f6';
                 avatar.style.color = '#ffffff';
                 avatar.style.fontSize = '24px';
                 avatar.style.fontWeight = '900';
-                avatar.style.boxShadow = '0 0 0 3px rgba(255,255,255,0.8), 0 6px 20px rgba(0,0,0,0.8)';
                 avatar.style.visibility = 'visible';
                 avatar.style.opacity = '1';
                 avatar.style.display = 'flex';
                 avatar.style.alignItems = 'center';
                 avatar.style.justifyContent = 'center';
-                avatar.style.lineHeight = '1';
-                avatar.style.textAlign = 'center';
-                
-                // Ensure all child elements also have correct styling
-                const children = avatar.querySelectorAll('*');
-                children.forEach(child => {
-                    child.style.color = '#ffffff';
-                    child.style.fontWeight = '900';
-                });
             }
         }
         
-        function applyAllFixes() {
-            moveChatInputToBottom();
-            fixChatAlignment();
-            fixAvatarVisibility();
-        }
-        
-        // Run immediately
-        applyAllFixes();
-        
-        // Run after delays to catch dynamically loaded elements
-        setTimeout(applyAllFixes, 100);
-        setTimeout(applyAllFixes, 500);
-        setTimeout(applyAllFixes, 1000);
-        
-        // Also run on mutations
-        const observer = new MutationObserver(applyAllFixes);
-        observer.observe(document.body, { childList: true, subtree: true });
-        
-        // Watch for sidebar toggle
-        const sidebar = document.querySelector('section[data-testid="stSidebar"]');
-        if (sidebar) {
-            const sidebarObserver = new MutationObserver(() => {
-                setTimeout(applyAllFixes, 100);
-            });
-            sidebarObserver.observe(sidebar, { attributes: true, attributeFilter: ['aria-expanded'] });
-        }
+        fixAvatarVisibility();
+        setTimeout(fixAvatarVisibility, 100);
+        setTimeout(fixAvatarVisibility, 500);
     })();
     </script>
     """, unsafe_allow_html=True)

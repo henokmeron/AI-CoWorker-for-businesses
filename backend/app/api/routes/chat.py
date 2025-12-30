@@ -29,10 +29,13 @@ async def chat(
     and provide an answer with source citations.
     """
     try:
-        # Use business_id from request, or "temp_chat" if not provided
-        # CRITICAL: This must match the business_id used when uploading files
-        # Frontend sends "temp_chat" when no GPT is selected, so we use that as default
-        business_id = request.business_id or "temp_chat"
+        # CRITICAL: Reject missing business_id - no fallback to "temp_chat"
+        if not request.business_id:
+            raise HTTPException(
+                status_code=400,
+                detail="business_id is required. Each conversation must have its own document collection."
+            )
+        business_id = request.business_id
         logger.info(f"💬 Chat request for business_id='{business_id}': {request.query[:100]}")
         
         # Validate OpenAI API key
