@@ -200,6 +200,23 @@ class RAGService:
             try:
                 response = self.llm.invoke(messages)
                 answer = response.content if hasattr(response, 'content') else str(response)
+                
+                # CRITICAL: Strip any HTML source boxes that the LLM might have generated
+                import re
+                # Remove source-box divs with flexible whitespace matching
+                answer = re.sub(r'<div\s+class\s*=\s*["\']source-box["\']>.*?</div>', '', answer, flags=re.DOTALL | re.IGNORECASE)
+                answer = re.sub(r'<div\s+class\s*=\s*source-box>.*?</div>', '', answer, flags=re.DOTALL | re.IGNORECASE)
+                # Remove any remaining source-box content (in case div tags are malformed)
+                answer = re.sub(r'<strong>Source\s+\d+.*?</strong>', '', answer, flags=re.DOTALL | re.IGNORECASE)
+                answer = re.sub(r'<em>Relevance:.*?</em>', '', answer, flags=re.DOTALL | re.IGNORECASE)
+                # Remove Sources emoji and text
+                answer = re.sub(r'📚\s*Sources?\s*', '', answer, flags=re.IGNORECASE)
+                answer = re.sub(r'<details.*?Sources?.*?</details>', '', answer, flags=re.DOTALL | re.IGNORECASE)
+                # Clean up extra whitespace
+                answer = re.sub(r'\n\s*\n\s*\n+', '\n\n', answer)
+                answer = re.sub(r'\s{3,}', ' ', answer)
+                answer = answer.strip()
+                
                 logger.info(f"LLM response generated successfully: {len(answer)} characters")
             except Exception as e:
                 logger.error(f"LLM invocation failed: {e}", exc_info=True)

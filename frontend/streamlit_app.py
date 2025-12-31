@@ -927,16 +927,24 @@ else:
             content = msg["content"]
             msg_class = "user" if role == "user" else "ai"
             
-            # CRITICAL: Strip any raw HTML source boxes from content (backend shouldn't include these)
+            # CRITICAL: Strip any raw HTML source boxes from content - AGGRESSIVE CLEANING
             import re
-            # Remove any source-box divs and related HTML from content
-            content = re.sub(r'<div class="source-box">.*?</div>', '', content, flags=re.DOTALL)
-            content = re.sub(r'📚 Sources\s*', '', content, flags=re.IGNORECASE)
-            content = re.sub(r'<details.*?Sources.*?</details>', '', content, flags=re.DOTALL | re.IGNORECASE)
-            # Clean up any remaining HTML tags that might have leaked in
+            # Remove source-box divs with flexible whitespace matching
+            content = re.sub(r'<div\s+class\s*=\s*["\']source-box["\']>.*?</div>', '', content, flags=re.DOTALL | re.IGNORECASE)
+            # Also match without quotes
+            content = re.sub(r'<div\s+class\s*=\s*source-box>.*?</div>', '', content, flags=re.DOTALL | re.IGNORECASE)
+            # Remove any remaining source-box content (in case div tags are malformed)
+            content = re.sub(r'<strong>Source\s+\d+.*?</strong>', '', content, flags=re.DOTALL | re.IGNORECASE)
+            content = re.sub(r'<em>Relevance:.*?</em>', '', content, flags=re.DOTALL | re.IGNORECASE)
+            # Remove Sources emoji and text
+            content = re.sub(r'📚\s*Sources?\s*', '', content, flags=re.IGNORECASE)
+            content = re.sub(r'<details.*?Sources?.*?</details>', '', content, flags=re.DOTALL | re.IGNORECASE)
+            # Remove ALL HTML tags (aggressive - strip everything)
             content = re.sub(r'<[^>]+>', '', content)
-            # Clean up extra whitespace
-            content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content).strip()
+            # Clean up extra whitespace and newlines
+            content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content)
+            content = re.sub(r'\s{3,}', ' ', content)  # Multiple spaces to single
+            content = content.strip()
             
             # Render custom HTML div with class
             sources_html = ""
@@ -1107,17 +1115,25 @@ else:
                 logger.info(f"📥 Received response: {response is not None}, has answer: {response and response.get('answer') is not None if response else False}")
                 
                 if response and response.get("answer"):
-                    # CRITICAL: Strip any HTML source boxes from answer text
+                    # CRITICAL: Strip any HTML source boxes from answer text - AGGRESSIVE CLEANING
                     answer_text = response.get("answer", "I apologize, but I couldn't generate a response.")
                     import re
-                    # Remove any source-box divs and related HTML from answer
-                    answer_text = re.sub(r'<div class="source-box">.*?</div>', '', answer_text, flags=re.DOTALL)
-                    answer_text = re.sub(r'📚 Sources\s*', '', answer_text, flags=re.IGNORECASE)
-                    answer_text = re.sub(r'<details.*?Sources.*?</details>', '', answer_text, flags=re.DOTALL | re.IGNORECASE)
-                    # Remove any other HTML tags that might have leaked in
+                    # Remove source-box divs with flexible whitespace matching
+                    answer_text = re.sub(r'<div\s+class\s*=\s*["\']source-box["\']>.*?</div>', '', answer_text, flags=re.DOTALL | re.IGNORECASE)
+                    # Also match without quotes
+                    answer_text = re.sub(r'<div\s+class\s*=\s*source-box>.*?</div>', '', answer_text, flags=re.DOTALL | re.IGNORECASE)
+                    # Remove any remaining source-box content (in case div tags are malformed)
+                    answer_text = re.sub(r'<strong>Source\s+\d+.*?</strong>', '', answer_text, flags=re.DOTALL | re.IGNORECASE)
+                    answer_text = re.sub(r'<em>Relevance:.*?</em>', '', answer_text, flags=re.DOTALL | re.IGNORECASE)
+                    # Remove Sources emoji and text
+                    answer_text = re.sub(r'📚\s*Sources?\s*', '', answer_text, flags=re.IGNORECASE)
+                    answer_text = re.sub(r'<details.*?Sources?.*?</details>', '', answer_text, flags=re.DOTALL | re.IGNORECASE)
+                    # Remove ALL HTML tags (aggressive - strip everything)
                     answer_text = re.sub(r'<[^>]+>', '', answer_text)
-                    # Clean up extra whitespace
-                    answer_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', answer_text).strip()
+                    # Clean up extra whitespace and newlines
+                    answer_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', answer_text)
+                    answer_text = re.sub(r'\s{3,}', ' ', answer_text)  # Multiple spaces to single
+                    answer_text = answer_text.strip()
                     
                     assistant_msg = {
                         "role": "assistant",
