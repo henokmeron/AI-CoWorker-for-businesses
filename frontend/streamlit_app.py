@@ -952,8 +952,8 @@ else:
             <div class="msg {msg_class}">
                 {escaped_content}
                 {sources_html}
-                                </div>
-                                """, unsafe_allow_html=True)
+            </div>
+            """, unsafe_allow_html=True)
     
     # File upload area - shown above chat input when "+" button is clicked
     if st.session_state.get("show_file_upload", False):
@@ -1063,22 +1063,26 @@ else:
                 except Exception as e:
                     logger.warning(f"Could not refresh conversations list: {e}")
         
-        # CRITICAL FIX: Add user message IMMEDIATELY and rerun to show it
-        user_msg = {
-            "role": "user",
-            "content": user_query
-        }
-        st.session_state.chat_history.append(user_msg)
-        
-        # Save user message to backend
-        try:
-            api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
-                      json={"role": "user", "content": user_query, "sources": []})
-        except Exception as e:
-            logger.warning(f"Could not save user message to backend: {e}")
-        
-        # Rerun to show user message immediately
-        st.rerun()
+        # CRITICAL FIX: Check if we've already added this message (to show it immediately)
+        query_key = f"processing_{st.session_state.current_conversation_id}_{user_query[:50]}"
+        if query_key not in st.session_state:
+            # First time - add user message and mark as processing
+            st.session_state[query_key] = True
+            user_msg = {
+                "role": "user",
+                "content": user_query
+            }
+            st.session_state.chat_history.append(user_msg)
+            
+            # Save user message to backend
+            try:
+                api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
+                          json={"role": "user", "content": user_query, "sources": []})
+            except Exception as e:
+                logger.warning(f"Could not save user message to backend: {e}")
+            
+            # Rerun to show user message immediately
+            st.rerun()
         
         # Get response - CRITICAL: Use conversation_id as business_id
         with st.spinner("Thinking..."):
@@ -1135,6 +1139,10 @@ else:
                     "content": error_msg,
                     "sources": []
                 })
+        
+        # Clean up processing flag
+        if query_key in st.session_state:
+            del st.session_state[query_key]
         
         # CRITICAL: Force rerun to display the response
         st.rerun()
