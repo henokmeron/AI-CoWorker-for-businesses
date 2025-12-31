@@ -66,6 +66,10 @@ if "chat_history_loaded" not in st.session_state:
     st.session_state.chat_history_loaded = False
 if "upload_counter" not in st.session_state:
     st.session_state.upload_counter = 0
+if "user_settings" not in st.session_state:
+    st.session_state.user_settings = {}
+if "settings_need_reload" not in st.session_state:
+    st.session_state.settings_need_reload = True
 
 # Custom CSS - ChatGPT-style with PROPER fixes
 st.markdown("""
@@ -500,21 +504,392 @@ def handle_login():
                     st.error("Login failed. Please try again.")
 
 
+def get_user_settings(user_id: str) -> Optional[Dict[str, Any]]:
+    """Get user settings from backend."""
+    try:
+        response = api_request("GET", f"/api/v1/users/settings?user_id={user_id}")
+        if response and response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        logger.error(f"Error getting user settings: {e}")
+        return None
+
+
+def update_user_settings(user_id: str, settings: Dict[str, Any]) -> bool:
+    """Update user settings on backend."""
+    try:
+        response = api_request("PUT", f"/api/v1/users/settings?user_id={user_id}", json=settings)
+        return response and response.status_code == 200
+    except Exception as e:
+        logger.error(f"Error updating user settings: {e}")
+        return False
+
+
 def render_settings():
-    """Render settings panel."""
-    st.markdown('<div class="main-header">⚙️ Settings</div>', unsafe_allow_html=True)
-    
-    with st.form("settings_form"):
-        st.text_input("Name", value=st.session_state.user_name or "Guest", key="setting_name")
-        st.text_input("Email", value=st.session_state.user_email or "", key="setting_email")
-        
-        if st.form_submit_button("Save"):
-            st.session_state.user_name = st.session_state.setting_name
-            st.session_state.user_email = st.session_state.setting_email
-            st.success("Settings saved!")
+    """Render comprehensive settings panel with tabs."""
+    # Header with back button
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        if st.button("←", key="back_to_chat", help="Back to Chat"):
+            st.session_state.show_settings = False
             st.rerun()
+    with col2:
+        st.markdown('<div class="main-header">⚙️ Settings</div>', unsafe_allow_html=True)
     
-    if st.button("← Back"):
+    # Get user ID (use email or generate one)
+    user_id = st.session_state.get("user_email") or st.session_state.get("user_name") or "default_user"
+    
+    # Load settings from backend or use defaults
+    if "user_settings" not in st.session_state or st.session_state.get("settings_need_reload", False):
+        settings_data = get_user_settings(user_id)
+        if settings_data:
+            st.session_state.user_settings = settings_data
+        else:
+            # Default settings
+            st.session_state.user_settings = {
+                "language": "English",
+                "theme": "Dark",
+                "font_size": 14,
+                "auto_save_conversations": True,
+                "default_model": "gpt-4-turbo-preview",
+                "custom_instructions": "",
+                "response_style": "Professional",
+                "email_notifications": False,
+                "browser_notifications": False,
+                "desktop_notifications": False,
+                "session_timeout_minutes": 1440,
+                "two_factor_auth": False,
+                "data_retention_days": 365,
+                "auto_delete_old_conversations": False,
+                "integrations": {},
+                "gpt_settings": {}
+            }
+        st.session_state.settings_need_reload = False
+    
+    settings = st.session_state.user_settings
+    
+    # Settings tabs
+    tabs = ["General", "GPT Settings", "Personalization", "Notifications", "Data Control", "Security", "Account", "Integrations"]
+    selected_tab = st.radio("", tabs, horizontal=True, key="settings_tabs_radio", label_visibility="collapsed")
+    st.session_state.settings_tab = selected_tab
+    
+    st.markdown("---")
+    
+    # Tab content
+    if selected_tab == "General":
+        st.subheader("General Settings")
+        
+        with st.form("general_settings_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                language = st.selectbox(
+                    "Language",
+                    ["English", "Spanish", "French", "German", "Italian", "Portuguese", "Chinese", "Japanese", "Korean"],
+                    index=["English", "Spanish", "French", "German", "Italian", "Portuguese", "Chinese", "Japanese", "Korean"].index(settings.get("language", "English")) if settings.get("language", "English") in ["English", "Spanish", "French", "German", "Italian", "Portuguese", "Chinese", "Japanese", "Korean"] else 0,
+                    key="setting_lang"
+                )
+                theme = st.selectbox(
+                    "Theme",
+                    ["Dark", "Light", "Auto"],
+                    index=["Dark", "Light", "Auto"].index(settings.get("theme", "Dark")),
+                    key="setting_theme"
+                )
+            with col2:
+                font_size = st.slider(
+                    "Font Size",
+                    12, 20, settings.get("font_size", 14),
+                    key="setting_font"
+                )
+                default_model = st.selectbox(
+                    "Default Model",
+                    ["gpt-4-turbo-preview", "gpt-4", "gpt-3.5-turbo", "gpt-4o", "gpt-4o-mini"],
+                    index=["gpt-4-turbo-preview", "gpt-4", "gpt-3.5-turbo", "gpt-4o", "gpt-4o-mini"].index(settings.get("default_model", "gpt-4-turbo-preview")) if settings.get("default_model", "gpt-4-turbo-preview") in ["gpt-4-turbo-preview", "gpt-4", "gpt-3.5-turbo", "gpt-4o", "gpt-4o-mini"] else 0,
+                    key="setting_model"
+                )
+            
+            auto_save = st.checkbox(
+                "Auto-save conversations",
+                value=settings.get("auto_save_conversations", True),
+                key="setting_auto_save"
+            )
+            
+            if st.form_submit_button("Save General Settings"):
+                update_data = {
+                    "language": language,
+                    "theme": theme,
+                    "font_size": font_size,
+                    "default_model": default_model,
+                    "auto_save_conversations": auto_save
+                }
+                if update_user_settings(user_id, update_data):
+                    st.session_state.user_settings.update(update_data)
+                    st.success("✅ General settings saved!")
+                    st.rerun()
+                else:
+                    st.error("Failed to save settings. Please try again.")
+    
+    elif selected_tab == "GPT Settings":
+        st.subheader("GPT-Specific Settings")
+        st.info("Configure settings for individual GPTs/businesses. These override general settings for specific GPTs.")
+        
+        # Get list of GPTs
+        gpts = st.session_state.get("gpts", [])
+        if not gpts:
+            gpts = get_businesses()
+            st.session_state.gpts = gpts
+        
+        if gpts:
+            selected_gpt_id = st.selectbox(
+                "Select GPT",
+                [gpt.get("id") for gpt in gpts],
+                format_func=lambda x: next((gpt.get("name", x) for gpt in gpts if gpt.get("id") == x), x),
+                key="gpt_settings_select"
+            )
+            
+            gpt_settings = settings.get("gpt_settings", {}).get(selected_gpt_id, {})
+            
+            with st.form("gpt_settings_form"):
+                gpt_custom_instructions = st.text_area(
+                    "Custom Instructions for this GPT",
+                    value=gpt_settings.get("custom_instructions", ""),
+                    height=100,
+                    key="gpt_custom_instructions"
+                )
+                gpt_response_style = st.selectbox(
+                    "Response Style for this GPT",
+                    ["Professional", "Casual", "Technical", "Creative"],
+                    index=["Professional", "Casual", "Technical", "Creative"].index(gpt_settings.get("response_style", "Professional")) if gpt_settings.get("response_style", "Professional") in ["Professional", "Casual", "Technical", "Creative"] else 0,
+                    key="gpt_response_style"
+                )
+                
+                if st.form_submit_button("Save GPT Settings"):
+                    gpt_settings_dict = settings.get("gpt_settings", {})
+                    gpt_settings_dict[selected_gpt_id] = {
+                        "custom_instructions": gpt_custom_instructions,
+                        "response_style": gpt_response_style
+                    }
+                    update_data = {"gpt_settings": gpt_settings_dict}
+                    if update_user_settings(user_id, update_data):
+                        st.session_state.user_settings.setdefault("gpt_settings", {})[selected_gpt_id] = gpt_settings_dict[selected_gpt_id]
+                        st.success("✅ GPT settings saved!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to save GPT settings. Please try again.")
+        else:
+            st.info("No GPTs available. Create a GPT first.")
+    
+    elif selected_tab == "Personalization":
+        st.subheader("Personalization")
+        
+        with st.form("personalization_form"):
+            custom_instructions = st.text_area(
+                "Custom Instructions",
+                value=settings.get("custom_instructions", ""),
+                height=150,
+                help="Provide instructions for how the AI should behave, respond, and format its answers.",
+                key="setting_instructions"
+            )
+            response_style = st.selectbox(
+                "Response Style",
+                ["Professional", "Casual", "Technical", "Creative"],
+                index=["Professional", "Casual", "Technical", "Creative"].index(settings.get("response_style", "Professional")) if settings.get("response_style", "Professional") in ["Professional", "Casual", "Technical", "Creative"] else 0,
+                key="setting_style"
+            )
+            
+            if st.form_submit_button("Save Personalization"):
+                update_data = {
+                    "custom_instructions": custom_instructions,
+                    "response_style": response_style
+                }
+                if update_user_settings(user_id, update_data):
+                    st.session_state.user_settings.update(update_data)
+                    st.success("✅ Personalization settings saved!")
+                    st.rerun()
+                else:
+                    st.error("Failed to save settings. Please try again.")
+    
+    elif selected_tab == "Notifications":
+        st.subheader("Notification Settings")
+        
+        with st.form("notifications_form"):
+            email_notif = st.checkbox(
+                "Email notifications",
+                value=settings.get("email_notifications", False),
+                key="notif_email"
+            )
+            browser_notif = st.checkbox(
+                "Browser notifications",
+                value=settings.get("browser_notifications", False),
+                key="notif_browser"
+            )
+            desktop_notif = st.checkbox(
+                "Desktop notifications",
+                value=settings.get("desktop_notifications", False),
+                key="notif_desktop"
+            )
+            
+            if st.form_submit_button("Save Notification Settings"):
+                update_data = {
+                    "email_notifications": email_notif,
+                    "browser_notifications": browser_notif,
+                    "desktop_notifications": desktop_notif
+                }
+                if update_user_settings(user_id, update_data):
+                    st.session_state.user_settings.update(update_data)
+                    st.success("✅ Notification settings saved!")
+                    st.rerun()
+                else:
+                    st.error("Failed to save settings. Please try again.")
+    
+    elif selected_tab == "Data Control":
+        st.subheader("Data Control")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📥 Export All Data", key="export_data", use_container_width=True):
+                st.info("Export functionality coming soon. This will download all your conversations, documents, and settings.")
+        
+        with col2:
+            if st.button("🗑️ Delete All Conversations", key="delete_conversations", use_container_width=True, type="secondary"):
+                if st.session_state.get("confirm_delete_conversations", False):
+                    # Delete all conversations
+                    try:
+                        conversations = get_conversations(business_id=st.session_state.selected_gpt)
+                        deleted_count = 0
+                        for conv in conversations:
+                            if delete_conversation(conv.get("id")):
+                                deleted_count += 1
+                        st.success(f"✅ Deleted {deleted_count} conversations!")
+                        st.session_state.conversations = []
+                        st.session_state.chat_history = []
+                        st.session_state.current_conversation_id = None
+                        st.session_state.confirm_delete_conversations = False
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error deleting conversations: {e}")
+                else:
+                    st.session_state.confirm_delete_conversations = True
+                    st.warning("⚠️ Click again to confirm deletion of all conversations. This cannot be undone!")
+        
+        st.markdown("---")
+        
+        with st.form("data_retention_form"):
+            data_retention = st.slider(
+                "Data Retention Period (days)",
+                30, 1095, settings.get("data_retention_days", 365),
+                key="data_retention"
+            )
+            auto_delete = st.checkbox(
+                "Auto-delete conversations older than retention period",
+                value=settings.get("auto_delete_old_conversations", False),
+                key="auto_delete_old"
+            )
+            
+            if st.form_submit_button("Save Data Retention Settings"):
+                update_data = {
+                    "data_retention_days": data_retention,
+                    "auto_delete_old_conversations": auto_delete
+                }
+                if update_user_settings(user_id, update_data):
+                    st.session_state.user_settings.update(update_data)
+                    st.success("✅ Data retention settings saved!")
+                    st.rerun()
+                else:
+                    st.error("Failed to save settings. Please try again.")
+    
+    elif selected_tab == "Security":
+        st.subheader("Security Settings")
+        
+        with st.form("security_form"):
+            session_timeout = st.number_input(
+                "Session Timeout (minutes)",
+                min_value=15,
+                max_value=10080,
+                value=settings.get("session_timeout_minutes", 1440),
+                key="session_timeout"
+            )
+            two_fa = st.checkbox(
+                "Two-Factor Authentication",
+                value=settings.get("two_factor_auth", False),
+                help="Require a second authentication factor for login",
+                key="setting_2fa"
+            )
+            
+            st.markdown("---")
+            st.markdown("### Change Password")
+            current_password = st.text_input("Current Password", type="password", key="current_password")
+            new_password = st.text_input("New Password", type="password", key="new_password")
+            confirm_password = st.text_input("Confirm New Password", type="password", key="confirm_password")
+            
+            if st.form_submit_button("Save Security Settings"):
+                update_data = {
+                    "session_timeout_minutes": session_timeout,
+                    "two_factor_auth": two_fa
+                }
+                
+                # Handle password change
+                if new_password:
+                    if new_password != confirm_password:
+                        st.error("New passwords do not match!")
+                    elif not current_password:
+                        st.error("Please enter your current password!")
+                    else:
+                        st.info("Password change functionality will be implemented with full authentication system.")
+                
+                if update_user_settings(user_id, update_data):
+                    st.session_state.user_settings.update(update_data)
+                    st.success("✅ Security settings saved!")
+                    st.rerun()
+                else:
+                    st.error("Failed to save settings. Please try again.")
+    
+    elif selected_tab == "Account":
+        st.subheader("Account Settings")
+        
+        with st.form("account_form"):
+            name = st.text_input(
+                "Name",
+                value=st.session_state.user_name or "Guest",
+                key="setting_name"
+            )
+            email = st.text_input(
+                "Email",
+                value=st.session_state.user_email or "",
+                key="setting_email"
+            )
+            
+            st.markdown("---")
+            st.markdown("### Subscription")
+            st.info("💎 Free Plan - Upgrade coming soon!")
+            
+            if st.form_submit_button("Save Account Settings"):
+                st.session_state.user_name = name
+                st.session_state.user_email = email
+                st.success("✅ Account settings saved!")
+                st.rerun()
+    
+    elif selected_tab == "Integrations":
+        st.subheader("App Connectors")
+        st.info("Connect your apps to enhance AI capabilities. Integrations coming soon!")
+        
+        integrations = settings.get("integrations", {})
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            gmail_connected = st.checkbox("Gmail", value=integrations.get("gmail", False), key="connector_gmail", disabled=True)
+            outlook_connected = st.checkbox("Outlook", value=integrations.get("outlook", False), key="connector_outlook", disabled=True)
+            slack_connected = st.checkbox("Slack", value=integrations.get("slack", False), key="connector_slack", disabled=True)
+        
+        with col2:
+            google_drive_connected = st.checkbox("Google Drive", value=integrations.get("google_drive", False), key="connector_gdrive", disabled=True)
+            dropbox_connected = st.checkbox("Dropbox", value=integrations.get("dropbox", False), key="connector_dropbox", disabled=True)
+            notion_connected = st.checkbox("Notion", value=integrations.get("notion", False), key="connector_notion", disabled=True)
+        
+        st.info("🔜 Integration features are under development. Stay tuned!")
+    
+    st.markdown("---")
+    if st.button("Close Settings", key="close_settings", use_container_width=True):
         st.session_state.show_settings = False
         st.rerun()
 

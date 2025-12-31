@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.routes import business, documents, chat, conversations, auth
+from app.api.routes import business, documents, chat, conversations, auth, user_settings
 
 # Configure logging
 logging.basicConfig(
@@ -43,6 +43,7 @@ app.include_router(documents.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 app.include_router(conversations.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(user_settings.router, prefix="/api/v1")
 
 
 @app.get("/")
