@@ -609,45 +609,45 @@ with st.sidebar:
     st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
     st.markdown('<div class="sidebar-section-title">Conversations</div>', unsafe_allow_html=True)
     
-        # New Chat button - ACTUALLY CREATE A NEW CONVERSATION
-        if st.button("➕ New Chat", use_container_width=True, key="new_chat_btn"):
-            # CRITICAL: Clear EVERYTHING to prevent chat bleeding
-            st.session_state.current_conversation_id = None
-            st.session_state.chat_history = []
-            st.session_state.chat_history_loaded = False
-            
-            # Clear processed file flags
-            for key in list(st.session_state.keys()):
-                if key.startswith("processed_") or key.startswith("show_menu_") or key.startswith("renaming_"):
-                    del st.session_state[key]
-            
-            # CRITICAL: Force-create conversation BEFORE allowing upload/query
-            new_conv_title = f"New Chat {datetime.now().strftime('%I:%M %p')}"
-            
-            try:
-                new_conv = create_conversation(st.session_state.selected_gpt, title=new_conv_title)
-                if new_conv:
-                    st.session_state.current_conversation_id = new_conv.get('id')
-                    st.session_state.chat_history = []
-                    st.session_state.chat_history_loaded = False
-                    
-                    # CRITICAL: Immediately refresh conversations list
-                    cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
-                    try:
-                        conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
-                        st.session_state[cache_key] = conversations
-                        st.session_state.conversations = conversations
-                        st.session_state["last_gpt_for_conversations"] = st.session_state.selected_gpt
-                        logger.info(f"✅ Created new conversation and refreshed list: {len(conversations)} conversations")
-                    except Exception as e:
-                        logger.warning(f"Could not refresh conversations list: {e}")
-                else:
-                    st.error("Could not create conversation on server. Please try again.")
-            except Exception as e:
-                logger.error(f"Error creating new conversation: {e}")
-                st.error(f"Failed to create conversation: {e}")
-            
-            st.rerun()
+    # New Chat button - ACTUALLY CREATE A NEW CONVERSATION
+    if st.button("➕ New Chat", use_container_width=True, key="new_chat_btn"):
+        # CRITICAL: Clear EVERYTHING to prevent chat bleeding
+        st.session_state.current_conversation_id = None
+        st.session_state.chat_history = []
+        st.session_state.chat_history_loaded = False
+        
+        # Clear processed file flags
+        for key in list(st.session_state.keys()):
+            if key.startswith("processed_") or key.startswith("show_menu_") or key.startswith("renaming_"):
+                del st.session_state[key]
+        
+        # CRITICAL: Force-create conversation BEFORE allowing upload/query
+        new_conv_title = f"New Chat {datetime.now().strftime('%I:%M %p')}"
+        
+        try:
+            new_conv = create_conversation(st.session_state.selected_gpt, title=new_conv_title)
+            if new_conv:
+                st.session_state.current_conversation_id = new_conv.get('id')
+                st.session_state.chat_history = []
+                st.session_state.chat_history_loaded = False
+                
+                # CRITICAL: Immediately refresh conversations list
+                cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+                try:
+                    conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                    st.session_state[cache_key] = conversations
+                    st.session_state.conversations = conversations
+                    st.session_state["last_gpt_for_conversations"] = st.session_state.selected_gpt
+                    logger.info(f"✅ Created new conversation and refreshed list: {len(conversations)} conversations")
+                except Exception as e:
+                    logger.warning(f"Could not refresh conversations list: {e}")
+            else:
+                st.error("Could not create conversation on server. Please try again.")
+        except Exception as e:
+            logger.error(f"Error creating new conversation: {e}")
+            st.error(f"Failed to create conversation: {e}")
+        
+        st.rerun()
     
     # Load and display conversations
     cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
