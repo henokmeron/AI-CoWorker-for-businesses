@@ -1071,11 +1071,11 @@ else:
         st.session_state.chat_history.append(user_msg)
         
         # Save user message to backend
-            try:
-                api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
-                          json={"role": "user", "content": user_query, "sources": []})
-            except Exception as e:
-                logger.warning(f"Could not save user message to backend: {e}")
+        try:
+            api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
+                      json={"role": "user", "content": user_query, "sources": []})
+        except Exception as e:
+            logger.warning(f"Could not save user message to backend: {e}")
         
         # Rerun to show user message immediately
         st.rerun()
