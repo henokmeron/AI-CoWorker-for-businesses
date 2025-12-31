@@ -1051,6 +1051,7 @@ else:
             if not conv:
                 st.error("Failed to create conversation. Please try again.")
                 st.rerun()
+            else:
                 st.session_state.current_conversation_id = conv.get("id")
                 # Immediately refresh conversations list
                 cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
@@ -1063,40 +1064,36 @@ else:
                 except Exception as e:
                     logger.warning(f"Could not refresh conversations list: {e}")
         
-        # CRITICAL FIX: Check if we've already added this message (to show it immediately)
-        query_key = f"processing_{st.session_state.current_conversation_id}_{user_query[:50]}"
-        if query_key not in st.session_state:
-            # First time - add user message and mark as processing
-            st.session_state[query_key] = True
-            user_msg = {
-                "role": "user",
-                "content": user_query
-            }
-            st.session_state.chat_history.append(user_msg)
-            
-            # Save user message to backend
-            try:
-                api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
-                          json={"role": "user", "content": user_query, "sources": []})
-            except Exception as e:
-                logger.warning(f"Could not save user message to backend: {e}")
-            
-            # Rerun to show user message immediately
-            st.rerun()
+        # CRITICAL FIX: Add user message IMMEDIATELY (no rerun in middle)
+        user_msg = {
+            "role": "user",
+            "content": user_query
+        }
+        st.session_state.chat_history.append(user_msg)
         
-        # Get response - CRITICAL: Use conversation_id as business_id
+        # Save user message to backend
+        try:
+            api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
+                      json={"role": "user", "content": user_query, "sources": []})
+        except Exception as e:
+            logger.warning(f"Could not save user message to backend: {e}")
+        
+        # Get response IMMEDIATELY - CRITICAL: Use conversation_id as business_id
         with st.spinner("Thinking..."):
             try:
                 # CRITICAL FIX: Use conversation_id as business_id for document isolation
                 business_id_for_query = st.session_state.current_conversation_id
                 
+                logger.info(f"🔍 Making chat query with business_id={business_id_for_query}, query={user_query[:50]}")
                 response = chat_query(
                     business_id_for_query,
                     user_query,
-                    st.session_state.chat_history[:-1],
+                    st.session_state.chat_history[:-1],  # Exclude the just-added user message
                     st.session_state.current_conversation_id,
                     reply_as_me=st.session_state.reply_as_me
                 )
+                
+                logger.info(f"📥 Received response: {response is not None}, has answer: {response and response.get('answer') is not None if response else False}")
                 
                 if response and response.get("answer"):
                     assistant_msg = {
@@ -1118,6 +1115,10 @@ else:
                     error_msg = "Sorry, I encountered an error. Please check the backend logs or try again."
                     if response and isinstance(response, dict) and "error" in response:
                         error_msg = response["error"]
+                        logger.error(f"❌ Chat query returned error: {error_msg}")
+                    else:
+                        logger.error(f"❌ Chat query returned no answer. Response: {response}")
+                    
                     assistant_msg = {
                         "role": "assistant",
                         "content": error_msg,
@@ -1140,11 +1141,7 @@ else:
                     "sources": []
                 })
         
-        # Clean up processing flag
-        if query_key in st.session_state:
-            del st.session_state[query_key]
-        
-        # CRITICAL: Force rerun to display the response
+        # CRITICAL: Force rerun to display both user message and response
         st.rerun()
     
     # JavaScript to fix prompt field position and avatar visibility
