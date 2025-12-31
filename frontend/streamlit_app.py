@@ -711,30 +711,29 @@ with st.sidebar:
                         st.session_state[f"show_menu_{conv.get('id')}"] = not st.session_state.get(f"show_menu_{conv.get('id')}", False)
                         st.rerun()
                 
-                # Show menu options when menu button is clicked
+                # Show menu options when menu button is clicked - OUTSIDE columns
                 if st.session_state.get(f"show_menu_{conv.get('id')}", False):
-                    with st.container():
-                        st.markdown("---")
-                        if st.button("✏️ Rename", key=f"rename_{conv.get('id')}", use_container_width=True):
-                            st.session_state[f"renaming_{conv.get('id')}"] = True
-                            st.session_state[f"show_menu_{conv.get('id')}"] = False
-                            st.rerun()
-                        
-                        if st.session_state.get(f"renaming_{conv.get('id')}", False):
-                            new_title = st.text_input("New name:", value=conv_title, key=f"rename_input_{conv.get('id')}")
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                if st.button("✓", key=f"save_rename_{conv.get('id')}"):
-                                    if new_title and new_title.strip():
-                                        if rename_conversation(conv.get('id'), new_title.strip()):
-                                            st.success("Renamed!")
-                                            st.session_state[f"renaming_{conv.get('id')}"] = False
-                                            st.rerun()
-                            with col2:
-                                if st.button("✕", key=f"cancel_rename_{conv.get('id')}"):
-                                    st.session_state[f"renaming_{conv.get('id')}"] = False
-                                    st.rerun()
-                        st.markdown("---")
+                    st.markdown("---")
+                    if st.button("✏️ Rename", key=f"rename_{conv.get('id')}", use_container_width=True):
+                        st.session_state[f"renaming_{conv.get('id')}"] = True
+                        st.session_state[f"show_menu_{conv.get('id')}"] = False
+                        st.rerun()
+                    
+                    if st.session_state.get(f"renaming_{conv.get('id')}", False):
+                        new_title = st.text_input("New name:", value=conv_title, key=f"rename_input_{conv.get('id')}")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("✓", key=f"save_rename_{conv.get('id')}"):
+                                if new_title and new_title.strip():
+                                    if rename_conversation(conv.get('id'), new_title.strip()):
+                                        st.success("Renamed!")
+                                        st.session_state[f"renaming_{conv.get('id')}"] = False
+                                        st.rerun()
+                        with col2:
+                            if st.button("✕", key=f"cancel_rename_{conv.get('id')}"):
+                                st.session_state[f"renaming_{conv.get('id')}"] = False
+                                st.rerun()
+                    st.markdown("---")
         else:
             st.info("No conversations yet. Start chatting!")
     except Exception as e:
@@ -884,15 +883,15 @@ else:
             sources_html = ""
             if role == "assistant" and "sources" in msg and msg["sources"]:
                 sources_list = ""
-                for i, source in enumerate(msg["sources"], 1):
+                            for i, source in enumerate(msg["sources"], 1):
                     sources_list += f"""
-                    <div class="source-box">
-                        <strong>Source {i}: {source['document_name']}</strong>
-                        {f"(Page {source['page']})" if source.get('page') else ""}
-                        <br>
-                        <em>Relevance: {source['relevance_score']:.2%}</em>
-                        <br><br>
-                        {source['chunk_text']}
+                                <div class="source-box">
+                                    <strong>Source {i}: {source['document_name']}</strong>
+                                    {f"(Page {source['page']})" if source.get('page') else ""}
+                                    <br>
+                                    <em>Relevance: {source['relevance_score']:.2%}</em>
+                                    <br><br>
+                                    {source['chunk_text']}
                     </div>
                     """
                 sources_html = f'<details style="margin-top: 8px;"><summary style="cursor: pointer; color: #8e8ea0;">📚 Sources</summary>{sources_list}</details>'
@@ -905,8 +904,8 @@ else:
             <div class="msg {msg_class}">
                 {escaped_content}
                 {sources_html}
-            </div>
-            """, unsafe_allow_html=True)
+                                </div>
+                                """, unsafe_allow_html=True)
     
     # File upload area - shown above chat input when "+" button is clicked
     if st.session_state.get("show_file_upload", False):
@@ -1004,17 +1003,17 @@ else:
             if not conv:
                 st.error("Failed to create conversation. Please try again.")
                 st.rerun()
-            st.session_state.current_conversation_id = conv.get("id")
-            # Immediately refresh conversations list
-            cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
-            try:
-                conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
-                st.session_state[cache_key] = conversations
-                st.session_state.conversations = conversations
-                st.session_state["last_gpt_for_conversations"] = st.session_state.selected_gpt
-                logger.info(f"✅ Created new conversation and refreshed list: {len(conversations)} conversations")
-            except Exception as e:
-                logger.warning(f"Could not refresh conversations list: {e}")
+                st.session_state.current_conversation_id = conv.get("id")
+                # Immediately refresh conversations list
+                cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+                try:
+                    conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                    st.session_state[cache_key] = conversations
+                    st.session_state.conversations = conversations
+                    st.session_state["last_gpt_for_conversations"] = st.session_state.selected_gpt
+                    logger.info(f"✅ Created new conversation and refreshed list: {len(conversations)} conversations")
+                except Exception as e:
+                    logger.warning(f"Could not refresh conversations list: {e}")
         
         # CRITICAL FIX: Add user message IMMEDIATELY and rerun to show it
         user_msg = {
@@ -1024,11 +1023,11 @@ else:
         st.session_state.chat_history.append(user_msg)
         
         # Save user message to backend
-        try:
-            api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
-                      json={"role": "user", "content": user_query, "sources": []})
-        except Exception as e:
-            logger.warning(f"Could not save user message to backend: {e}")
+            try:
+                api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
+                          json={"role": "user", "content": user_query, "sources": []})
+            except Exception as e:
+                logger.warning(f"Could not save user message to backend: {e}")
         
         # Rerun to show user message immediately
         st.rerun()
@@ -1092,10 +1091,36 @@ else:
         # CRITICAL: Force rerun to display the response
         st.rerun()
     
-    # JavaScript to fix avatar visibility only (CSS handles the rest)
+    # JavaScript to fix prompt field position and avatar visibility
     st.markdown("""
     <script>
     (function() {
+        function fixPromptFieldPosition() {
+            // CRITICAL: Force prompt field to bottom
+            const chatInput = document.querySelector('div[data-testid="stChatInputContainer"]');
+            if (chatInput) {
+                chatInput.style.position = 'fixed';
+                chatInput.style.bottom = '0';
+                chatInput.style.top = 'auto';
+                chatInput.style.left = '50%';
+                chatInput.style.transform = 'translateX(-50%)';
+                chatInput.style.width = 'min(980px, calc(100vw - 24px))';
+                chatInput.style.zIndex = '9999';
+                chatInput.style.margin = '0';
+                
+                // Remove any duplicate styling from inner elements
+                const innerElements = chatInput.querySelectorAll('div[data-testid="stChatInput"], form[data-testid="stChatInputForm"]');
+                innerElements.forEach(el => {
+                    el.style.position = 'static';
+                    el.style.left = 'auto';
+                    el.style.right = 'auto';
+                    el.style.background = 'transparent';
+                    el.style.border = '0';
+                    el.style.boxShadow = 'none';
+                });
+            }
+        }
+        
         function fixAvatarVisibility() {
             let avatar = document.querySelector('button[key="sidebar_avatar"]');
             if (!avatar) {
@@ -1137,9 +1162,19 @@ else:
             }
         }
         
-        fixAvatarVisibility();
-        setTimeout(fixAvatarVisibility, 100);
-        setTimeout(fixAvatarVisibility, 500);
+        function applyFixes() {
+            fixPromptFieldPosition();
+            fixAvatarVisibility();
+        }
+        
+        applyFixes();
+        setTimeout(applyFixes, 100);
+        setTimeout(applyFixes, 500);
+        setTimeout(applyFixes, 1000);
+        
+        // Watch for DOM changes
+        const observer = new MutationObserver(applyFixes);
+        observer.observe(document.body, { childList: true, subtree: true });
     })();
     </script>
     """, unsafe_allow_html=True)
