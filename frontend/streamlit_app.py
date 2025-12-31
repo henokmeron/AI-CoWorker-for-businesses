@@ -81,9 +81,11 @@ st.markdown("""
     }
     
     /* ONLY fix the container - this prevents white duplicate bar */
+    /* CRITICAL: Force to bottom of viewport */
     div[data-testid="stChatInputContainer"] {
         position: fixed !important;
         bottom: 0 !important;
+        top: auto !important;
         left: 50% !important;
         transform: translateX(-50%) !important;
         width: min(980px, calc(100vw - 24px)) !important;
@@ -92,6 +94,7 @@ st.markdown("""
         padding: 1rem !important;
         border-top: 3px solid #ffffff !important;
         box-shadow: 0 -4px 12px rgba(0,0,0,0.3) !important;
+        margin: 0 !important;
     }
     
     /* Make inner elements static/transparent to prevent duplication */
@@ -143,7 +146,7 @@ st.markdown("""
         border-radius: 12px 12px 12px 0 !important;
     }
     
-    /* CRITICAL FIX 3: Avatar visibility - BLUE COLOR, HIGHLY VISIBLE */
+    /* CRITICAL FIX 3: Avatar visibility - FORCE BLUE COLOR, HIGHLY VISIBLE */
     /* Target all possible avatar button selectors */
     button[key="sidebar_avatar"],
     div[data-testid="stButton"] > button[key="sidebar_avatar"],
@@ -152,7 +155,8 @@ st.markdown("""
     section[data-testid="stSidebar"] button:has-text("👤"),
     section[data-testid="stSidebar"] button:has-text("?"),
     section[data-testid="stSidebar"] button[aria-label*="avatar"],
-    section[data-testid="stSidebar"] button[aria-label*="Account"] {
+    section[data-testid="stSidebar"] button[aria-label*="Account"],
+    section[data-testid="stSidebar"] button[class*="sidebar_avatar"] {
         border-radius: 50% !important;
         width: 60px !important;
         height: 60px !important;
@@ -161,8 +165,8 @@ st.markdown("""
         padding: 0 !important;
         font-size: 24px !important;
         font-weight: 900 !important;
-        border: 4px solid #3b82f6 !important; /* Blue border */
-        background-color: var(--avatar-bg, #3b82f6) !important; /* Blue background */
+        border: 4px solid #3b82f6 !important; /* FORCE Blue border */
+        background-color: #3b82f6 !important; /* FORCE Blue background - override everything */
         color: #ffffff !important;
         display: flex !important;
         align-items: center !important;
@@ -707,27 +711,30 @@ with st.sidebar:
                         st.session_state[f"show_menu_{conv.get('id')}"] = not st.session_state.get(f"show_menu_{conv.get('id')}", False)
                         st.rerun()
                 
+                # Show menu options when menu button is clicked
                 if st.session_state.get(f"show_menu_{conv.get('id')}", False):
-                    st.markdown("---")
-                    if st.button("✏️ Rename", key=f"rename_{conv.get('id')}", use_container_width=True):
-                        st.session_state[f"renaming_{conv.get('id')}"] = True
-                        st.session_state[f"show_menu_{conv.get('id')}"] = False
-                        st.rerun()
-                    
-                    if st.session_state.get(f"renaming_{conv.get('id')}", False):
-                        new_title = st.text_input("New name:", value=conv_title, key=f"rename_input_{conv.get('id')}")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if st.button("✓", key=f"save_rename_{conv.get('id')}"):
-                                if new_title and new_title.strip():
-                                    if rename_conversation(conv.get('id'), new_title.strip()):
-                                        st.success("Renamed!")
-                                        st.session_state[f"renaming_{conv.get('id')}"] = False
-                                        st.rerun()
-                        with col2:
-                            if st.button("✕", key=f"cancel_rename_{conv.get('id')}"):
-                                st.session_state[f"renaming_{conv.get('id')}"] = False
-                                st.rerun()
+                    with st.container():
+                        st.markdown("---")
+                        if st.button("✏️ Rename", key=f"rename_{conv.get('id')}", use_container_width=True):
+                            st.session_state[f"renaming_{conv.get('id')}"] = True
+                            st.session_state[f"show_menu_{conv.get('id')}"] = False
+                            st.rerun()
+                        
+                        if st.session_state.get(f"renaming_{conv.get('id')}", False):
+                            new_title = st.text_input("New name:", value=conv_title, key=f"rename_input_{conv.get('id')}")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("✓", key=f"save_rename_{conv.get('id')}"):
+                                    if new_title and new_title.strip():
+                                        if rename_conversation(conv.get('id'), new_title.strip()):
+                                            st.success("Renamed!")
+                                            st.session_state[f"renaming_{conv.get('id')}"] = False
+                                            st.rerun()
+                            with col2:
+                                if st.button("✕", key=f"cancel_rename_{conv.get('id')}"):
+                                    st.session_state[f"renaming_{conv.get('id')}"] = False
+                                    st.rerun()
+                        st.markdown("---")
         else:
             st.info("No conversations yet. Start chatting!")
     except Exception as e:
@@ -754,7 +761,7 @@ with st.sidebar:
     button_type = "primary" if st.session_state.user_logged_in else "secondary"
     
     # Style the button to look like a circular avatar - FORCE BLUE COLOR
-    # Set CSS variables for avatar styling - ALWAYS BLUE
+    # Set CSS variables for avatar styling - ALWAYS BLUE with maximum specificity
     st.markdown("""
     <style>
         :root {
@@ -762,9 +769,18 @@ with st.sidebar:
             --avatar-hover: #2563eb;
             --avatar-border: #3b82f6;
         }
+        /* Maximum specificity to override Streamlit defaults */
+        section[data-testid="stSidebar"] button[key="sidebar_avatar"],
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button[key="sidebar_avatar"],
+        button[key="sidebar_avatar"][data-baseweb="button"],
         button[key="sidebar_avatar"] {
             background-color: #3b82f6 !important;
             border: 4px solid #3b82f6 !important;
+            background: #3b82f6 !important;
+        }
+        button[key="sidebar_avatar"]:hover {
+            background-color: #2563eb !important;
+            background: #2563eb !important;
         }
     </style>
     """, unsafe_allow_html=True)
