@@ -927,6 +927,17 @@ else:
             content = msg["content"]
             msg_class = "user" if role == "user" else "ai"
             
+            # CRITICAL: Strip any raw HTML source boxes from content (backend shouldn't include these)
+            import re
+            # Remove any source-box divs and related HTML from content
+            content = re.sub(r'<div class="source-box">.*?</div>', '', content, flags=re.DOTALL)
+            content = re.sub(r'📚 Sources\s*', '', content, flags=re.IGNORECASE)
+            content = re.sub(r'<details.*?Sources.*?</details>', '', content, flags=re.DOTALL | re.IGNORECASE)
+            # Clean up any remaining HTML tags that might have leaked in
+            content = re.sub(r'<[^>]+>', '', content)
+            # Clean up extra whitespace
+            content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content).strip()
+            
             # Render custom HTML div with class
             sources_html = ""
             if role == "assistant" and "sources" in msg and msg["sources"]:
@@ -1096,9 +1107,21 @@ else:
                 logger.info(f"📥 Received response: {response is not None}, has answer: {response and response.get('answer') is not None if response else False}")
                 
                 if response and response.get("answer"):
+                    # CRITICAL: Strip any HTML source boxes from answer text
+                    answer_text = response.get("answer", "I apologize, but I couldn't generate a response.")
+                    import re
+                    # Remove any source-box divs and related HTML from answer
+                    answer_text = re.sub(r'<div class="source-box">.*?</div>', '', answer_text, flags=re.DOTALL)
+                    answer_text = re.sub(r'📚 Sources\s*', '', answer_text, flags=re.IGNORECASE)
+                    answer_text = re.sub(r'<details.*?Sources.*?</details>', '', answer_text, flags=re.DOTALL | re.IGNORECASE)
+                    # Remove any other HTML tags that might have leaked in
+                    answer_text = re.sub(r'<[^>]+>', '', answer_text)
+                    # Clean up extra whitespace
+                    answer_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', answer_text).strip()
+                    
                     assistant_msg = {
                         "role": "assistant",
-                        "content": response.get("answer", "I apologize, but I couldn't generate a response."),
+                        "content": answer_text,
                         "sources": response.get("sources", [])
                     }
                     st.session_state.chat_history.append(assistant_msg)
