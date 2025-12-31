@@ -450,6 +450,18 @@ def rename_conversation(conversation_id: str, new_title: str) -> bool:
     return response and response.status_code == 200
 
 
+def archive_conversation(conversation_id: str) -> bool:
+    """Archive a conversation."""
+    response = api_request("POST", f"/api/v1/conversations/{conversation_id}/archive")
+    return response and response.status_code == 200
+
+
+def delete_conversation(conversation_id: str) -> bool:
+    """Delete a conversation."""
+    response = api_request("DELETE", f"/api/v1/conversations/{conversation_id}")
+    return response and response.status_code == 200
+
+
 def get_user_initials():
     """Get user initials for avatar."""
     if st.session_state.user_logged_in and st.session_state.user_name:
@@ -719,6 +731,42 @@ with st.sidebar:
                         st.session_state[f"show_menu_{conv.get('id')}"] = False
                         st.rerun()
                     
+                    if st.button("📦 Archive", key=f"archive_{conv.get('id')}", use_container_width=True):
+                        if archive_conversation(conv.get('id')):
+                            st.success("Conversation archived!")
+                            st.session_state[f"show_menu_{conv.get('id')}"] = False
+                            # Refresh conversations list
+                            cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+                            try:
+                                conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                                st.session_state[cache_key] = conversations
+                                st.session_state.conversations = conversations
+                            except:
+                                pass
+                            st.rerun()
+                    
+                    if st.button("🗑️ Delete", key=f"delete_{conv.get('id')}", use_container_width=True):
+                        if delete_conversation(conv.get('id')):
+                            st.success("Conversation deleted!")
+                            st.session_state[f"show_menu_{conv.get('id')}"] = False
+                            # Clear current conversation if it was deleted
+                            if st.session_state.current_conversation_id == conv.get('id'):
+                                st.session_state.current_conversation_id = None
+                                st.session_state.chat_history = []
+                            # Refresh conversations list
+                            cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+                            try:
+                                conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                                st.session_state[cache_key] = conversations
+                                st.session_state.conversations = conversations
+                            except:
+                                pass
+                            st.rerun()
+                    
+                    if st.button("✕ Close", key=f"close_menu_{conv.get('id')}", use_container_width=True):
+                        st.session_state[f"show_menu_{conv.get('id')}"] = False
+                        st.rerun()
+                    
                     if st.session_state.get(f"renaming_{conv.get('id')}", False):
                         new_title = st.text_input("New name:", value=conv_title, key=f"rename_input_{conv.get('id')}")
                         col1, col2 = st.columns(2)
@@ -883,15 +931,15 @@ else:
             sources_html = ""
             if role == "assistant" and "sources" in msg and msg["sources"]:
                 sources_list = ""
-                            for i, source in enumerate(msg["sources"], 1):
+                for i, source in enumerate(msg["sources"], 1):
                     sources_list += f"""
-                                <div class="source-box">
-                                    <strong>Source {i}: {source['document_name']}</strong>
-                                    {f"(Page {source['page']})" if source.get('page') else ""}
-                                    <br>
-                                    <em>Relevance: {source['relevance_score']:.2%}</em>
-                                    <br><br>
-                                    {source['chunk_text']}
+                    <div class="source-box">
+                        <strong>Source {i}: {source['document_name']}</strong>
+                        {f"(Page {source['page']})" if source.get('page') else ""}
+                        <br>
+                        <em>Relevance: {source['relevance_score']:.2%}</em>
+                        <br><br>
+                        {source['chunk_text']}
                     </div>
                     """
                 sources_html = f'<details style="margin-top: 8px;"><summary style="cursor: pointer; color: #8e8ea0;">📚 Sources</summary>{sources_list}</details>'
