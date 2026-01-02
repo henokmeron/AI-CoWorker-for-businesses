@@ -1321,31 +1321,17 @@ else:
             content = re.sub(r'\s{3,}', ' ', content)  # Multiple spaces to single
             content = content.strip()
             
-            # Render custom HTML div with class
+            # ✅ Do NOT render sources inside the chat bubble (prevents <div class="source-box">… output)
+            # Sources are kept in msg["sources"] for potential future use, but not displayed in chat UI
             sources_html = ""
-            if role == "assistant" and "sources" in msg and msg["sources"]:
-                sources_list = ""
-                for i, source in enumerate(msg["sources"], 1):
-                    sources_list += f"""
-                    <div class="source-box">
-                        <strong>Source {i}: {source['document_name']}</strong>
-                        {f"(Page {source['page']})" if source.get('page') else ""}
-                        <br>
-                        <em>Relevance: {source['relevance_score']:.2%}</em>
-                        <br><br>
-                        {source['chunk_text']}
-                    </div>
-                    """
-                sources_html = f'<details style="margin-top: 8px;"><summary style="cursor: pointer; color: #8e8ea0;">📚 Sources</summary>{sources_list}</details>'
             
-            # Escape HTML in content but allow sources
+            # Escape HTML in content
             import html
             escaped_content = html.escape(content).replace('\n', '<br>')
             
             st.markdown(f"""
             <div class="msg {msg_class}">
                 {escaped_content}
-                {sources_html}
             </div>
             """, unsafe_allow_html=True)
     
