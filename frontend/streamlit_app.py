@@ -1454,36 +1454,6 @@ else:
                         st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
                         st.session_state.show_file_upload = False
                         st.rerun()
-                
-                # CRITICAL FIX: Force conversation_id before upload
-                if not st.session_state.current_conversation_id:
-                    # Create conversation immediately
-                    conv_title = f"Chat {datetime.now().strftime('%I:%M %p')}"
-                    conv = create_conversation(st.session_state.selected_gpt, title=conv_title)
-                    if conv:
-                        st.session_state.current_conversation_id = conv.get("id")
-                
-                # Use conversation_id as business_id for document isolation
-                if not st.session_state.current_conversation_id:
-                    st.error("Please start a conversation first before uploading documents.")
-                    # Clear pending upload
-                    if upload_state_key in st.session_state:
-                        del st.session_state[upload_state_key]
-                    st.stop()  # Stop execution instead of return
-                
-                business_id = st.session_state.current_conversation_id
-                file_key = f"processed_{business_id}_{upload_info['name']}_{upload_info['size']}"
-                
-                if file_key not in st.session_state:
-                    # Mark as processing immediately to prevent duplicate processing
-                    st.session_state[upload_state_key]["processed"] = True
-                    
-                    # Process file immediately (file object is available now)
-                    with st.spinner(f"📤 Uploading and processing {upload_info['name']}... This may take a moment."):
-                        try:
-                            # Read file content now while object is available
-                            result = upload_document(business_id, uploaded_file)
-                                if result and (not isinstance(result, dict) or "error" not in result):
                                     st.success(f"✅ {upload_info['name']} processed successfully!")
                                     # Add confirmation message to chat
                                     confirmation_msg = {
