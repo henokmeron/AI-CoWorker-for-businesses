@@ -1347,7 +1347,22 @@ else:
                 help="Supported: PDF, DOCX, TXT, XLSX"
             )
             
+            # Store uploaded file in session state to persist across reruns
+            upload_state_key = f"pending_upload_{upload_key}"
             if uploaded_file:
+                if upload_state_key not in st.session_state:
+                    st.session_state[upload_state_key] = {
+                        "name": uploaded_file.name,
+                        "size": uploaded_file.size,
+                        "file_obj": uploaded_file,  # Store file object
+                        "processed": False
+                    }
+            
+            # Process pending uploads (persist across reruns)
+            if upload_state_key in st.session_state and not st.session_state[upload_state_key]["processed"]:
+                upload_info = st.session_state[upload_state_key]
+                uploaded_file = upload_info.get("file_obj")  # Get stored file object
+                
                 # CRITICAL FIX: Force conversation_id before upload
                 if not st.session_state.current_conversation_id:
                     # Create conversation immediately
@@ -1359,46 +1374,80 @@ else:
                 # Use conversation_id as business_id for document isolation
                 if not st.session_state.current_conversation_id:
                     st.error("Please start a conversation first before uploading documents.")
-                    st.rerun()
+                    # Clear pending upload
+                    if upload_state_key in st.session_state:
+                        del st.session_state[upload_state_key]
+                    return
                 
                 business_id = st.session_state.current_conversation_id
-                file_key = f"processed_{business_id}_{uploaded_file.name}_{uploaded_file.size}"
+                file_key = f"processed_{business_id}_{upload_info['name']}_{upload_info['size']}"
                 
                 if file_key not in st.session_state:
-                    st.session_state[file_key] = True
-                    with st.spinner(f"Processing {uploaded_file.name}..."):
-                        result = upload_document(business_id, uploaded_file)
-                        if result and not isinstance(result, dict) or (isinstance(result, dict) and "error" not in result):
-                            st.success(f"✅ {uploaded_file.name} processed!")
-                            # Add confirmation message to chat
-                            confirmation_msg = {
-                                "role": "assistant",
-                                "content": f"I've processed '{uploaded_file.name}'. You can now ask me questions about it!",
-                                "sources": []
-                            }
-                            st.session_state.chat_history.append(confirmation_msg)
-                            
-                            # Save confirmation message to backend if we have a conversation
-                            if st.session_state.current_conversation_id:
-                                try:
-                                    api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages", 
-                                              json={"role": "assistant", "content": confirmation_msg["content"], "sources": []})
-                                except:
-                                    pass
-                            
-                            st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
-                            st.session_state.show_file_upload = False
-                            st.rerun()
-                        else:
-                            error_msg = f"❌ Failed to process {uploaded_file.name}"
-                            if isinstance(result, dict) and "error" in result:
-                                error_detail = result["error"]
-                                error_msg += f"\n\nError: {error_detail}"
-                            st.error(error_msg)
-                            if file_key in st.session_state:
-                                del st.session_state[file_key]
+                    # Mark as processing
+                    st.session_state[upload_state_key]["processed"] = True
+                    
+                    if uploaded_file:  # Only process if file object is still available
+                        with st.spinner(f"📤 Uploading and processing {upload_info['name']}... This may take a moment."):
+                            try:
+                                result = upload_document(business_id, uploaded_file)
+                                if result and (not isinstance(result, dict) or "error" not in result):
+                                    st.success(f"✅ {upload_info['name']} processed successfully!")
+                                    # Add confirmation message to chat
+                                    confirmation_msg = {
+                                        "role": "assistant",
+                                        "content": f"I've processed '{upload_info['name']}'. You can now ask me questions about it!",
+                                        "sources": []
+                                    }
+                                    st.session_state.chat_history.append(confirmation_msg)
+                                    
+                                    # Save confirmation message to backend if we have a conversation
+                                    if st.session_state.current_conversation_id:
+                                        try:
+                                            api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages", 
+                                                      json={"role": "assistant", "content": confirmation_msg["content"], "sources": []})
+                                        except:
+                                            pass
+                                    
+                                    # Mark file as processed
+                                    st.session_state[file_key] = True
+                                    
+                                    # Clean up and close upload area
+                                    if upload_state_key in st.session_state:
+                                        del st.session_state[upload_state_key]
+                                    st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
+                                    st.session_state.show_file_upload = False
+                                    
+                                    # Small delay before rerun to ensure message is visible
+                                    import time
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    error_msg = f"❌ Failed to process {upload_info['name']}"
+                                    if isinstance(result, dict) and "error" in result:
+                                        error_detail = result["error"]
+                                        error_msg += f"\n\nError: {error_detail}"
+                                    st.error(error_msg)
+                                    
+                                    # Reset upload state to allow retry
+                                    if upload_state_key in st.session_state:
+                                        del st.session_state[upload_state_key]
+                                    if file_key in st.session_state:
+                                        del st.session_state[file_key]
+                            except Exception as e:
+                                logger.error(f"Upload exception: {e}", exc_info=True)
+                                st.error(f"❌ Upload failed: {str(e)}")
+                                # Reset upload state
+                                if upload_state_key in st.session_state:
+                                    del st.session_state[upload_state_key]
+                    else:
+                        st.error("File object lost. Please try uploading again.")
+                        if upload_state_key in st.session_state:
+                            del st.session_state[upload_state_key]
                 else:
-                    st.info(f"ℹ️ {uploaded_file.name} was already processed.")
+                    st.info(f"ℹ️ {upload_info['name']} was already processed.")
+                    # Clean up
+                    if upload_state_key in st.session_state:
+                        del st.session_state[upload_state_key]
                     st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
                     st.session_state.show_file_upload = False
                     st.rerun()
@@ -1407,6 +1456,10 @@ else:
             with col1:
                 if st.button("✕", key="close_file_upload_btn", help="Close"):
                     st.session_state.show_file_upload = False
+                    # Clear any pending uploads
+                    upload_state_key = f"pending_upload_{upload_key}"
+                    if upload_state_key in st.session_state:
+                        del st.session_state[upload_state_key]
                     st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
     
