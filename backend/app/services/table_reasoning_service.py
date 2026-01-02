@@ -99,19 +99,24 @@ class TableReasoningService:
         """
         xls = None
         try:
-            logger.info(f"📊 Ingesting XLSX: {filename} (business_id={business_id}, document_id={document_id})")
+            logger.info(f"📊 TABLE INGESTION START: {filename} (business_id='{business_id}', document_id='{document_id}')")
             
             # Verify file exists and is readable
             if not os.path.exists(filepath):
-                logger.error(f"File does not exist: {filepath}")
+                logger.error(f"❌ TABLE INGESTION FAILED: File does not exist: {filepath}")
                 return {
                     "success": False,
                     "error": f"File not found: {filepath}",
                     "sheets_ingested": 0
                 }
             
+            file_size = os.path.getsize(filepath)
+            logger.info(f"📊 File exists: {filepath} ({file_size} bytes)")
+            
             # Open Excel file - CRITICAL: Must be closed explicitly
+            logger.info(f"📊 Opening Excel file with openpyxl engine...")
             xls = pd.ExcelFile(filepath, engine='openpyxl')
+            logger.info(f"📊 Excel file opened. Sheet names: {xls.sheet_names}")
             ingested_sheets = []
             
             try:
@@ -130,38 +135,46 @@ class TableReasoningService:
                             logger.warning(f"   ⚠️  Sheet '{sheet_name}' is empty, skipping")
                             continue
                         
-                        # Infer schema
-                        schema = self._infer_schema(df, filename, sheet_name)
+                    # Infer schema (includes coverage_entities extraction)
+                    logger.info(f"   🔍 Inferring schema for sheet '{sheet_name}'...")
+                    schema = self._infer_schema(df, filename, sheet_name)
+                    coverage_count = len(schema.get("coverage_entities", []))
+                    logger.info(f"   ✅ Schema inferred: {len(schema['columns'])} columns, {coverage_count} coverage entities")
+                    
+                    # Create storage directory
+                    base_dir = self.storage_base / business_id / document_id
+                    base_dir.mkdir(parents=True, exist_ok=True)
+                    logger.info(f"   💾 Storage directory: {base_dir}")
+                    
+                    # Safe filename for storage
+                    safe_sheet = self._safe_name(sheet_name)
+                    parquet_path = base_dir / f"{safe_sheet}.parquet"
+                    schema_path = base_dir / f"{safe_sheet}.schema.json"
+                    
+                    # Save parquet and schema
+                    logger.info(f"   💾 Saving parquet: {parquet_path}")
+                    df.to_parquet(str(parquet_path), index=False)
+                    logger.info(f"   💾 Saving schema: {schema_path}")
+                    with open(schema_path, "w", encoding="utf-8") as f:
+                        json.dump(schema, f, ensure_ascii=False, indent=2)
+                    
+                    logger.info(f"   ✅ Sheet '{sheet_name}': {len(df)} rows, {len(df.columns)} cols, {coverage_count} entities → {parquet_path}")
                         
-                        # Create storage directory
-                        base_dir = self.storage_base / business_id / document_id
-                        base_dir.mkdir(parents=True, exist_ok=True)
-                        
-                        # Safe filename for storage
-                        safe_sheet = self._safe_name(sheet_name)
-                        parquet_path = base_dir / f"{safe_sheet}.parquet"
-                        schema_path = base_dir / f"{safe_sheet}.schema.json"
-                        
-                        # Save parquet and schema
-                        df.to_parquet(str(parquet_path), index=False)
-                        with open(schema_path, "w", encoding="utf-8") as f:
-                            json.dump(schema, f, ensure_ascii=False, indent=2)
-                        
-                        logger.info(f"   ✅ Sheet '{sheet_name}': {len(df)} rows, {len(df.columns)} cols → {parquet_path}")
-                        
-                        # Index schema embedding
-                        embed_text = self._schema_to_embed_text(schema)
-                        self.vector_store.upsert_table_sheet(
-                            business_id=business_id,
-                            text=embed_text,
-                            metadata={
-                                "document_id": document_id,
-                                "filename": filename,
-                                "sheet_name": sheet_name,
-                                "parquet_path": str(parquet_path),
-                                "schema_path": str(schema_path),
-                            }
-                        )
+                    # Index schema embedding (includes coverage entities)
+                    embed_text = self._schema_to_embed_text(schema)
+                    logger.info(f"   🔍 Indexing schema embedding for sheet '{sheet_name}' in vector store...")
+                    self.vector_store.upsert_table_sheet(
+                        business_id=business_id,
+                        text=embed_text,
+                        metadata={
+                            "document_id": document_id,
+                            "filename": filename,
+                            "sheet_name": sheet_name,
+                            "parquet_path": str(parquet_path),
+                            "schema_path": str(schema_path),
+                        }
+                    )
+                    logger.info(f"   ✅ Schema indexed in vector store for business_id='{business_id}'")
                         
                         ingested_sheets.append({
                             "sheet_name": sheet_name,
@@ -175,7 +188,21 @@ class TableReasoningService:
                         logger.error(f"   ❌ Error processing sheet '{sheet_name}': {e}", exc_info=True)
                         continue
                 
-                logger.info(f"✅ Ingested {len(ingested_sheets)} sheets from {filename}")
+                logger.info(f"✅ TABLE INGESTION COMPLETE: {len(ingested_sheets)} sheets ingested from {filename} for business_id='{business_id}'")
+                # Log coverage entities summary
+                total_entities = 0
+                for sheet_info in ingested_sheets:
+                    schema_path = sheet_info.get("schema_path")
+                    if schema_path and os.path.exists(schema_path):
+                        try:
+                            with open(schema_path, "r", encoding="utf-8") as f:
+                                schema = json.load(f)
+                                entities = schema.get("coverage_entities", [])
+                                total_entities += len(entities)
+                                logger.info(f"   📋 Sheet '{sheet_info['sheet_name']}': {len(entities)} coverage entities")
+                        except:
+                            pass
+                logger.info(f"✅ Total coverage entities extracted: {total_entities}")
                 return {
                     "success": True,
                     "sheets_ingested": len(ingested_sheets),
@@ -191,11 +218,12 @@ class TableReasoningService:
                         logger.warning(f"Could not close ExcelFile: {e}")
             
         except Exception as e:
-            logger.error(f"❌ Error ingesting XLSX {filename}: {e}", exc_info=True)
+            logger.error(f"❌ TABLE INGESTION FAILED for {filename}: {e}", exc_info=True)
             # Ensure file is closed even on error
             if xls is not None:
                 try:
                     xls.close()
+                    logger.debug(f"✅ Closed ExcelFile handle after error")
                 except:
                     pass
             return {

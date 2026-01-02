@@ -93,9 +93,13 @@ async def upload_document(
             detail="Document processor has no file handlers. Cannot process uploaded files."
         )
     
+    # CRITICAL: Log upload start
+    logger.info(f"📤 UPLOAD START: business_id='{business_id}', filename='{file.filename}'")
+    
     try:
         # Validate filename is present
         if not file.filename:
+            logger.error("❌ Upload rejected: Missing filename")
             raise HTTPException(
                 status_code=400,
                 detail="File filename is missing. Please ensure the file has a name."
@@ -104,8 +108,10 @@ async def upload_document(
         # Validate file size
         contents = await file.read()
         file_size = len(contents)
+        logger.info(f"📦 File size: {file_size} bytes")
         
         if file_size == 0:
+            logger.error("❌ Upload rejected: Empty file")
             raise HTTPException(
                 status_code=400,
                 detail="File is empty. Please upload a file with content."
@@ -118,6 +124,7 @@ async def upload_document(
         )
         
         if not is_allowed:
+            logger.error(f"❌ Upload rejected: {error_msg}")
             raise HTTPException(status_code=400, detail=error_msg)
         
         # Save to temp file first (use /tmp in production, tempfile in local)
@@ -141,32 +148,47 @@ async def upload_document(
             f.write(contents)
         
         # Save to business directory
+        logger.info(f"💾 Saving document to persistent storage for business_id='{business_id}'")
         saved_path = doc_processor.save_document(
             temp_path,
             business_id,
             file.filename
         )
+        logger.info(f"✅ Document saved to: {saved_path}")
         
         # Process document (this generates document_id)
-        logger.info(f"Processing document: {file.filename}")
+        logger.info(f"🔄 Processing document: {file.filename} for business_id='{business_id}'")
         result = doc_processor.process_document(
             saved_path,
             business_id,
             metadata={"original_filename": file.filename}
         )
         
+        if not result or not result.get("document_id"):
+            logger.error(f"❌ Document processing failed: No document_id generated")
+            raise HTTPException(
+                status_code=500,
+                detail="Document processing failed: Could not generate document ID"
+            )
+        
+        document_id = result.get("document_id")
+        logger.info(f"✅ Document processed: document_id='{document_id}', chunks={len(result.get('chunks', []))}")
+        
         # Check if file is tabular (XLSX/CSV) for table reasoning
-        # Do this AFTER processing to get document_id
+        # CRITICAL: Table ingestion MUST run for tabular files
         file_ext = get_file_extension(file.filename).lower()
         is_tabular = file_ext in ['xlsx', 'xls', 'csv']
-        document_id = result.get("document_id")
+        logger.info(f"📊 File type check: extension='{file_ext}', is_tabular={is_tabular}")
         
         # Ingest table if tabular (in addition to normal processing)
+        # CRITICAL: This MUST run - do not skip
         table_ingestion_result = None
-        if is_tabular and document_id:
+        if is_tabular:
+            logger.info(f"📊 Starting table ingestion for {file.filename} (business_id='{business_id}', document_id='{document_id}')")
             try:
                 table_service = get_table_reasoning_service()
                 if file_ext in ['xlsx', 'xls']:
+                    logger.info(f"📊 Calling ingest_xlsx for {file.filename}")
                     table_ingestion_result = table_service.ingest_xlsx(
                         business_id=business_id,
                         document_id=document_id,
@@ -174,20 +196,34 @@ async def upload_document(
                         filepath=saved_path
                     )
                 elif file_ext == 'csv':
+                    logger.info(f"📊 Calling ingest_csv for {file.filename}")
                     table_ingestion_result = table_service.ingest_csv(
                         business_id=business_id,
                         document_id=document_id,
                         filename=file.filename,
                         filepath=saved_path
                     )
-                if table_ingestion_result and table_ingestion_result.get("success"):
-                    logger.info(f"✅ Table ingestion: {table_ingestion_result.get('sheets_ingested', 0)} sheets")
+                
+                if table_ingestion_result:
+                    if table_ingestion_result.get("success"):
+                        sheets_ingested = table_ingestion_result.get('sheets_ingested', 0)
+                        logger.info(f"✅ Table ingestion SUCCESS: {sheets_ingested} sheets ingested for business_id='{business_id}'")
+                    else:
+                        error = table_ingestion_result.get("error", "Unknown error")
+                        logger.error(f"❌ Table ingestion FAILED: {error}")
+                        # Don't fail the whole upload, but log the error
+                else:
+                    logger.error(f"❌ Table ingestion returned None for {file.filename}")
             except Exception as e:
-                logger.warning(f"Table ingestion failed (continuing with normal processing): {e}", exc_info=True)
+                logger.error(f"❌ Table ingestion EXCEPTION: {e}", exc_info=True)
                 # Continue with normal processing even if table ingestion fails
+                # But log it as an error
+        else:
+            logger.info(f"📄 File is not tabular, skipping table ingestion")
         
         # Store in vector database - REQUIRED step
-        logger.info(f"Storing {len(result['chunks'])} chunks in vector database")
+        chunks = result.get('chunks', [])
+        logger.info(f"💾 Storing {len(chunks)} chunks in vector database for business_id='{business_id}'")
         
         # Validate we have chunks to store
         if not result.get("chunks") or len(result["chunks"]) == 0:
@@ -394,13 +430,19 @@ async def upload_document(
                     logger.warning(f"Could not remove temp file {temp_path}: {e}")
                     break
         
-        logger.info(f"✅ Successfully uploaded and processed: {file.filename} ({doc.chunk_count} chunks, saved to {saved_path})")
+        # CRITICAL: Log final success with all details
+        logger.info(f"✅ UPLOAD COMPLETE: business_id='{business_id}', document_id='{doc.id}', filename='{doc.filename}', chunks={doc.chunk_count}, table_sheets={table_ingestion_result.get('sheets_ingested', 0) if table_ingestion_result else 0}")
+        
+        message = f"Document processed successfully with {doc.chunk_count} chunks"
+        if table_ingestion_result and table_ingestion_result.get("success"):
+            sheets_count = table_ingestion_result.get('sheets_ingested', 0)
+            message += f" and {sheets_count} table sheet(s) indexed"
         
         return DocumentUploadResponse(
             document_id=doc.id,
             filename=doc.filename,
             status=doc.status,
-            message=f"Document processed successfully with {doc.chunk_count} chunks"
+            message=message
         )
         
     except Exception as e:
