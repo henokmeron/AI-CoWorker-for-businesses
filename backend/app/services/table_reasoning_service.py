@@ -317,7 +317,10 @@ class TableReasoningService:
             }
     
     def _extract_entity_from_query(self, query: str) -> Optional[str]:
-        """Extract entity (LA/council name) from query."""
+        """
+        Extract entity (LA/council name) from query.
+        Made more aggressive to catch patterns like "from Redbridge", "Redbridge LA", etc.
+        """
         # Pattern: "from Redbridge" or "Redbridge LA" or "Redbridge Council"
         patterns = [
             r"(?:from|for)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*(?:LA|local authority|council)?",
@@ -330,8 +333,22 @@ class TableReasoningService:
             if match:
                 entity = match.group(1).strip()
                 if len(entity) > 2:
+                    logger.info(f"🔍 Extracted entity from query: '{entity}'")
                     return entity
         
+        # Fallback: Look for capitalized words that might be LA names
+        words = query.split()
+        for i, word in enumerate(words):
+            # Check if word is capitalized and might be an LA name
+            if word[0].isupper() and len(word) >= 4 and word.lower() not in ["from", "the", "for", "and", "with", "this", "that", "what", "which"]:
+                # Check if next word is "LA", "Council", etc.
+                if i + 1 < len(words):
+                    next_word = words[i + 1].lower()
+                    if next_word in ["la", "council", "borough", "authority"]:
+                        logger.info(f"🔍 Extracted entity from query (fallback): '{word}'")
+                        return word
+        
+        logger.debug(f"🔍 No entity extracted from query: '{query[:50]}...'")
         return None
     
     def _fuzzy_match_entity(self, entity: str, coverage_list: List[str], threshold: float = 0.6) -> Tuple[bool, List[str]]:
