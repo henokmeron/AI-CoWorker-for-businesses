@@ -64,7 +64,8 @@ async def chat(
                 if table_service.should_use_table(request.query, has_tabular_uploads):
                     logger.info("📊 Query matches table reasoning triggers, attempting table reasoning...")
                     table_result = table_service.answer_from_tables(business_id, request.query)
-                    if table_result and table_result.get("confidence", 0) >= 0.6:
+                    # Use table result if confidence is high enough (0.5+) and not a clarification request
+                    if table_result and table_result.get("confidence", 0) >= 0.5 and not table_result.get("needs_clarification", False):
                         logger.info("✅ Table reasoning succeeded with high confidence")
                         # Use table result
                         result = {

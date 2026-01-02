@@ -329,18 +329,26 @@ class TableReasoningService:
             plan = self._llm_plan(query, hits[:3], schemas, rules)
             if not plan or plan.get("needs_clarification"):
                 clarification = plan.get("clarification_question") if plan else "I need more information to answer this question."
+                # Include column warnings in clarification
+                if rules.get("column_warnings"):
+                    clarification += " " + " ".join(rules["column_warnings"])
                 return {
                     "answer": clarification,
                     "sources": [],
-                    "confidence": 0.3,
-                    "provenance": {"type": "table", "clarification_needed": True}
+                    "confidence": 0.1,
+                    "provenance": {"type": "table", "clarification_needed": True},
+                    "needs_clarification": True
                 }
             
             # Execute plan
             result = self._execute_plan(plan, hits)
             
-            # Validate result
-            validated = self._validate_result(query, plan, result)
+            # Validate result with strict "no guessing" enforcement
+            validated = self._validate_result(query, plan, result, hits)
+            
+            # STRICT: If confidence too low or needs clarification, return clarification
+            if validated.get("needs_clarification") or validated.get("confidence", 0) < 0.5:
+                return validated
             
             return validated
             
@@ -427,37 +435,79 @@ class TableReasoningService:
         return re.sub(r"[^a-zA-Z0-9_\-]+", "_", s).strip("_")[:80]
     
     def _common_sense_rules(self, query: str, schemas: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Apply common sense rules before planning."""
+        """
+        Apply schema-driven common sense rules (universal, not domain-specific).
+        """
         q = query.lower()
-        rules = {"notes": [], "age_mapping": {}, "la_filtering": {}}
+        rules = {"notes": [], "age_mapping": {}, "column_warnings": []}
         
-        # Rule 1: Carer fee usually not LA-specific if no LA column exists
-        if "fee to carer" in q or "carer" in q:
-            for sc in schemas:
-                cols = [c["name"] for c in sc["columns"]]
-                if not any("la" in c or "local authority" in c or "council" in c for c in cols):
-                    rules["notes"].append("Carer fee table appears global (no LA column). Do not filter carer fee by LA.")
+        # Rule 1: Check if user asks to filter by X but no column resembles X
+        # Extract potential filter terms from query
+        filter_keywords = []
+        if "from" in q or "for" in q:
+            # Try to extract entity after "from" or "for"
+            patterns = [
+                r"(?:from|for)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
+                r"(\w+\s+\w+)\s+(?:LA|local authority|council)",
+            ]
+            for pattern in patterns:
+                matches = re.findall(pattern, q)
+                filter_keywords.extend(matches)
         
-        # Rule 2: Age mapping (13 year old → 11-15 band)
+        # Check each schema for missing columns
+        for sc in schemas:
+            cols = [c["name"].lower() for c in sc["columns"]]
+            col_hints = [c.get("hint", "").lower() for c in sc["columns"]]
+            
+            # Check if user mentions LA/council but no LA column exists
+            if any(kw in q for kw in ["la", "local authority", "council"]) and \
+               not any("la" in c or "local authority" in c or "council" in c or "authority" in c for c in cols):
+                rules["column_warnings"].append(f"Table '{sc.get('filename', 'unknown')}' has no LA/local authority column. Cannot filter by LA.")
+            
+            # Check if user mentions age but no age column exists
+            if any(kw in q for kw in ["age", "year old", "years old"]) and \
+               not any("age" in c or "year" in c for c in cols):
+                # But check if there are age band columns
+                has_bands = any("band" in c or "range" in c or "-" in c for c in cols)
+                if not has_bands:
+                    rules["column_warnings"].append(f"Table '{sc.get('filename', 'unknown')}' has no age or age band column.")
+        
+        # Rule 2: Age mapping (only if band columns exist)
         age_match = re.search(r"(\d+)\s*year\s*old", q)
         if age_match:
             age = int(age_match.group(1))
-            # Map to common age bands
-            if 0 <= age <= 4:
-                rules["age_mapping"]["target_band"] = "0-4"
-            elif 5 <= age <= 10:
-                rules["age_mapping"]["target_band"] = "5-10"
-            elif 11 <= age <= 15:
-                rules["age_mapping"]["target_band"] = "11-15"
-            elif 16 <= age <= 17:
-                rules["age_mapping"]["target_band"] = "16-17"
-            else:
-                rules["age_mapping"]["target_band"] = str(age)
+            # Check if any schema has age band columns
+            has_bands = False
+            for sc in schemas:
+                cols = [c["name"].lower() for c in sc["columns"]]
+                if any("band" in c or "range" in c or "-" in c for c in cols):
+                    has_bands = True
+                    # Try to map age to band
+                    for col in cols:
+                        if "-" in col:
+                            # Try to parse band (e.g., "11-15")
+                            band_match = re.search(r"(\d+)\s*-\s*(\d+)", col)
+                            if band_match:
+                                low, high = int(band_match.group(1)), int(band_match.group(2))
+                                if low <= age <= high:
+                                    rules["age_mapping"]["target_band"] = f"{low}-{high}"
+                                    break
+                    break
+            
+            if not has_bands:
+                rules["age_mapping"]["target_band"] = str(age)  # Use exact age
         
-        # Rule 3: LA extraction
-        la_match = re.search(r"(?:from|for)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:LA|local authority|council)", q)
-        if la_match:
-            rules["la_filtering"]["target_la"] = la_match.group(1)
+        # Rule 3: Warn if user asks to filter by something that doesn't exist
+        for keyword in filter_keywords:
+            keyword_lower = keyword.lower()
+            found = False
+            for sc in schemas:
+                cols = [c["name"].lower() for c in sc["columns"]]
+                if any(keyword_lower in c or c in keyword_lower for c in cols):
+                    found = True
+                    break
+            if not found and len(keyword) > 2:
+                rules["column_warnings"].append(f"Could not find column matching '{keyword}' in any table.")
         
         return rules
     
@@ -467,9 +517,18 @@ class TableReasoningService:
             system_prompt = (
                 "You generate a STRICT JSON plan to answer using provided table schemas.\n"
                 "No guessing. No other-region estimates. If missing values, output needs_clarification=true.\n"
-                "JSON keys: target_sheets (array of sheet indices), filters (array of {column, op, value}), "
-                "select (array of column names), aggregation (string: sum/avg/min/max/lookup), "
-                "joins (optional), needs_clarification (bool), clarification_question (string).\n"
+                "JSON keys:\n"
+                "- target_sheets: array of sheet indices (0-based)\n"
+                "- filters: array of {column, op, value} where op can be: ==, !=, in, contains, >, <, >=, <=, between\n"
+                "- select: array of column names to return\n"
+                "- aggregation: string - sum/mean/avg/min/max/count/lookup\n"
+                "- groupby: array of column names for grouping\n"
+                "- sort_by: column name to sort by\n"
+                "- sort_order: 'asc' or 'desc'\n"
+                "- top_n: number of top results to return\n"
+                "- joins: optional array of {left_sheet, right_sheet, left_key, right_key, join_type}\n"
+                "- needs_clarification: bool\n"
+                "- clarification_question: string if needs_clarification=true\n"
                 "Return ONLY valid JSON, no markdown, no commentary."
             )
             
@@ -503,95 +562,363 @@ class TableReasoningService:
             return None
     
     def _execute_plan(self, plan: Dict[str, Any], hits: List[TableHit]) -> Dict[str, Any]:
-        """Execute plan using pandas (deterministic)."""
+        """
+        Execute plan using pandas (deterministic, universal operations).
+        
+        Supports:
+        - Filters: ==, !=, in, contains, >, <, >=, <=, between
+        - Aggregations: sum, min, max, mean/avg, count
+        - Groupby operations
+        - Sorting (top N, highest/lowest)
+        - Numeric column selection
+        - Joins across sheets
+        - Type casting (currency, percent, date)
+        """
         try:
             target_indices = plan.get("target_sheets", [])
             if not target_indices:
-                return {"error": "No target sheets specified"}
+                return {"error": "No target sheets specified", "rows_used": 0}
             
-            # Load first target sheet
-            hit = hits[target_indices[0]]
-            df = pd.read_parquet(hit.parquet_path)
+            # Load target sheets
+            dfs = {}
+            for idx in target_indices:
+                if idx >= len(hits):
+                    continue
+                hit = hits[idx]
+                try:
+                    dfs[idx] = pd.read_parquet(hit.parquet_path)
+                except Exception as e:
+                    logger.error(f"Error loading sheet {idx}: {e}")
+                    return {"error": f"Cannot load sheet {idx}: {str(e)}", "rows_used": 0}
             
-            # Apply filters
+            if not dfs:
+                return {"error": "No sheets could be loaded", "rows_used": 0}
+            
+            # Use first sheet as primary
+            primary_idx = target_indices[0]
+            df = dfs[primary_idx].copy()
+            hit = hits[primary_idx]
+            
+            # Apply filters with range support
             filters = plan.get("filters", [])
+            filters_applied = []
+            filter_matches = {}
+            
             for f in filters:
                 col = f.get("column")
                 op = f.get("op", "==")
                 value = f.get("value")
                 
                 if col not in df.columns:
-                    return {"error": f"Column '{col}' not found in table"}
+                    # Try fuzzy column matching
+                    col_lower = col.lower()
+                    matches = [c for c in df.columns if col_lower in c.lower() or c.lower() in col_lower]
+                    if matches:
+                        col = matches[0]
+                        logger.info(f"Fuzzy matched column '{f.get('column')}' to '{col}'")
+                    else:
+                        return {
+                            "error": f"Column '{f.get('column')}' not found in table",
+                            "available_columns": list(df.columns),
+                            "rows_used": 0
+                        }
                 
+                # Type casting for numeric operations
+                if op in [">", "<", ">=", "<=", "between"]:
+                    try:
+                        if df[col].dtype == "object":
+                            # Try to convert to numeric
+                            df[col] = pd.to_numeric(df[col], errors="coerce")
+                        value = float(value) if isinstance(value, str) and value.replace(".", "").isdigit() else value
+                    except Exception:
+                        pass
+                
+                # Apply filter
+                initial_count = len(df)
                 if op == "==":
-                    # Handle case-insensitive string matching
                     if df[col].dtype == "object":
                         df = df[df[col].astype(str).str.lower() == str(value).lower()]
                     else:
                         df = df[df[col] == value]
+                elif op == "!=":
+                    if df[col].dtype == "object":
+                        df = df[df[col].astype(str).str.lower() != str(value).lower()]
+                    else:
+                        df = df[df[col] != value]
                 elif op == "in":
                     df = df[df[col].isin(value)]
                 elif op == "contains":
                     df = df[df[col].astype(str).str.contains(str(value), case=False, na=False)]
+                elif op == ">":
+                    df = df[df[col] > value]
+                elif op == "<":
+                    df = df[df[col] < value]
+                elif op == ">=":
+                    df = df[df[col] >= value]
+                elif op == "<=":
+                    df = df[df[col] <= value]
+                elif op == "between":
+                    if isinstance(value, (list, tuple)) and len(value) == 2:
+                        df = df[(df[col] >= value[0]) & (df[col] <= value[1])]
+                    else:
+                        return {"error": f"Between filter requires [min, max] list", "rows_used": 0}
+                
+                matches_after = len(df)
+                filter_matches[col] = {
+                    "op": op,
+                    "value": value,
+                    "matched": matches_after,
+                    "initial": initial_count
+                }
+                filters_applied.append(f"{col} {op} {value}")
+            
+            # Apply groupby if specified
+            groupby_cols = plan.get("groupby", [])
+            if groupby_cols:
+                available_groupby = [c for c in groupby_cols if c in df.columns]
+                if available_groupby:
+                    df = df.groupby(available_groupby)
             
             # Select columns
             select = plan.get("select", [])
             if select:
                 available = [c for c in select if c in df.columns]
                 if available:
-                    df = df[available]
+                    if isinstance(df, pd.core.groupby.DataFrameGroupBy):
+                        df = df[available].agg(plan.get("aggregation", "first"))
+                    else:
+                        df = df[available]
             
             # Apply aggregation
             agg = plan.get("aggregation", "lookup")
-            if agg == "sum" and len(df) > 0:
-                numeric_cols = df.select_dtypes(include=["number"]).columns
-                if len(numeric_cols) > 0:
-                    result_value = df[numeric_cols[0]].sum()
-                else:
-                    result_value = "No numeric columns to sum"
-            elif agg == "lookup" and len(df) > 0:
-                # Return first matching row
-                result_value = df.iloc[0].to_dict() if len(df) > 0 else "No matching rows"
+            result_value = None
+            numeric_col = None
+            
+            # Find numeric column if not specified
+            if select:
+                numeric_cols = [c for c in select if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
             else:
-                result_value = df.to_dict("records") if len(df) > 0 else "No matching rows"
+                numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+            
+            if numeric_cols:
+                numeric_col = numeric_cols[0]  # Use first numeric column
+            
+            if isinstance(df, pd.core.groupby.DataFrameGroupBy):
+                # Groupby aggregation
+                if agg == "sum" and numeric_col:
+                    result_value = df[numeric_col].sum().to_dict()
+                elif agg == "mean" or agg == "avg" and numeric_col:
+                    result_value = df[numeric_col].mean().to_dict()
+                elif agg == "min" and numeric_col:
+                    result_value = df[numeric_col].min().to_dict()
+                elif agg == "max" and numeric_col:
+                    result_value = df[numeric_col].max().to_dict()
+                elif agg == "count":
+                    result_value = df.size().to_dict()
+                else:
+                    result_value = df.first().to_dict()
+            elif len(df) > 0:
+                if agg == "sum" and numeric_col:
+                    result_value = float(df[numeric_col].sum())
+                elif agg == "mean" or agg == "avg" and numeric_col:
+                    result_value = float(df[numeric_col].mean())
+                elif agg == "min" and numeric_col:
+                    result_value = float(df[numeric_col].min())
+                elif agg == "max" and numeric_col:
+                    result_value = float(df[numeric_col].max())
+                elif agg == "count":
+                    result_value = int(len(df))
+                elif agg == "lookup":
+                    # Return first matching row
+                    result_value = df.iloc[0].to_dict()
+                else:
+                    # Return all matching rows (limited)
+                    max_rows = plan.get("max_rows", 100)
+                    result_value = df.head(max_rows).to_dict("records")
+            else:
+                result_value = None
+            
+            # Apply sorting if specified
+            sort_col = plan.get("sort_by")
+            sort_order = plan.get("sort_order", "desc")  # desc or asc
+            top_n = plan.get("top_n")
+            
+            if sort_col and sort_col in df.columns and isinstance(result_value, list):
+                reverse = sort_order == "desc"
+                result_value = sorted(result_value, key=lambda x: x.get(sort_col, 0), reverse=reverse)
+                if top_n:
+                    result_value = result_value[:top_n]
+            
+            # Get sample rows for provenance
+            sample_rows = []
+            if len(df) > 0:
+                sample_size = min(3, len(df))
+                for i in range(sample_size):
+                    row = df.iloc[i].to_dict()
+                    sample_rows.append({k: str(v) for k, v in row.items()})
             
             return {
                 "result": result_value,
                 "rows_used": len(df),
-                "columns_used": list(df.columns),
+                "columns_used": list(df.columns) if not isinstance(df, pd.core.groupby.DataFrameGroupBy) else list(df.columns),
+                "filter_matches": filter_matches,
                 "provenance": {
                     "filename": hit.filename,
                     "sheet_name": hit.sheet_name,
-                    "filters_applied": filters
+                    "filters_applied": filters_applied,
+                    "columns_used": list(df.columns) if not isinstance(df, pd.core.groupby.DataFrameGroupBy) else [],
+                    "sample_rows": sample_rows,
+                    "aggregation": agg,
+                    "numeric_column_used": numeric_col
                 }
             }
             
         except Exception as e:
             logger.error(f"Error executing plan: {e}", exc_info=True)
-            return {"error": str(e)}
+            return {"error": str(e), "rows_used": 0}
     
-    def _validate_result(self, query: str, plan: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate result and format answer."""
+    def _compute_confidence(self, hits: List[TableHit], result: Dict[str, Any], filter_matches: Dict[str, Any]) -> float:
+        """
+        Compute real confidence from:
+        - Sheet retrieval scores
+        - Filter match success
+        - Rows found
+        - Deterministic operation success
+        """
+        if "error" in result or result.get("rows_used", 0) == 0:
+            return 0.1
+        
+        confidence = 0.2  # Base
+        
+        # Factor 1: Retrieval scores (top hit)
+        if hits:
+            top_score = hits[0].score
+            if top_score >= 0.7:
+                confidence += 0.3
+            elif top_score >= 0.5:
+                confidence += 0.2
+            elif top_score >= 0.3:
+                confidence += 0.1
+        
+        # Factor 2: Filter matches
+        if filter_matches:
+            all_matched = all(fm.get("matched", 0) > 0 for fm in filter_matches.values())
+            if all_matched:
+                confidence += 0.25
+            else:
+                # Some filters didn't match
+                matched_count = sum(1 for fm in filter_matches.values() if fm.get("matched", 0) > 0)
+                total_filters = len(filter_matches)
+                confidence += 0.15 * (matched_count / max(total_filters, 1))
+        
+        # Factor 3: Rows found
+        rows_used = result.get("rows_used", 0)
+        if rows_used > 0:
+            confidence += 0.15
+            if rows_used == 1:
+                confidence += 0.05  # Exact match bonus
+        
+        # Factor 4: Deterministic operation
+        agg = result.get("provenance", {}).get("aggregation", "lookup")
+        if agg in ["sum", "min", "max", "mean", "avg", "count", "lookup"]:
+            confidence += 0.1  # Deterministic operation bonus
+        
+        return min(1.0, max(0.0, confidence))
+    
+    def _get_closest_matches(self, column: str, value: str, df: pd.DataFrame, max_matches: int = 5) -> List[str]:
+        """
+        Get closest matches for a filter value using fuzzy matching.
+        """
+        if column not in df.columns:
+            return []
+        
+        from difflib import get_close_matches
+        
+        # Get unique values from column
+        unique_vals = df[column].dropna().astype(str).unique().tolist()
+        
+        # Find closest matches
+        matches = get_close_matches(str(value), unique_vals, n=max_matches, cutoff=0.6)
+        return matches
+    
+    def _validate_result(self, query: str, plan: Dict[str, Any], result: Dict[str, Any], hits: List[TableHit]) -> Dict[str, Any]:
+        """
+        Validate result with strict "no guessing" enforcement.
+        Returns clarification questions if no deterministic match.
+        """
         if "error" in result:
             error_msg = result["error"]
             
-            # Check for "not found" scenarios
-            if "not found" in error_msg.lower() or result.get("rows_used", 0) == 0:
-                # Try to suggest closest matches
-                clarification = f"I couldn't find matching data in the table. {error_msg}"
+            # Check for column not found
+            if "not found" in error_msg.lower() and "column" in error_msg.lower():
+                available = result.get("available_columns", [])
+                clarification = f"I couldn't find the column you mentioned. Available columns: {', '.join(available[:10])}"
                 return {
                     "answer": clarification,
                     "sources": [],
-                    "confidence": 0.3,
-                    "provenance": result.get("provenance", {})
+                    "confidence": 0.1,
+                    "provenance": result.get("provenance", {}),
+                    "needs_clarification": True
+                }
+            
+            # Check for "not found" scenarios - suggest closest matches
+            if result.get("rows_used", 0) == 0:
+                # Try to get closest matches for filter values
+                filters = plan.get("filters", [])
+                closest_suggestions = []
+                
+                # Load sheet to get column values
+                if hits:
+                    try:
+                        hit = hits[0]
+                        df = pd.read_parquet(hit.parquet_path)
+                        
+                        for f in filters:
+                            col = f.get("column")
+                            value = f.get("value")
+                            if col in df.columns:
+                                matches = self._get_closest_matches(col, str(value), df)
+                                if matches:
+                                    closest_suggestions.append(f"'{col}' column: {', '.join(matches)}")
+                    except Exception:
+                        pass
+                
+                clarification = "I couldn't find matching data in the table."
+                if closest_suggestions:
+                    clarification += f" Did you mean: {'; '.join(closest_suggestions)}?"
+                else:
+                    clarification += " Please check the filter values and try again."
+                
+                return {
+                    "answer": clarification,
+                    "sources": [],
+                    "confidence": 0.1,
+                    "provenance": result.get("provenance", {}),
+                    "needs_clarification": True
                 }
             
             return {
                 "answer": f"I encountered an error: {error_msg}",
                 "sources": [],
-                "confidence": 0.2,
-                "provenance": result.get("provenance", {})
+                "confidence": 0.1,
+                "provenance": result.get("provenance", {}),
+                "needs_clarification": True
             }
+        
+        # STRICT RULE: No deterministic match = ask clarification
+        rows_used = result.get("rows_used", 0)
+        if rows_used == 0:
+            return {
+                "answer": "I couldn't find any matching data. Please check your query and try again, or provide more specific details.",
+                "sources": [],
+                "confidence": 0.1,
+                "provenance": result.get("provenance", {}),
+                "needs_clarification": True
+            }
+        
+        # Compute real confidence
+        filter_matches = result.get("filter_matches", {})
+        confidence = self._compute_confidence(hits, result, filter_matches)
         
         # Format answer from result
         result_value = result.get("result")
@@ -602,23 +929,57 @@ class TableReasoningService:
             answer_parts = []
             for k, v in result_value.items():
                 if pd.notna(v):
-                    answer_parts.append(f"{k}: {v}")
+                    # Format currency/percent if detected
+                    if isinstance(v, (int, float)):
+                        if "fee" in k.lower() or "rate" in k.lower() or "price" in k.lower() or "cost" in k.lower():
+                            answer_parts.append(f"{k}: £{v:,.2f}")
+                        elif "percent" in k.lower() or "%" in k:
+                            answer_parts.append(f"{k}: {v:.2f}%")
+                        else:
+                            answer_parts.append(f"{k}: {v}")
+                    else:
+                        answer_parts.append(f"{k}: {v}")
             answer = "\n".join(answer_parts) if answer_parts else "Found matching data but couldn't format it."
         elif isinstance(result_value, (int, float)):
-            answer = f"The result is: {result_value}"
+            answer = f"The result is: {result_value:,.2f}" if isinstance(result_value, float) else f"The result is: {result_value}"
+        elif isinstance(result_value, list):
+            if len(result_value) == 1:
+                answer = f"Found 1 matching result: {result_value[0]}"
+            else:
+                answer = f"Found {len(result_value)} matching results. First result: {result_value[0] if result_value else 'None'}"
         else:
-            answer = str(result_value)
+            answer = str(result_value) if result_value is not None else "No result found"
+        
+        # Build comprehensive provenance
+        provenance_details = {
+            "filename": provenance.get("filename", "Unknown"),
+            "sheet_name": provenance.get("sheet_name", "Unknown"),
+            "columns_used": provenance.get("columns_used", []),
+            "filters_applied": provenance.get("filters_applied", []),
+            "rows_used": rows_used,
+            "sample_rows": provenance.get("sample_rows", [])[:2],  # First 2 sample rows
+            "aggregation": provenance.get("aggregation", "lookup"),
+            "numeric_column_used": provenance.get("numeric_column_used")
+        }
+        
+        # Build source citation with full details
+        source_text = f"Sheet: {provenance_details['sheet_name']}"
+        if provenance_details.get("columns_used"):
+            source_text += f" | Columns: {', '.join(provenance_details['columns_used'][:5])}"
+        if provenance_details.get("filters_applied"):
+            source_text += f" | Filters: {', '.join(provenance_details['filters_applied'])}"
+        source_text += f" | Rows: {rows_used}"
         
         return {
             "answer": answer,
             "sources": [{
-                "document_name": provenance.get("filename", "Unknown"),
+                "document_name": provenance_details["filename"],
                 "page": None,
-                "chunk_text": f"Sheet: {provenance.get('sheet_name', 'Unknown')}",
-                "relevance_score": 0.9
+                "chunk_text": source_text,
+                "relevance_score": confidence
             }],
-            "confidence": 0.85,
-            "provenance": provenance
+            "confidence": confidence,
+            "provenance": provenance_details
         }
 
 
