@@ -1377,7 +1377,7 @@ else:
                     # Clear pending upload
                     if upload_state_key in st.session_state:
                         del st.session_state[upload_state_key]
-                    return
+                    st.stop()  # Stop execution instead of return
                 
                 business_id = st.session_state.current_conversation_id
                 file_key = f"processed_{business_id}_{upload_info['name']}_{upload_info['size']}"
