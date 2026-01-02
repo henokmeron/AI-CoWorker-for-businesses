@@ -1453,8 +1453,7 @@ else:
                             del st.session_state[upload_state_key]
                         st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
                         st.session_state.show_file_upload = False
-                        st.rerun()
-                                    st.success(f"✅ {upload_info['name']} processed successfully!")
+                        st.rerun()                    st.success(f"✅ {upload_info['name']} processed successfully!")
                                     # Add confirmation message to chat
                                     confirmation_msg = {
                                         "role": "assistant",
