@@ -136,10 +136,15 @@ class TableReasoningService:
                             continue
                         
                         # Infer schema (includes coverage_entities extraction)
-                        logger.info(f"   🔍 Inferring schema for sheet '{sheet_name}'...")
+                        logger.info(f"   🔍 Inferring schema for sheet '{sheet_name}' ({len(df)} rows, {len(df.columns)} cols)...")
                         schema = self._infer_schema(df, filename, sheet_name)
-                        coverage_count = len(schema.get("coverage_entities", []))
+                        coverage_entities = schema.get("coverage_entities", [])
+                        coverage_count = len(coverage_entities)
                         logger.info(f"   ✅ Schema inferred: {len(schema['columns'])} columns, {coverage_count} coverage entities")
+                        if coverage_entities:
+                            logger.info(f"   📋 Coverage entities sample: {coverage_entities[:10]}")
+                        else:
+                            logger.warning(f"   ⚠️  NO coverage entities extracted from sheet '{sheet_name}' - this may cause entity matching to fail!")
                         
                         # Create storage directory
                         base_dir = self.storage_base / business_id / document_id
@@ -577,55 +582,81 @@ class TableReasoningService:
     def _extract_coverage_entities(self, df: pd.DataFrame) -> List[str]:
         """
         Extract coverage entities (LA names, councils, etc.) from sheet.
-        Scans first 50 rows × 10 cols and last 50 rows × 10 cols.
+        CRITICAL: Scans ALL unique values in LA/council columns, plus sample rows.
         """
         coverage_entities = set()
         
-        # Scan first 50 rows and last 50 rows
-        scan_rows = min(50, len(df))
-        scan_cols = min(10, len(df.columns))
-        
-        # First rows
-        for i in range(scan_rows):
-            for j in range(scan_cols):
-                val = str(df.iloc[i, j]).strip()
-                if self._looks_like_entity(val):
-                    coverage_entities.add(val)
-        
-        # Last rows
-        if len(df) > scan_rows:
-            for i in range(max(0, len(df) - scan_rows), len(df)):
-                for j in range(scan_cols):
-                    val = str(df.iloc[i, j]).strip()
-                    if self._looks_like_entity(val):
-                        coverage_entities.add(val)
-        
-        # Also check all unique values in LA/council columns
+        # PRIORITY 1: Check ALL unique values in LA/council columns (most reliable)
         for col in df.columns:
             col_lower = col.lower()
-            if any(kw in col_lower for kw in ["la", "local authority", "council", "authority", "borough", "county"]):
-                unique_vals = df[col].dropna().astype(str).unique()
-                for val in unique_vals:
-                    val = val.strip()
-                    if self._looks_like_entity(val) and len(val) > 2:
-                        coverage_entities.add(val)
+            # Match columns that might contain LA names
+            if any(kw in col_lower for kw in ["la", "local authority", "council", "authority", "borough", "county", "commissioning", "region", "area"]):
+                try:
+                    unique_vals = df[col].dropna().astype(str).unique()
+                    logger.debug(f"   Checking column '{col}': {len(unique_vals)} unique values")
+                    for val in unique_vals:
+                        val = str(val).strip()
+                        if self._looks_like_entity(val) and len(val) > 2:
+                            coverage_entities.add(val)
+                            logger.debug(f"   ✅ Found entity: '{val}' in column '{col}'")
+                except Exception as e:
+                    logger.warning(f"   Error checking column '{col}': {e}")
         
-        return sorted(list(coverage_entities))[:100]  # Limit to 100 entities
+        # PRIORITY 2: Scan first 100 rows × all cols (broader search)
+        scan_rows = min(100, len(df))
+        for i in range(scan_rows):
+            for col in df.columns:
+                try:
+                    val = str(df.iloc[i, col]).strip()
+                    if self._looks_like_entity(val):
+                        coverage_entities.add(val)
+                except:
+                    pass
+        
+        # PRIORITY 3: Scan last 100 rows
+        if len(df) > scan_rows:
+            for i in range(max(0, len(df) - scan_rows), len(df)):
+                for col in df.columns:
+                    try:
+                        val = str(df.iloc[i, col]).strip()
+                        if self._looks_like_entity(val):
+                            coverage_entities.add(val)
+                    except:
+                        pass
+        
+        entities_list = sorted(list(coverage_entities))[:100]  # Limit to 100 entities
+        logger.info(f"   📋 Extracted {len(entities_list)} coverage entities: {entities_list[:10]}..." if len(entities_list) > 10 else f"   📋 Extracted {len(entities_list)} coverage entities: {entities_list}")
+        return entities_list
     
     def _looks_like_entity(self, text: str) -> bool:
-        """Check if text looks like an LA/council/authority name."""
+        """
+        Check if text looks like an LA/council/authority name.
+        Made more aggressive to catch single-word names like "Redbridge".
+        """
         if not text or len(text) < 3:
             return False
         
-        text_lower = text.lower()
+        # Skip obvious non-entities
+        text_lower = text.lower().strip()
+        if text_lower in ["nan", "none", "null", "", "n/a", "na"]:
+            return False
+        
+        # Skip pure numbers or dates
+        if text_lower.replace(".", "").replace("-", "").replace("/", "").isdigit():
+            return False
         
         # Contains council/borough/authority keywords
-        if any(kw in text_lower for kw in ["council", "borough", "county", "authority", "alliance", "partnership"]):
+        if any(kw in text_lower for kw in ["council", "borough", "county", "authority", "alliance", "partnership", "commissioning"]):
             return True
         
-        # Title case pattern (e.g., "Redbridge", "South Central")
+        # Title case pattern - ACCEPT SINGLE WORDS (e.g., "Redbridge", "Brent")
         if text[0].isupper() and any(c.islower() for c in text[1:]):
-            # Multiple words in title case
+            # Single word in title case (e.g., "Redbridge", "Brent", "Hackney")
+            if len(text.split()) == 1 and len(text) >= 4:
+                # Common LA name patterns
+                if not text_lower.startswith(("col_", "row_", "sheet", "table", "data")):
+                    return True
+            # Multiple words in title case (e.g., "South Central", "Commissioning Alliance")
             words = text.split()
             if len(words) > 1 and all(w[0].isupper() if w else False for w in words):
                 return True
