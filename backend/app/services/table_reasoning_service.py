@@ -594,59 +594,61 @@ class TableReasoningService:
             if not dfs:
                 return {"error": "No sheets could be loaded", "rows_used": 0}
             
-            # Handle joins if specified
+            # Start with first sheet as primary
+            primary_idx = target_indices[0]
+            df = dfs[primary_idx].copy()
+            hit = hits[primary_idx]
+            
+            # ✅ Apply joins across sheets (allowlisted only)
             joins = plan.get("joins", [])
-            if joins and len(dfs) > 1:
-                # Perform joins across sheets
-                primary_idx = target_indices[0]
-                df = dfs[primary_idx].copy()
-                hit = hits[primary_idx]
-                
-                for join_spec in joins:
-                    left_sheet_idx = join_spec.get("left_sheet", primary_idx)
-                    right_sheet_idx = join_spec.get("right_sheet")
-                    left_key = join_spec.get("left_key")
-                    right_key = join_spec.get("right_key", left_key)  # Default to same column name
-                    how = join_spec.get("how", "inner")  # inner, left, right, outer
-                    
-                    if right_sheet_idx is None or right_sheet_idx not in dfs:
-                        logger.warning(f"Join target sheet {right_sheet_idx} not available, skipping join")
-                        continue
-                    
-                    if left_key not in df.columns:
-                        logger.warning(f"Join key '{left_key}' not found in left sheet, skipping join")
-                        continue
-                    
-                    right_df = dfs[right_sheet_idx]
+            for j in joins:
+                try:
+                    left_idx = j.get("left_sheet")
+                    right_idx = j.get("right_sheet")
+                    left_key = j.get("left_key")
+                    right_key = j.get("right_key")
+                    how = (j.get("join_type") or j.get("how") or "inner").lower()
+                    if how not in ["inner", "left", "right", "outer"]:
+                        how = "inner"
+
+                    if left_idx not in dfs or right_idx not in dfs:
+                        return {"error": f"Join refers to unloaded sheets: {left_idx}, {right_idx}", "rows_used": 0}
+
+                    left_df = dfs[left_idx].copy()
+                    right_df = dfs[right_idx].copy()
+
+                    # Fuzzy key matching if exact key not found
+                    if left_key not in left_df.columns:
+                        lk = left_key.lower()
+                        candidates = [c for c in left_df.columns if lk in c.lower() or c.lower() in lk]
+                        if candidates:
+                            left_key = candidates[0]
+                        else:
+                            return {"error": f"Left join key '{j.get('left_key')}' not found", "available_columns": list(left_df.columns), "rows_used": 0}
+
                     if right_key not in right_df.columns:
-                        logger.warning(f"Join key '{right_key}' not found in right sheet, skipping join")
-                        continue
-                    
-                    # Perform merge
-                    try:
-                        df = pd.merge(
-                            df,
-                            right_df,
-                            left_on=left_key,
-                            right_on=right_key,
-                            how=how,
-                            suffixes=("_left", "_right")
-                        )
-                        logger.info(f"✅ Joined sheet {left_sheet_idx} with sheet {right_sheet_idx} on {left_key}={right_key}")
-                        
-                        # Limit join result size for safety
-                        max_join_rows = 10000
-                        if len(df) > max_join_rows:
-                            logger.warning(f"Join result has {len(df)} rows, limiting to {max_join_rows}")
-                            df = df.head(max_join_rows)
-                    except Exception as e:
-                        logger.error(f"Error performing join: {e}", exc_info=True)
-                        return {"error": f"Join failed: {str(e)}", "rows_used": 0}
-            else:
-                # Use first sheet as primary (no joins)
-                primary_idx = target_indices[0]
-                df = dfs[primary_idx].copy()
-                hit = hits[primary_idx]
+                        rk = right_key.lower()
+                        candidates = [c for c in right_df.columns if rk in c.lower() or c.lower() in rk]
+                        if candidates:
+                            right_key = candidates[0]
+                        else:
+                            return {"error": f"Right join key '{j.get('right_key')}' not found", "available_columns": list(right_df.columns), "rows_used": 0}
+
+                    # Safety caps
+                    if len(left_df) > 2_000_000 or len(right_df) > 2_000_000:
+                        return {"error": "Join aborted: sheet too large for safe merge", "rows_used": 0}
+
+                    merged = pd.merge(left_df, right_df, how=how, left_on=left_key, right_on=right_key)
+
+                    if merged.empty:
+                        return {"error": f"Join produced 0 rows using {left_key} ↔ {right_key}", "rows_used": 0}
+
+                    # After first join, merged becomes primary df
+                    df = merged
+                    hit = hits[left_idx]  # keep provenance anchored to left for now
+
+                except Exception as e:
+                    return {"error": f"Join failed: {str(e)}", "rows_used": 0}
             
             # Apply filters with range support
             filters = plan.get("filters", [])

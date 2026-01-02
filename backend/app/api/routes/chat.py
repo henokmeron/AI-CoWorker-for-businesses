@@ -65,9 +65,8 @@ async def chat(
                     logger.info("📊 Query matches table reasoning triggers, attempting table reasoning...")
                     table_result = table_service.answer_from_tables(business_id, request.query)
                     
-                    # ✅ CRITICAL: If table reasoning needs clarification, return it immediately (no RAG fallback / no guessing)
+                    # ✅ If table reasoning needs clarification, return it immediately (NO RAG fallback)
                     if table_result and table_result.get("needs_clarification", False):
-                        logger.info("📋 Table reasoning needs clarification, returning clarification (no RAG fallback)")
                         result = {
                             "answer": table_result.get("answer", ""),
                             "sources": table_result.get("sources", []),
@@ -81,28 +80,6 @@ async def chat(
                                 "needs_clarification": True,
                             }
                         }
-                        
-                        # Save to conversation history
-                        if request.conversation_id:
-                            try:
-                                conversation_service = get_conversation_service()
-                                user_msg = Message(
-                                    role="user",
-                                    content=request.query,
-                                    sources=[]
-                                )
-                                conversation_service.add_message(request.conversation_id, user_msg)
-                                
-                                assistant_msg = Message(
-                                    role="assistant",
-                                    content=result.get("answer", ""),
-                                    sources=result.get("sources", [])
-                                )
-                                conversation_service.add_message(request.conversation_id, assistant_msg)
-                                logger.info(f"✅ Saved clarification to conversation {request.conversation_id}")
-                            except Exception as e:
-                                logger.error(f"Failed to save clarification to conversation history: {e}", exc_info=True)
-                        
                         return ChatResponse(**result)
                     
                     # Use table result if confidence is high enough (0.5+)
