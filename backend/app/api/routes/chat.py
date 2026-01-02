@@ -63,10 +63,15 @@ async def chat(
                 table_service = get_table_reasoning_service()
                 if table_service.should_use_table(request.query, has_tabular_uploads):
                     logger.info("📊 Query matches table reasoning triggers, attempting table reasoning...")
-                    table_result = table_service.answer_from_tables(business_id, request.query)
+                    try:
+                        table_result = table_service.answer_from_tables(business_id, request.query)
+                    except Exception as table_error:
+                        logger.error(f"Table reasoning service error: {table_error}", exc_info=True)
+                        table_result = None  # Force fallback to RAG
                     
                     # ✅ If table reasoning needs clarification, return it immediately (NO RAG fallback)
                     if table_result and table_result.get("needs_clarification", False):
+                        logger.info("📋 Table reasoning needs clarification, returning clarification")
                         result = {
                             "answer": table_result.get("answer", ""),
                             "sources": table_result.get("sources", []),
@@ -123,9 +128,13 @@ async def chat(
                         
                         return ChatResponse(**result)
                     else:
-                        logger.info("⚠️  Table reasoning returned low confidence, falling back to RAG")
+                        if table_result:
+                            logger.info(f"⚠️  Table reasoning returned low confidence ({table_result.get('confidence', 0)}), falling back to RAG")
+                        else:
+                            logger.info("⚠️  Table reasoning returned None, falling back to RAG")
             except Exception as e:
                 logger.warning(f"Table reasoning failed, falling back to RAG: {e}", exc_info=True)
+                table_result = None  # Ensure we fall back to RAG
         
         # Fall back to normal RAG
         result = rag_service.query(
