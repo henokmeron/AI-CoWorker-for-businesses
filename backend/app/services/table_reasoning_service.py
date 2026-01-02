@@ -135,46 +135,46 @@ class TableReasoningService:
                             logger.warning(f"   ⚠️  Sheet '{sheet_name}' is empty, skipping")
                             continue
                         
-                    # Infer schema (includes coverage_entities extraction)
-                    logger.info(f"   🔍 Inferring schema for sheet '{sheet_name}'...")
-                    schema = self._infer_schema(df, filename, sheet_name)
-                    coverage_count = len(schema.get("coverage_entities", []))
-                    logger.info(f"   ✅ Schema inferred: {len(schema['columns'])} columns, {coverage_count} coverage entities")
-                    
-                    # Create storage directory
-                    base_dir = self.storage_base / business_id / document_id
-                    base_dir.mkdir(parents=True, exist_ok=True)
-                    logger.info(f"   💾 Storage directory: {base_dir}")
-                    
-                    # Safe filename for storage
-                    safe_sheet = self._safe_name(sheet_name)
-                    parquet_path = base_dir / f"{safe_sheet}.parquet"
-                    schema_path = base_dir / f"{safe_sheet}.schema.json"
-                    
-                    # Save parquet and schema
-                    logger.info(f"   💾 Saving parquet: {parquet_path}")
-                    df.to_parquet(str(parquet_path), index=False)
-                    logger.info(f"   💾 Saving schema: {schema_path}")
-                    with open(schema_path, "w", encoding="utf-8") as f:
-                        json.dump(schema, f, ensure_ascii=False, indent=2)
-                    
-                    logger.info(f"   ✅ Sheet '{sheet_name}': {len(df)} rows, {len(df.columns)} cols, {coverage_count} entities → {parquet_path}")
+                        # Infer schema (includes coverage_entities extraction)
+                        logger.info(f"   🔍 Inferring schema for sheet '{sheet_name}'...")
+                        schema = self._infer_schema(df, filename, sheet_name)
+                        coverage_count = len(schema.get("coverage_entities", []))
+                        logger.info(f"   ✅ Schema inferred: {len(schema['columns'])} columns, {coverage_count} coverage entities")
                         
-                    # Index schema embedding (includes coverage entities)
-                    embed_text = self._schema_to_embed_text(schema)
-                    logger.info(f"   🔍 Indexing schema embedding for sheet '{sheet_name}' in vector store...")
-                    self.vector_store.upsert_table_sheet(
-                        business_id=business_id,
-                        text=embed_text,
-                        metadata={
-                            "document_id": document_id,
-                            "filename": filename,
-                            "sheet_name": sheet_name,
-                            "parquet_path": str(parquet_path),
-                            "schema_path": str(schema_path),
-                        }
-                    )
-                    logger.info(f"   ✅ Schema indexed in vector store for business_id='{business_id}'")
+                        # Create storage directory
+                        base_dir = self.storage_base / business_id / document_id
+                        base_dir.mkdir(parents=True, exist_ok=True)
+                        logger.info(f"   💾 Storage directory: {base_dir}")
+                        
+                        # Safe filename for storage
+                        safe_sheet = self._safe_name(sheet_name)
+                        parquet_path = base_dir / f"{safe_sheet}.parquet"
+                        schema_path = base_dir / f"{safe_sheet}.schema.json"
+                        
+                        # Save parquet and schema
+                        logger.info(f"   💾 Saving parquet: {parquet_path}")
+                        df.to_parquet(str(parquet_path), index=False)
+                        logger.info(f"   💾 Saving schema: {schema_path}")
+                        with open(schema_path, "w", encoding="utf-8") as f:
+                            json.dump(schema, f, ensure_ascii=False, indent=2)
+                        
+                        logger.info(f"   ✅ Sheet '{sheet_name}': {len(df)} rows, {len(df.columns)} cols, {coverage_count} entities → {parquet_path}")
+                        
+                        # Index schema embedding (includes coverage entities)
+                        embed_text = self._schema_to_embed_text(schema)
+                        logger.info(f"   🔍 Indexing schema embedding for sheet '{sheet_name}' in vector store...")
+                        self.vector_store.upsert_table_sheet(
+                            business_id=business_id,
+                            text=embed_text,
+                            metadata={
+                                "document_id": document_id,
+                                "filename": filename,
+                                "sheet_name": sheet_name,
+                                "parquet_path": str(parquet_path),
+                                "schema_path": str(schema_path),
+                            }
+                        )
+                        logger.info(f"   ✅ Schema indexed in vector store for business_id='{business_id}'")
                         
                         ingested_sheets.append({
                             "sheet_name": sheet_name,
