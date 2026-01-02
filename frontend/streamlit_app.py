@@ -1365,6 +1365,95 @@ else:
                 
                 # Process if not already processed
                 if not upload_info["processed"]:
+                    # CRITICAL FIX: Force conversation_id before upload
+                    if not st.session_state.current_conversation_id:
+                        # Create conversation immediately
+                        conv_title = f"Chat {datetime.now().strftime('%I:%M %p')}"
+                        conv = create_conversation(st.session_state.selected_gpt, title=conv_title)
+                        if conv:
+                            st.session_state.current_conversation_id = conv.get("id")
+                    
+                    # Use conversation_id as business_id for document isolation
+                    if not st.session_state.current_conversation_id:
+                        st.error("Please start a conversation first before uploading documents.")
+                        # Clear pending upload
+                        if upload_state_key in st.session_state:
+                            del st.session_state[upload_state_key]
+                        st.stop()  # Stop execution instead of return
+                    
+                    business_id = st.session_state.current_conversation_id
+                    file_key = f"processed_{business_id}_{upload_info['name']}_{upload_info['size']}"
+                    
+                    # Log for debugging
+                    logger.info(f"Processing upload: {upload_info['name']} for business_id={business_id}")
+                    
+                    if file_key not in st.session_state:
+                        # Mark as processing immediately to prevent duplicate processing
+                        st.session_state[upload_state_key]["processed"] = True
+                        
+                        # Process file immediately (file object is available now)
+                        with st.spinner(f"📤 Uploading and processing {upload_info['name']}... This may take a moment."):
+                            try:
+                                # Read file content now while object is available
+                                result = upload_document(business_id, uploaded_file)
+                                
+                                if result and (not isinstance(result, dict) or "error" not in result):
+                                    st.success(f"✅ {upload_info['name']} processed successfully!")
+                                    # Add confirmation message to chat
+                                    confirmation_msg = {
+                                        "role": "assistant",
+                                        "content": f"I've processed '{upload_info['name']}'. You can now ask me questions about it!",
+                                        "sources": []
+                                    }
+                                    st.session_state.chat_history.append(confirmation_msg)
+                                    
+                                    # Save confirmation message to backend if we have a conversation
+                                    if st.session_state.current_conversation_id:
+                                        try:
+                                            api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages", 
+                                                      json={"role": "assistant", "content": confirmation_msg["content"], "sources": []})
+                                        except:
+                                            pass
+                                    
+                                    # Mark file as processed
+                                    st.session_state[file_key] = True
+                                    
+                                    # Clean up and close upload area
+                                    if upload_state_key in st.session_state:
+                                        del st.session_state[upload_state_key]
+                                    st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
+                                    st.session_state.show_file_upload = False
+                                    
+                                    # Small delay before rerun to ensure message is visible
+                                    import time
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    error_msg = f"❌ Failed to process {upload_info['name']}"
+                                    if isinstance(result, dict) and "error" in result:
+                                        error_detail = result["error"]
+                                        error_msg += f"\n\nError: {error_detail}"
+                                    st.error(error_msg)
+                                    
+                                    # Reset upload state to allow retry
+                                    if upload_state_key in st.session_state:
+                                        del st.session_state[upload_state_key]
+                                    if file_key in st.session_state:
+                                        del st.session_state[file_key]
+                            except Exception as e:
+                                logger.error(f"Upload exception: {e}", exc_info=True)
+                                st.error(f"❌ Upload failed: {str(e)}")
+                                # Reset upload state
+                                if upload_state_key in st.session_state:
+                                    del st.session_state[upload_state_key]
+                    else:
+                        st.info(f"ℹ️ {upload_info['name']} was already processed.")
+                        # Clean up
+                        if upload_state_key in st.session_state:
+                            del st.session_state[upload_state_key]
+                        st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
+                        st.session_state.show_file_upload = False
+                        st.rerun()
                 
                 # CRITICAL FIX: Force conversation_id before upload
                 if not st.session_state.current_conversation_id:
