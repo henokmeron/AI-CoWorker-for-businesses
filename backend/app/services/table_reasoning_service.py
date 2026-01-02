@@ -101,8 +101,17 @@ class TableReasoningService:
         try:
             logger.info(f"📊 Ingesting XLSX: {filename} (business_id={business_id}, document_id={document_id})")
             
+            # Verify file exists and is readable
+            if not os.path.exists(filepath):
+                logger.error(f"File does not exist: {filepath}")
+                return {
+                    "success": False,
+                    "error": f"File not found: {filepath}",
+                    "sheets_ingested": 0
+                }
+            
             # Open Excel file - CRITICAL: Must be closed explicitly
-            xls = pd.ExcelFile(filepath)
+            xls = pd.ExcelFile(filepath, engine='openpyxl')
             ingested_sheets = []
             
             try:

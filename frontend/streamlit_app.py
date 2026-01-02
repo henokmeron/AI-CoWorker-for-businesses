@@ -1335,33 +1335,36 @@ else:
             </div>
             """, unsafe_allow_html=True)
     
-    # File upload area - shown above chat input when "+" button is clicked
+    # File upload area - compact, ChatGPT-style sidebar
     if st.session_state.get("show_file_upload", False):
+        # Use a compact sidebar-style container instead of full width
         with st.container():
-            st.markdown('<div class="file-upload-area">', unsafe_allow_html=True)
+            # Compact upload area
+            st.markdown('<div style="max-width: 400px; margin: 0 auto;">', unsafe_allow_html=True)
             upload_key = f"prompt_file_uploader_{st.session_state.get('upload_counter', 0)}"
             uploaded_file = st.file_uploader(
                 "📎 Attach file",
                 type=["pdf", "docx", "txt", "xlsx", "doc", "xls", "pptx", "csv"],
                 key=upload_key,
-                help="Supported: PDF, DOCX, TXT, XLSX"
+                help="Supported: PDF, DOCX, TXT, XLSX, CSV"
             )
             
-            # Store uploaded file in session state to persist across reruns
-            upload_state_key = f"pending_upload_{upload_key}"
+            # Process file immediately when uploaded (don't store file object - not serializable)
             if uploaded_file:
+                upload_state_key = f"pending_upload_{upload_key}"
+                # Check if this exact file is already being processed
                 if upload_state_key not in st.session_state:
+                    # Store file info (not the object itself)
                     st.session_state[upload_state_key] = {
                         "name": uploaded_file.name,
                         "size": uploaded_file.size,
-                        "file_obj": uploaded_file,  # Store file object
                         "processed": False
                     }
-            
-            # Process pending uploads (persist across reruns)
-            if upload_state_key in st.session_state and not st.session_state[upload_state_key]["processed"]:
+                
                 upload_info = st.session_state[upload_state_key]
-                uploaded_file = upload_info.get("file_obj")  # Get stored file object
+                
+                # Process if not already processed
+                if not upload_info["processed"]:
                 
                 # CRITICAL FIX: Force conversation_id before upload
                 if not st.session_state.current_conversation_id:
@@ -1383,13 +1386,14 @@ else:
                 file_key = f"processed_{business_id}_{upload_info['name']}_{upload_info['size']}"
                 
                 if file_key not in st.session_state:
-                    # Mark as processing
+                    # Mark as processing immediately to prevent duplicate processing
                     st.session_state[upload_state_key]["processed"] = True
                     
-                    if uploaded_file:  # Only process if file object is still available
-                        with st.spinner(f"📤 Uploading and processing {upload_info['name']}... This may take a moment."):
-                            try:
-                                result = upload_document(business_id, uploaded_file)
+                    # Process file immediately (file object is available now)
+                    with st.spinner(f"📤 Uploading and processing {upload_info['name']}... This may take a moment."):
+                        try:
+                            # Read file content now while object is available
+                            result = upload_document(business_id, uploaded_file)
                                 if result and (not isinstance(result, dict) or "error" not in result):
                                     st.success(f"✅ {upload_info['name']} processed successfully!")
                                     # Add confirmation message to chat
@@ -1452,15 +1456,14 @@ else:
                     st.session_state.show_file_upload = False
                     st.rerun()
             
-            col1, col2 = st.columns([1, 10])
-            with col1:
-                if st.button("✕", key="close_file_upload_btn", help="Close"):
-                    st.session_state.show_file_upload = False
-                    # Clear any pending uploads
-                    upload_state_key = f"pending_upload_{upload_key}"
-                    if upload_state_key in st.session_state:
-                        del st.session_state[upload_state_key]
-                    st.rerun()
+            # Close button - compact
+            if st.button("✕ Close", key="close_file_upload_btn", help="Close file upload"):
+                st.session_state.show_file_upload = False
+                # Clear any pending uploads
+                upload_state_key = f"pending_upload_{upload_key}"
+                if upload_state_key in st.session_state:
+                    del st.session_state[upload_state_key]
+                st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
     
     # CRITICAL FIX: Chat input at bottom with attachment button
