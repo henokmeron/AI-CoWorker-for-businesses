@@ -257,9 +257,49 @@ class TableReasoningService:
                 "sheets_ingested": 0
             }
     
+    def _extract_entity_from_query(self, query: str) -> Optional[str]:
+        """Extract entity (LA/council name) from query."""
+        # Pattern: "from Redbridge" or "Redbridge LA" or "Redbridge Council"
+        patterns = [
+            r"(?:from|for)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*(?:LA|local authority|council)?",
+            r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:LA|local authority|council)",
+            r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:borough|county|authority)",
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, query, re.IGNORECASE)
+            if match:
+                entity = match.group(1).strip()
+                if len(entity) > 2:
+                    return entity
+        
+        return None
+    
+    def _fuzzy_match_entity(self, entity: str, coverage_list: List[str], threshold: float = 0.6) -> Tuple[bool, List[str]]:
+        """Fuzzy match entity against coverage list."""
+        from difflib import get_close_matches
+        
+        entity_lower = entity.lower()
+        coverage_lower = [c.lower() for c in coverage_list]
+        
+        matches = get_close_matches(entity_lower, coverage_lower, n=5, cutoff=threshold)
+        
+        if matches:
+            # Return original case matches
+            original_matches = []
+            for m in matches:
+                for c in coverage_list:
+                    if c.lower() == m:
+                        original_matches.append(c)
+                        break
+            return True, original_matches
+        
+        return False, []
+    
     def retrieve_relevant_sheets(self, business_id: str, query: str, k: int = 6) -> List[TableHit]:
         """
         Retrieve relevant table sheets using schema embeddings.
+        Enforces coverage matching when query includes named entities.
         
         Args:
             business_id: Business identifier
@@ -267,24 +307,56 @@ class TableReasoningService:
             k: Number of sheets to retrieve
             
         Returns:
-            List of TableHit objects
+            List of TableHit objects (filtered by coverage if entity found)
         """
         try:
-            results = self.vector_store.search_table_sheets(business_id=business_id, query=query, k=k) or []
+            # Extract entity from query
+            entity = self._extract_entity_from_query(query)
+            
+            # Retrieve candidate sheets
+            results = self.vector_store.search_table_sheets(business_id=business_id, query=query, k=k * 2) or []
             hits: List[TableHit] = []
             
             for r in results:
                 md = r.get("metadata") or {}
-                hits.append(TableHit(
+                hit = TableHit(
                     document_id=md.get("document_id", ""),
                     filename=md.get("filename", ""),
                     sheet_name=md.get("sheet_name", ""),
                     parquet_path=md.get("parquet_path", ""),
                     schema_path=md.get("schema_path", ""),
                     score=float(r.get("score", 0.0))
-                ))
+                )
+                
+                # If entity found in query, enforce coverage matching
+                if entity:
+                    try:
+                        with open(hit.schema_path, "r", encoding="utf-8") as f:
+                            schema = json.load(f)
+                            coverage = schema.get("coverage_entities", [])
+                            
+                            if coverage:
+                                matched, closest = self._fuzzy_match_entity(entity, coverage)
+                                if matched:
+                                    hits.append(hit)
+                                    logger.info(f"✅ Sheet '{hit.sheet_name}' matches entity '{entity}' (coverage: {closest[:3]})")
+                                else:
+                                    logger.info(f"⚠️  Sheet '{hit.sheet_name}' does NOT match entity '{entity}' (coverage: {coverage[:5]})")
+                            else:
+                                # No coverage data - include it but with lower priority
+                                hits.append(hit)
+                    except Exception as e:
+                        logger.warning(f"Could not check coverage for {hit.schema_path}: {e}")
+                        # Include anyway if we can't check
+                        hits.append(hit)
+                else:
+                    # No entity in query - include all
+                    hits.append(hit)
+                
+                if len(hits) >= k:
+                    break
             
-            logger.info(f"📊 Retrieved {len(hits)} relevant table sheets for query")
+            logger.info(f"📊 Retrieved {len(hits)} relevant table sheets for query (entity: {entity or 'none'})")
             return hits
             
         except Exception as e:
@@ -294,6 +366,7 @@ class TableReasoningService:
     def answer_from_tables(self, business_id: str, query: str) -> Optional[Dict[str, Any]]:
         """
         Answer query using table reasoning.
+        Enforces coverage matching and strict "no guessing".
         
         Args:
             business_id: Business identifier
@@ -303,8 +376,42 @@ class TableReasoningService:
             Dict with answer, provenance, and metadata, or None if cannot answer
         """
         try:
-            # Retrieve relevant sheets
+            # Extract entity from query
+            entity = self._extract_entity_from_query(query)
+            
+            # Retrieve relevant sheets (with coverage filtering)
             hits = self.retrieve_relevant_sheets(business_id, query)
+            
+            # STRICT: If entity found but no sheets match coverage, return clarification
+            if entity and not hits:
+                # Try to get closest matches from all sheets
+                all_results = self.vector_store.search_table_sheets(business_id=business_id, query=query, k=10) or []
+                all_entities = set()
+                for r in all_results:
+                    md = r.get("metadata") or {}
+                    schema_path = md.get("schema_path")
+                    if schema_path:
+                        try:
+                            with open(schema_path, "r", encoding="utf-8") as f:
+                                schema = json.load(f)
+                                all_entities.update(schema.get("coverage_entities", []))
+                        except Exception:
+                            pass
+                
+                closest = self._fuzzy_match_entity(entity, list(all_entities), threshold=0.4)[1]
+                if closest:
+                    clarification = f"{entity} not found in any sheet coverage list. Closest matches: {', '.join(closest[:5])}"
+                else:
+                    clarification = f"{entity} not found in any sheet coverage list. Please check the entity name."
+                
+                return {
+                    "answer": clarification,
+                    "sources": [],
+                    "confidence": 0.1,
+                    "provenance": {"type": "table", "coverage_mismatch": True},
+                    "needs_clarification": True
+                }
+            
             if not hits:
                 logger.info("No relevant table sheets found")
                 return None
@@ -322,8 +429,21 @@ class TableReasoningService:
             if not schemas:
                 return None
             
-            # Apply common sense rules
+            # Apply common sense rules (including fee-type binding)
             rules = self._common_sense_rules(query, schemas)
+            
+            # Check fee-type binding clarification
+            fee_mapping = rules.get("fee_type_mapping", {})
+            if fee_mapping.get("needs_clarification"):
+                options = fee_mapping.get("options", [])
+                clarification = f"Do you mean {options[0]} (standard) or {options[1]}?"
+                return {
+                    "answer": clarification,
+                    "sources": [],
+                    "confidence": 0.1,
+                    "provenance": {"type": "table", "fee_type_clarification": True},
+                    "needs_clarification": True
+                }
             
             # Generate execution plan
             plan = self._llm_plan(query, hits[:3], schemas, rules)
@@ -342,6 +462,20 @@ class TableReasoningService:
             
             # Execute plan
             result = self._execute_plan(plan, hits)
+            
+            # STRICT: If result rows == 0, return clarification (no guessing)
+            if result.get("rows_used", 0) == 0:
+                clarification = "I couldn't find matching data in the selected sheet."
+                if entity:
+                    clarification += f" {entity} may not be in this sheet's coverage."
+                clarification += " Please check your query or try a different sheet."
+                return {
+                    "answer": clarification,
+                    "sources": [],
+                    "confidence": 0.1,
+                    "provenance": result.get("provenance", {}),
+                    "needs_clarification": True
+                }
             
             # Validate result with strict "no guessing" enforcement
             validated = self._validate_result(query, plan, result, hits)
@@ -386,13 +520,72 @@ class TableReasoningService:
         df.columns = cols
         return df
     
+    def _extract_coverage_entities(self, df: pd.DataFrame) -> List[str]:
+        """
+        Extract coverage entities (LA names, councils, etc.) from sheet.
+        Scans first 50 rows × 10 cols and last 50 rows × 10 cols.
+        """
+        coverage_entities = set()
+        
+        # Scan first 50 rows and last 50 rows
+        scan_rows = min(50, len(df))
+        scan_cols = min(10, len(df.columns))
+        
+        # First rows
+        for i in range(scan_rows):
+            for j in range(scan_cols):
+                val = str(df.iloc[i, j]).strip()
+                if self._looks_like_entity(val):
+                    coverage_entities.add(val)
+        
+        # Last rows
+        if len(df) > scan_rows:
+            for i in range(max(0, len(df) - scan_rows), len(df)):
+                for j in range(scan_cols):
+                    val = str(df.iloc[i, j]).strip()
+                    if self._looks_like_entity(val):
+                        coverage_entities.add(val)
+        
+        # Also check all unique values in LA/council columns
+        for col in df.columns:
+            col_lower = col.lower()
+            if any(kw in col_lower for kw in ["la", "local authority", "council", "authority", "borough", "county"]):
+                unique_vals = df[col].dropna().astype(str).unique()
+                for val in unique_vals:
+                    val = val.strip()
+                    if self._looks_like_entity(val) and len(val) > 2:
+                        coverage_entities.add(val)
+        
+        return sorted(list(coverage_entities))[:100]  # Limit to 100 entities
+    
+    def _looks_like_entity(self, text: str) -> bool:
+        """Check if text looks like an LA/council/authority name."""
+        if not text or len(text) < 3:
+            return False
+        
+        text_lower = text.lower()
+        
+        # Contains council/borough/authority keywords
+        if any(kw in text_lower for kw in ["council", "borough", "county", "authority", "alliance", "partnership"]):
+            return True
+        
+        # Title case pattern (e.g., "Redbridge", "South Central")
+        if text[0].isupper() and any(c.islower() for c in text[1:]):
+            # Multiple words in title case
+            words = text.split()
+            if len(words) > 1 and all(w[0].isupper() if w else False for w in words):
+                return True
+        
+        return False
+    
     def _infer_schema(self, df: pd.DataFrame, filename: str, sheet: str) -> Dict[str, Any]:
         """Infer schema from DataFrame."""
         schema = {
             "filename": filename,
             "sheet_name": sheet,
             "row_count": int(len(df)),
-            "columns": []
+            "columns": [],
+            "coverage_entities": self._extract_coverage_entities(df)
         }
         
         for col in df.columns:
@@ -424,6 +617,11 @@ class TableReasoningService:
         """Convert schema to text for embedding."""
         parts = [f"FILE: {schema['filename']}", f"SHEET: {schema['sheet_name']}"]
         
+        # Include coverage entities
+        coverage = schema.get("coverage_entities", [])
+        if coverage:
+            parts.append(f"COVERAGE: {', '.join(coverage[:20])}")  # First 20 entities
+        
         for c in schema["columns"]:
             examples = ", ".join(c.get("examples", [])[:3])
             parts.append(f"COL: {c['name']} | type={c.get('hint', c['dtype'])} | uniq={c['unique_count']} | ex={examples}")
@@ -437,15 +635,50 @@ class TableReasoningService:
     def _common_sense_rules(self, query: str, schemas: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Apply schema-driven common sense rules (universal, not domain-specific).
+        Includes fee-type binding.
         """
         q = query.lower()
-        rules = {"notes": [], "age_mapping": {}, "column_warnings": []}
+        rules = {"notes": [], "age_mapping": {}, "column_warnings": [], "fee_type_mapping": {}}
         
-        # Rule 1: Check if user asks to filter by X but no column resembles X
-        # Extract potential filter terms from query
+        # Rule 1: Fee-type binding
+        # "standard fee" → "Core" (default mapping)
+        if "standard fee" in q or "standard" in q:
+            # Check what fee types exist in schemas
+            fee_types_found = set()
+            for sc in schemas:
+                cols = [c["name"].lower() for c in sc["columns"]]
+                for col in cols:
+                    if any(kw in col for kw in ["fee", "rate", "type"]):
+                        # Get examples from this column
+                        for c_info in sc["columns"]:
+                            if c_info["name"].lower() == col:
+                                examples = c_info.get("examples", [])
+                                for ex in examples:
+                                    ex_lower = str(ex).lower()
+                                    if "core" in ex_lower:
+                                        fee_types_found.add("Core")
+                                    if "solo" in ex_lower:
+                                        fee_types_found.add("Solo")
+                                    if "enhanced" in ex_lower:
+                                        fee_types_found.add("Enhanced")
+                                    if "complex" in ex_lower:
+                                        fee_types_found.add("Complex")
+            
+            if "Core" in fee_types_found and "Solo" in fee_types_found:
+                # Ambiguous - need clarification
+                rules["fee_type_mapping"]["needs_clarification"] = True
+                rules["fee_type_mapping"]["options"] = ["Core", "Solo"]
+                rules["notes"].append("User asked for 'standard fee' but both 'Core' and 'Solo' exist. Need clarification.")
+            elif "Core" in fee_types_found:
+                rules["fee_type_mapping"]["target"] = "Core"
+            else:
+                # No Core found - use first available
+                if fee_types_found:
+                    rules["fee_type_mapping"]["target"] = list(fee_types_found)[0]
+        
+        # Rule 2: Check if user asks to filter by X but no column resembles X
         filter_keywords = []
         if "from" in q or "for" in q:
-            # Try to extract entity after "from" or "for"
             patterns = [
                 r"(?:from|for)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
                 r"(\w+\s+\w+)\s+(?:LA|local authority|council)",
@@ -457,7 +690,6 @@ class TableReasoningService:
         # Check each schema for missing columns
         for sc in schemas:
             cols = [c["name"].lower() for c in sc["columns"]]
-            col_hints = [c.get("hint", "").lower() for c in sc["columns"]]
             
             # Check if user mentions LA/council but no LA column exists
             if any(kw in q for kw in ["la", "local authority", "council"]) and \
@@ -467,16 +699,14 @@ class TableReasoningService:
             # Check if user mentions age but no age column exists
             if any(kw in q for kw in ["age", "year old", "years old"]) and \
                not any("age" in c or "year" in c for c in cols):
-                # But check if there are age band columns
                 has_bands = any("band" in c or "range" in c or "-" in c for c in cols)
                 if not has_bands:
                     rules["column_warnings"].append(f"Table '{sc.get('filename', 'unknown')}' has no age or age band column.")
         
-        # Rule 2: Age mapping (only if band columns exist)
+        # Rule 3: Age mapping (only if band columns exist)
         age_match = re.search(r"(\d+)\s*year\s*old", q)
         if age_match:
             age = int(age_match.group(1))
-            # Check if any schema has age band columns
             has_bands = False
             for sc in schemas:
                 cols = [c["name"].lower() for c in sc["columns"]]
@@ -485,7 +715,6 @@ class TableReasoningService:
                     # Try to map age to band
                     for col in cols:
                         if "-" in col:
-                            # Try to parse band (e.g., "11-15")
                             band_match = re.search(r"(\d+)\s*-\s*(\d+)", col)
                             if band_match:
                                 low, high = int(band_match.group(1)), int(band_match.group(2))
@@ -495,9 +724,9 @@ class TableReasoningService:
                     break
             
             if not has_bands:
-                rules["age_mapping"]["target_band"] = str(age)  # Use exact age
+                rules["age_mapping"]["target_band"] = str(age)
         
-        # Rule 3: Warn if user asks to filter by something that doesn't exist
+        # Rule 4: Warn if user asks to filter by something that doesn't exist
         for keyword in filter_keywords:
             keyword_lower = keyword.lower()
             found = False
