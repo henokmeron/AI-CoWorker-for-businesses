@@ -430,13 +430,28 @@ async def upload_document(
                     logger.warning(f"Could not remove temp file {temp_path}: {e}")
                     break
         
+        # CRITICAL: Validate ingestion completed
+        # Check if document is actually in the system
+        try:
+            collection = vector_db.get_collection(business_id)
+            if collection:
+                doc_count = collection.count()
+                logger.info(f"✅ Verified: Collection 'business_{business_id}' now has {doc_count} documents")
+        except Exception as e:
+            logger.warning(f"Could not verify document in collection: {e}")
+        
         # CRITICAL: Log final success with all details
-        logger.info(f"✅ UPLOAD COMPLETE: business_id='{business_id}', document_id='{doc.id}', filename='{doc.filename}', chunks={doc.chunk_count}, table_sheets={table_ingestion_result.get('sheets_ingested', 0) if table_ingestion_result else 0}")
+        table_sheets = table_ingestion_result.get('sheets_ingested', 0) if table_ingestion_result and table_ingestion_result.get("success") else 0
+        logger.info(f"✅ UPLOAD COMPLETE: business_id='{business_id}', document_id='{doc.id}', filename='{doc.filename}', chunks={doc.chunk_count}, table_sheets={table_sheets}")
         
         message = f"Document processed successfully with {doc.chunk_count} chunks"
-        if table_ingestion_result and table_ingestion_result.get("success"):
-            sheets_count = table_ingestion_result.get('sheets_ingested', 0)
-            message += f" and {sheets_count} table sheet(s) indexed"
+        if table_sheets > 0:
+            message += f" and {table_sheets} table sheet(s) indexed"
+        
+        # CRITICAL: If table ingestion was supposed to run but didn't, warn
+        if is_tabular and table_sheets == 0:
+            logger.warning(f"⚠️  WARNING: Tabular file {file.filename} was processed but table ingestion returned 0 sheets!")
+            message += " (Note: Table ingestion may have failed - check logs)"
         
         return DocumentUploadResponse(
             document_id=doc.id,
