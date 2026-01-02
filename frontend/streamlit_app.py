@@ -1454,65 +1454,6 @@ else:
                         st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
                         st.session_state.show_file_upload = False
                         st.rerun()
-                                    # Add confirmation message to chat
-                                    confirmation_msg = {
-                                        "role": "assistant",
-                                        "content": f"I've processed '{upload_info['name']}'. You can now ask me questions about it!",
-                                        "sources": []
-                                    }
-                                    st.session_state.chat_history.append(confirmation_msg)
-                                    
-                                    # Save confirmation message to backend if we have a conversation
-                                    if st.session_state.current_conversation_id:
-                                        try:
-                                            api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages", 
-                                                      json={"role": "assistant", "content": confirmation_msg["content"], "sources": []})
-                                        except:
-                                            pass
-                                    
-                                    # Mark file as processed
-                                    st.session_state[file_key] = True
-                                    
-                                    # Clean up and close upload area
-                                    if upload_state_key in st.session_state:
-                                        del st.session_state[upload_state_key]
-                                    st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
-                                    st.session_state.show_file_upload = False
-                                    
-                                    # Small delay before rerun to ensure message is visible
-                                    import time
-                                    time.sleep(0.5)
-                                    st.rerun()
-                                else:
-                                    error_msg = f"❌ Failed to process {upload_info['name']}"
-                                    if isinstance(result, dict) and "error" in result:
-                                        error_detail = result["error"]
-                                        error_msg += f"\n\nError: {error_detail}"
-                                    st.error(error_msg)
-                                    
-                                    # Reset upload state to allow retry
-                                    if upload_state_key in st.session_state:
-                                        del st.session_state[upload_state_key]
-                                    if file_key in st.session_state:
-                                        del st.session_state[file_key]
-                            except Exception as e:
-                                logger.error(f"Upload exception: {e}", exc_info=True)
-                                st.error(f"❌ Upload failed: {str(e)}")
-                                # Reset upload state
-                                if upload_state_key in st.session_state:
-                                    del st.session_state[upload_state_key]
-                    else:
-                        st.error("File object lost. Please try uploading again.")
-                        if upload_state_key in st.session_state:
-                            del st.session_state[upload_state_key]
-                else:
-                    st.info(f"ℹ️ {upload_info['name']} was already processed.")
-                    # Clean up
-                    if upload_state_key in st.session_state:
-                        del st.session_state[upload_state_key]
-                    st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
-                    st.session_state.show_file_upload = False
-                    st.rerun()
             
             # Close button - compact
             if st.button("✕ Close", key="close_file_upload_btn", help="Close file upload"):
