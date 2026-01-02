@@ -137,15 +137,36 @@ async def chat(
                 table_result = None  # Ensure we fall back to RAG
         
         # Fall back to normal RAG
-        result = rag_service.query(
-            business_id=business_id,
-            query=request.query,
-            conversation_history=request.conversation_history or [],
-            max_sources=request.max_sources,
-            reply_as_me=request.reply_as_me
-        )
-        
-        logger.info(f"Query completed successfully. Response length: {len(result.get('answer', ''))}")
+        logger.info(f"💬 Falling back to RAG service for business_id='{business_id}'")
+        try:
+            result = rag_service.query(
+                business_id=business_id,
+                query=request.query,
+                conversation_history=request.conversation_history or [],
+                max_sources=request.max_sources,
+                reply_as_me=request.reply_as_me
+            )
+            
+            if not result:
+                logger.error("RAG service returned None - no answer generated")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to generate response. Please check if documents are uploaded and try again."
+                )
+            
+            if not result.get("answer"):
+                logger.warning(f"RAG service returned result but no answer field. Result keys: {result.keys() if result else 'None'}")
+                result["answer"] = "I apologize, but I couldn't generate a response. Please try rephrasing your question."
+            
+            logger.info(f"✅ Query completed successfully. Response length: {len(result.get('answer', ''))}")
+        except HTTPException:
+            raise
+        except Exception as rag_error:
+            logger.error(f"RAG service error: {rag_error}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to process query with RAG service: {str(rag_error)}"
+            )
         
         # Save to conversation history if conversation_id provided
         # This is important for persistence - try hard to save
