@@ -467,6 +467,147 @@ class VectorStore:
         
         return []
     
+    def get_table_sheet_collection(self, business_id: str):
+        """
+        Get or create collection for table sheet embeddings.
+        Uses separate collection namespace: tablesheets_{business_id}
+        
+        Args:
+            business_id: Business identifier
+            
+        Returns:
+            Collection object
+        """
+        collection_name = f"tablesheets_{business_id}"
+        
+        if self.db_type == "chromadb":
+            try:
+                collection = self.client.get_or_create_collection(
+                    name=collection_name,
+                    embedding_function=self.embedding_service.embedding_function if hasattr(self.embedding_service, 'embedding_function') else None
+                )
+                return collection
+            except Exception as e:
+                logger.error(f"Error getting table sheet collection: {e}")
+                raise RuntimeError(f"Cannot access table sheet collection: {e}")
+        
+        elif self.db_type == "qdrant":
+            # For Qdrant, collection_name is the collection name
+            return collection_name
+        
+        return None
+    
+    def upsert_table_sheet(self, business_id: str, text: str, metadata: Dict[str, Any]) -> bool:
+        """
+        Upsert table sheet schema embedding.
+        
+        Args:
+            business_id: Business identifier
+            text: Schema text to embed
+            metadata: Metadata (document_id, filename, sheet_name, parquet_path, schema_path)
+            
+        Returns:
+            True if successful
+        """
+        try:
+            collection = self.get_table_sheet_collection(business_id)
+            if not collection:
+                return False
+            
+            # Generate embedding
+            embedding = self.embedding_service.embed_query(text)
+            
+            # Create unique ID
+            doc_id = f"{metadata.get('document_id', 'unknown')}_{metadata.get('sheet_name', 'sheet')}"
+            doc_id = doc_id.replace(" ", "_").replace("/", "_")[:200]
+            
+            if self.db_type == "chromadb":
+                collection.upsert(
+                    ids=[doc_id],
+                    embeddings=[embedding],
+                    documents=[text],
+                    metadatas=[metadata]
+                )
+            elif self.db_type == "qdrant":
+                self.client.upsert(
+                    collection_name=collection,
+                    points=[{
+                        "id": doc_id,
+                        "vector": embedding,
+                        "payload": {**metadata, "text": text}
+                    }]
+                )
+            
+            logger.debug(f"✅ Indexed table sheet: {metadata.get('filename')} / {metadata.get('sheet_name')}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error upserting table sheet: {e}", exc_info=True)
+            return False
+    
+    def search_table_sheets(self, business_id: str, query: str, k: int = 6) -> List[Dict[str, Any]]:
+        """
+        Search table sheets by schema.
+        
+        Args:
+            business_id: Business identifier
+            query: Search query
+            k: Number of results
+            
+        Returns:
+            List of search results
+        """
+        try:
+            collection = self.get_table_sheet_collection(business_id)
+            if not collection:
+                return []
+            
+            # Generate query embedding
+            query_embedding = self.embedding_service.embed_query(query)
+            
+            if self.db_type == "chromadb":
+                results = collection.query(
+                    query_embeddings=[query_embedding],
+                    n_results=k
+                )
+                
+                formatted_results = []
+                if results and 'ids' in results and len(results['ids']) > 0 and len(results['ids'][0]) > 0:
+                    for i in range(len(results['ids'][0])):
+                        formatted_results.append({
+                            "id": results['ids'][0][i],
+                            "text": results['documents'][0][i],
+                            "metadata": results['metadatas'][0][i],
+                            "score": 1 - results['distances'][0][i]
+                        })
+                
+                return formatted_results
+            
+            elif self.db_type == "qdrant":
+                results = self.client.search(
+                    collection_name=collection,
+                    query_vector=query_embedding,
+                    limit=k
+                )
+                
+                formatted_results = [
+                    {
+                        "id": str(result.id),
+                        "text": result.payload.get("text", ""),
+                        "metadata": {k: v for k, v in result.payload.items() if k != "text"},
+                        "score": result.score
+                    }
+                    for result in results
+                ]
+                
+                return formatted_results
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"Error searching table sheets: {e}", exc_info=True)
+            return []
+    
     def delete_document(self, business_id: str, document_id: str) -> bool:
         """
         Delete all chunks for a document.

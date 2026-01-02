@@ -8,6 +8,8 @@ from ...models.chat import ChatRequest, ChatResponse
 from ...core.security import verify_api_key
 from ...core.config import settings
 from ...api.dependencies import get_rag
+from ...services.table_reasoning_service import get_table_reasoning_service
+from ...api.routes.documents import load_documents
 from ...services.conversation_service import get_conversation_service
 from ...models.conversation import Message
 
@@ -48,6 +50,65 @@ async def chat(
         
         logger.info(f"Processing query with OpenAI (model: {settings.OPENAI_MODEL})")
         
+        # Check if we should use table reasoning
+        # First, check if user has uploaded tabular files
+        documents = load_documents()
+        tabular_docs = [d for d in documents if d.business_id == business_id and d.filename.lower().endswith(('.xlsx', '.xls', '.csv'))]
+        has_tabular_uploads = len(tabular_docs) > 0
+        
+        # Try table reasoning first if appropriate
+        table_result = None
+        if has_tabular_uploads:
+            try:
+                table_service = get_table_reasoning_service()
+                if table_service.should_use_table(request.query, has_tabular_uploads):
+                    logger.info("📊 Query matches table reasoning triggers, attempting table reasoning...")
+                    table_result = table_service.answer_from_tables(business_id, request.query)
+                    if table_result and table_result.get("confidence", 0) >= 0.6:
+                        logger.info("✅ Table reasoning succeeded with high confidence")
+                        # Use table result
+                        result = {
+                            "answer": table_result.get("answer", ""),
+                            "sources": table_result.get("sources", []),
+                            "tokens_used": 0,  # Table reasoning doesn't use tokens the same way
+                            "response_time": 0,
+                            "metadata": {
+                                "model": "table_reasoning",
+                                "provider": "pandas",
+                                "retrieved_docs": 0,
+                                "confidence": table_result.get("confidence", 0),
+                                "provenance": table_result.get("provenance", {})
+                            }
+                        }
+                        
+                        # Save to conversation history
+                        if request.conversation_id:
+                            try:
+                                conversation_service = get_conversation_service()
+                                user_msg = Message(
+                                    role="user",
+                                    content=request.query,
+                                    sources=[]
+                                )
+                                conversation_service.add_message(request.conversation_id, user_msg)
+                                
+                                assistant_msg = Message(
+                                    role="assistant",
+                                    content=result.get("answer", ""),
+                                    sources=result.get("sources", [])
+                                )
+                                conversation_service.add_message(request.conversation_id, assistant_msg)
+                                logger.info(f"✅ Saved table reasoning messages to conversation {request.conversation_id}")
+                            except Exception as e:
+                                logger.error(f"Failed to save table reasoning to conversation history: {e}", exc_info=True)
+                        
+                        return ChatResponse(**result)
+                    else:
+                        logger.info("⚠️  Table reasoning returned low confidence, falling back to RAG")
+            except Exception as e:
+                logger.warning(f"Table reasoning failed, falling back to RAG: {e}", exc_info=True)
+        
+        # Fall back to normal RAG
         result = rag_service.query(
             business_id=business_id,
             query=request.query,

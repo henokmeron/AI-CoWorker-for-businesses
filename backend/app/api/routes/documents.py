@@ -12,6 +12,7 @@ from ...core.config import settings
 from ...core.security import verify_api_key
 from ...utils.file_utils import get_file_extension, get_file_size, is_file_allowed, ensure_directory
 from ...api.dependencies import get_doc_processor, get_vector_db
+from ...services.table_reasoning_service import get_table_reasoning_service
 
 logger = logging.getLogger(__name__)
 
@@ -146,13 +147,44 @@ async def upload_document(
             file.filename
         )
         
-        # Process document
+        # Process document (this generates document_id)
         logger.info(f"Processing document: {file.filename}")
         result = doc_processor.process_document(
             saved_path,
             business_id,
             metadata={"original_filename": file.filename}
         )
+        
+        # Check if file is tabular (XLSX/CSV) for table reasoning
+        # Do this AFTER processing to get document_id
+        file_ext = get_file_extension(file.filename).lower()
+        is_tabular = file_ext in ['xlsx', 'xls', 'csv']
+        document_id = result.get("document_id")
+        
+        # Ingest table if tabular (in addition to normal processing)
+        table_ingestion_result = None
+        if is_tabular and document_id:
+            try:
+                table_service = get_table_reasoning_service()
+                if file_ext in ['xlsx', 'xls']:
+                    table_ingestion_result = table_service.ingest_xlsx(
+                        business_id=business_id,
+                        document_id=document_id,
+                        filename=file.filename,
+                        filepath=saved_path
+                    )
+                elif file_ext == 'csv':
+                    table_ingestion_result = table_service.ingest_csv(
+                        business_id=business_id,
+                        document_id=document_id,
+                        filename=file.filename,
+                        filepath=saved_path
+                    )
+                if table_ingestion_result and table_ingestion_result.get("success"):
+                    logger.info(f"✅ Table ingestion: {table_ingestion_result.get('sheets_ingested', 0)} sheets")
+            except Exception as e:
+                logger.warning(f"Table ingestion failed (continuing with normal processing): {e}", exc_info=True)
+                # Continue with normal processing even if table ingestion fails
         
         # Store in vector database - REQUIRED step
         logger.info(f"Storing {len(result['chunks'])} chunks in vector database")
