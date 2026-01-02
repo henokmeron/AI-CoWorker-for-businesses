@@ -373,12 +373,26 @@ async def upload_document(
         documents.append(doc)
         save_documents(documents)
         
-        # Clean up temp file
+        # Clean up temp file with retry logic (handle EBUSY errors)
         if os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except Exception as e:
-                logger.warning(f"Could not remove temp file {temp_path}: {e}")
+            max_retries = 5
+            retry_delay = 0.5
+            for attempt in range(max_retries):
+                try:
+                    # Check if file is still in use by waiting a bit
+                    if attempt > 0:
+                        time.sleep(retry_delay * attempt)
+                    os.remove(temp_path)
+                    logger.info(f"✅ Cleaned up temp file: {temp_path}")
+                    break
+                except OSError as e:
+                    if attempt == max_retries - 1:
+                        logger.warning(f"Could not remove temp file {temp_path} after {max_retries} attempts: {e}")
+                    else:
+                        logger.debug(f"Temp file still in use, retrying in {retry_delay * (attempt + 1)}s...")
+                except Exception as e:
+                    logger.warning(f"Could not remove temp file {temp_path}: {e}")
+                    break
         
         logger.info(f"✅ Successfully uploaded and processed: {file.filename} ({doc.chunk_count} chunks, saved to {saved_path})")
         

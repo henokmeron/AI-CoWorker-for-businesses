@@ -97,81 +97,98 @@ class TableReasoningService:
         Returns:
             Dict with ingestion results
         """
+        xls = None
         try:
             logger.info(f"📊 Ingesting XLSX: {filename} (business_id={business_id}, document_id={document_id})")
             
+            # Open Excel file - CRITICAL: Must be closed explicitly
             xls = pd.ExcelFile(filepath)
             ingested_sheets = []
             
-            for sheet_name in xls.sheet_names:
-                try:
-                    # Read raw to detect header
-                    df_raw = xls.parse(sheet_name, header=None)
-                    header_row = self._detect_header_row(df_raw)
-                    
-                    # Read with detected header
-                    df = xls.parse(sheet_name, header=header_row)
-                    df = self._normalize_columns(df)
-                    
-                    # Skip empty sheets
-                    if len(df) == 0:
-                        logger.warning(f"   ⚠️  Sheet '{sheet_name}' is empty, skipping")
-                        continue
-                    
-                    # Infer schema
-                    schema = self._infer_schema(df, filename, sheet_name)
-                    
-                    # Create storage directory
-                    base_dir = self.storage_base / business_id / document_id
-                    base_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    # Safe filename for storage
-                    safe_sheet = self._safe_name(sheet_name)
-                    parquet_path = base_dir / f"{safe_sheet}.parquet"
-                    schema_path = base_dir / f"{safe_sheet}.schema.json"
-                    
-                    # Save parquet and schema
-                    df.to_parquet(str(parquet_path), index=False)
-                    with open(schema_path, "w", encoding="utf-8") as f:
-                        json.dump(schema, f, ensure_ascii=False, indent=2)
-                    
-                    logger.info(f"   ✅ Sheet '{sheet_name}': {len(df)} rows, {len(df.columns)} cols → {parquet_path}")
-                    
-                    # Index schema embedding
-                    embed_text = self._schema_to_embed_text(schema)
-                    self.vector_store.upsert_table_sheet(
-                        business_id=business_id,
-                        text=embed_text,
-                        metadata={
-                            "document_id": document_id,
-                            "filename": filename,
+            try:
+                for sheet_name in xls.sheet_names:
+                    try:
+                        # Read raw to detect header
+                        df_raw = xls.parse(sheet_name, header=None)
+                        header_row = self._detect_header_row(df_raw)
+                        
+                        # Read with detected header
+                        df = xls.parse(sheet_name, header=header_row)
+                        df = self._normalize_columns(df)
+                        
+                        # Skip empty sheets
+                        if len(df) == 0:
+                            logger.warning(f"   ⚠️  Sheet '{sheet_name}' is empty, skipping")
+                            continue
+                        
+                        # Infer schema
+                        schema = self._infer_schema(df, filename, sheet_name)
+                        
+                        # Create storage directory
+                        base_dir = self.storage_base / business_id / document_id
+                        base_dir.mkdir(parents=True, exist_ok=True)
+                        
+                        # Safe filename for storage
+                        safe_sheet = self._safe_name(sheet_name)
+                        parquet_path = base_dir / f"{safe_sheet}.parquet"
+                        schema_path = base_dir / f"{safe_sheet}.schema.json"
+                        
+                        # Save parquet and schema
+                        df.to_parquet(str(parquet_path), index=False)
+                        with open(schema_path, "w", encoding="utf-8") as f:
+                            json.dump(schema, f, ensure_ascii=False, indent=2)
+                        
+                        logger.info(f"   ✅ Sheet '{sheet_name}': {len(df)} rows, {len(df.columns)} cols → {parquet_path}")
+                        
+                        # Index schema embedding
+                        embed_text = self._schema_to_embed_text(schema)
+                        self.vector_store.upsert_table_sheet(
+                            business_id=business_id,
+                            text=embed_text,
+                            metadata={
+                                "document_id": document_id,
+                                "filename": filename,
+                                "sheet_name": sheet_name,
+                                "parquet_path": str(parquet_path),
+                                "schema_path": str(schema_path),
+                            }
+                        )
+                        
+                        ingested_sheets.append({
                             "sheet_name": sheet_name,
+                            "row_count": len(df),
+                            "col_count": len(df.columns),
                             "parquet_path": str(parquet_path),
-                            "schema_path": str(schema_path),
-                        }
-                    )
-                    
-                    ingested_sheets.append({
-                        "sheet_name": sheet_name,
-                        "row_count": len(df),
-                        "col_count": len(df.columns),
-                        "parquet_path": str(parquet_path),
-                        "schema_path": str(schema_path)
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"   ❌ Error processing sheet '{sheet_name}': {e}", exc_info=True)
-                    continue
-            
-            logger.info(f"✅ Ingested {len(ingested_sheets)} sheets from {filename}")
-            return {
-                "success": True,
-                "sheets_ingested": len(ingested_sheets),
-                "sheets": ingested_sheets
-            }
+                            "schema_path": str(schema_path)
+                        })
+                        
+                    except Exception as e:
+                        logger.error(f"   ❌ Error processing sheet '{sheet_name}': {e}", exc_info=True)
+                        continue
+                
+                logger.info(f"✅ Ingested {len(ingested_sheets)} sheets from {filename}")
+                return {
+                    "success": True,
+                    "sheets_ingested": len(ingested_sheets),
+                    "sheets": ingested_sheets
+                }
+            finally:
+                # CRITICAL: Close ExcelFile to release file handle
+                if xls is not None:
+                    try:
+                        xls.close()
+                        logger.debug(f"✅ Closed ExcelFile handle for {filename}")
+                    except Exception as e:
+                        logger.warning(f"Could not close ExcelFile: {e}")
             
         except Exception as e:
             logger.error(f"❌ Error ingesting XLSX {filename}: {e}", exc_info=True)
+            # Ensure file is closed even on error
+            if xls is not None:
+                try:
+                    xls.close()
+                except:
+                    pass
             return {
                 "success": False,
                 "error": str(e),
