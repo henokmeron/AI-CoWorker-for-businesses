@@ -476,7 +476,7 @@ class TableReasoningService:
     def retrieve_relevant_sheets(self, business_id: str, query: str, k: int = 6) -> List[TableHit]:
         """
         Retrieve relevant table sheets using schema embeddings.
-        Enforces coverage matching when query includes named entities.
+        FIXED: Two-pass ranking - coverage-matched sheets prioritized over similarity-only matches.
         
         Args:
             business_id: Business identifier
@@ -484,17 +484,21 @@ class TableReasoningService:
             k: Number of sheets to retrieve
             
         Returns:
-            List of TableHit objects (filtered by coverage if entity found)
+            List of TableHit objects (coverage-matched first, then fallback)
         """
         try:
             # Extract entity from query
             entity = self._extract_entity_from_query(query)
             logger.info(f"🔍 Entity extraction result: '{entity}' from query: '{query[:100]}'")
             
-            # Retrieve candidate sheets
-            results = self.vector_store.search_table_sheets(business_id=business_id, query=query, k=k * 2) or []
+            # ✅ FIX: Retrieve more candidate sheets (k * 6) to ensure we find coverage matches
+            results = self.vector_store.search_table_sheets(business_id=business_id, query=query, k=k * 6) or []
             logger.info(f"📊 Retrieved {len(results)} candidate sheets from vector store")
-            hits: List[TableHit] = []
+            
+            # ✅ FIX: Two-pass ranking - collect all, then prioritize
+            matched_hits: List[TableHit] = []  # Sheets with coverage match
+            unknown_hits: List[TableHit] = []  # Sheets with no coverage data
+            plain_hits: List[TableHit] = []    # Sheets when no entity in query
             
             for r in results:
                 md = r.get("metadata") or {}
@@ -507,44 +511,54 @@ class TableReasoningService:
                     score=float(r.get("score", 0.0))
                 )
                 
-                # If entity found in query, enforce coverage matching
-                if entity:
-                    try:
-                        with open(hit.schema_path, "r", encoding="utf-8") as f:
-                            schema = json.load(f)
-                            coverage = schema.get("coverage_entities", []) or []
-                            
-                            logger.info(f"   🔍 Checking sheet '{hit.sheet_name}' for entity '{entity}'")
-                            logger.info(f"   📋 Sheet has {len(coverage)} coverage entities: {coverage[:10]}")
-                            
-                            if coverage:
-                                matched, closest, suggestion = self._fuzzy_match_entity(entity, coverage)
-                                if matched:
-                                    hits.append(hit)
-                                    if suggestion:
-                                        logger.info(f"✅ Sheet '{hit.sheet_name}' matches entity '{entity}' (typo correction: {suggestion})")
-                                    else:
-                                        logger.info(f"✅ Sheet '{hit.sheet_name}' matches entity '{entity}' (matched: {closest[:3]})")
-                                else:
-                                    logger.warning(f"⚠️  Sheet '{hit.sheet_name}' does NOT match entity '{entity}'")
-                                    logger.warning(f"   Coverage list: {coverage[:10]}")
-                            else:
-                                # No coverage data - include it but with lower priority
-                                logger.warning(f"⚠️  Sheet '{hit.sheet_name}' has NO coverage_entities - including anyway")
-                                hits.append(hit)
-                    except Exception as e:
-                        logger.error(f"❌ Error checking coverage for {hit.schema_path}: {e}", exc_info=True)
-                        # Include anyway if we can't check
-                        hits.append(hit)
-                else:
-                    # No entity in query - include all
-                    hits.append(hit)
+                # If no entity in query, collect all sheets
+                if not entity:
+                    plain_hits.append(hit)
+                    continue
                 
-                if len(hits) >= k:
-                    break
+                # If entity found, check coverage matching
+                try:
+                    with open(hit.schema_path, "r", encoding="utf-8") as f:
+                        schema = json.load(f)
+                    coverage = schema.get("coverage_entities", []) or []
+                    
+                    logger.info(f"   🔍 Checking sheet '{hit.sheet_name}' for entity '{entity}'")
+                    logger.info(f"   📋 Sheet has {len(coverage)} coverage entities: {coverage[:10]}")
+                    
+                    if coverage:
+                        matched, closest, suggestion = self._fuzzy_match_entity(entity, coverage)
+                        if matched:
+                            matched_hits.append(hit)
+                            if suggestion:
+                                logger.info(f"✅ Sheet '{hit.sheet_name}' matches entity '{entity}' (typo correction: {suggestion})")
+                            else:
+                                logger.info(f"✅ Sheet '{hit.sheet_name}' matches entity '{entity}' (matched: {closest[:3]})")
+                        else:
+                            logger.warning(f"⚠️  Sheet '{hit.sheet_name}' does NOT match entity '{entity}'")
+                            logger.warning(f"   Coverage list: {coverage[:10]}")
+                            # Do NOT add to hits - coverage mismatch means this sheet is not relevant
+                    else:
+                        # No coverage data - keep as fallback only
+                        unknown_hits.append(hit)
+                        logger.warning(f"⚠️  Sheet '{hit.sheet_name}' has NO coverage_entities - keeping as fallback")
+                except Exception as e:
+                    logger.error(f"❌ Error checking coverage for {hit.schema_path}: {e}", exc_info=True)
+                    # Include anyway if we can't check (fallback)
+                    unknown_hits.append(hit)
             
-            logger.info(f"📊 Retrieved {len(hits)} relevant table sheets for query (entity: {entity or 'none'})")
-            return hits
+            # ✅ Priority: coverage-matched sheets first
+            if entity and matched_hits:
+                logger.info(f"📊 Returning {len(matched_hits[:k])} coverage-matched sheets (entity: '{entity}')")
+                return matched_hits[:k]
+            
+            # Fallback: sheets with no coverage data
+            if entity and unknown_hits:
+                logger.info(f"📊 Returning {len(unknown_hits[:k])} sheets with no coverage data (entity: '{entity}')")
+                return unknown_hits[:k]
+            
+            # No entity: return all sheets
+            logger.info(f"📊 Returning {len(plain_hits[:k])} sheets (no entity in query)")
+            return plain_hits[:k]
             
         except Exception as e:
             logger.error(f"Error retrieving table sheets: {e}", exc_info=True)
