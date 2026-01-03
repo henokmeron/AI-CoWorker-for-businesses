@@ -1356,19 +1356,8 @@ else:
                 help="Supported: PDF, DOCX, TXT, XLSX, CSV"
             )
             
-            # Process files immediately when uploaded (don't store file objects - not serializable)
+            # ✅ FIX: Process multiple files immediately when uploaded
             if uploaded_files:
-                upload_state_key = f"pending_upload_{upload_key}"
-                # Check if this exact file is already being processed
-                if upload_state_key not in st.session_state:
-                    # Store file info (not the object itself)
-                    st.session_state[upload_state_key] = {
-                        "name": uploaded_file.name,
-                        "size": uploaded_file.size,
-                        "processed": False
-                    }
-                
-                # ✅ FIX: Process multiple files
                 # Ensure conversation exists BEFORE any upload
                 if not st.session_state.current_conversation_id:
                     conv_title = f"Chat {datetime.now().strftime('%I:%M %p')}"
