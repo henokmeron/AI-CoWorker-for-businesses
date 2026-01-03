@@ -204,9 +204,11 @@ class RAGService:
         docs_all: List[Dict[str, Any]] = []
 
         # Pass 1: Broad semantic retrieval
-        logger.info(f"🔍 PASS 1: Broad retrieval (k={k1})")
-        docs_all.extend(self.vector_store.search(business_id=business_id, query=base_q, k=k1) or [])
-
+        logger.info(f"🔍 PASS 1: Broad retrieval (k={k1}) for business_id='{business_id}'")
+        pass1_docs = self.vector_store.search(business_id=business_id, query=base_q, k=k1) or []
+        logger.info(f"   PASS 1 results: {len(pass1_docs)} chunks")
+        docs_all.extend(pass1_docs)
+        
         # Pass 2: Focused retrieval using entities
         focused_bits = []
         for key in ["date", "effective_date", "council", "fee_type", "category", "age_range", "service"]:
@@ -217,15 +219,27 @@ class RAGService:
         if focused_bits:
             q2 = f"{base_q} | " + " | ".join(focused_bits)
             logger.info(f"🎯 PASS 2: Focused retrieval with entities (k={k2})")
-            docs_all.extend(self.vector_store.search(business_id=business_id, query=q2, k=k2) or [])
-
+            pass2_docs = self.vector_store.search(business_id=business_id, query=q2, k=k2) or []
+            logger.info(f"   PASS 2 results: {len(pass2_docs)} chunks")
+            docs_all.extend(pass2_docs)
+        
         # Pass 3: Light confirmation
         if include_terms:
             q3 = f"{base_q} {include_terms[0]}"
             logger.info(f"🔗 PASS 3: Confirmation retrieval (k={k3})")
-            docs_all.extend(self.vector_store.search(business_id=business_id, query=q3, k=k3) or [])
-
-        logger.info(f"📚 Multi-pass retrieval: {len(docs_all)} total chunks")
+            pass3_docs = self.vector_store.search(business_id=business_id, query=q3, k=k3) or []
+            logger.info(f"   PASS 3 results: {len(pass3_docs)} chunks")
+            docs_all.extend(pass3_docs)
+        
+        logger.info(f"📚 Multi-pass retrieval: {len(docs_all)} total chunks (unique: {len(set(d.get('id') for d in docs_all if d.get('id')))} unique IDs)")
+        
+        # CRITICAL DIAGNOSTIC: If we got 0 chunks, log why
+        if len(docs_all) == 0:
+            logger.error(f"❌ CRITICAL: All retrieval passes returned 0 chunks!")
+            logger.error(f"   business_id='{business_id}'")
+            logger.error(f"   Query: '{base_q[:100]}'")
+            logger.error(f"   This means the vector store search is not finding any documents")
+        
         return docs_all
 
     def _dedup_filter_rerank(
@@ -546,12 +560,39 @@ class RAGService:
             # 2) Multi-pass retrieval
             raw_docs = self._multi_pass_retrieval(business_id, qinfo, max_sources=max_sources)
             logger.info(f"📥 Retrieved raw chunks: {len(raw_docs)}")
-
+            
+            # CRITICAL DIAGNOSTIC: Check if we got any documents
+            if len(raw_docs) == 0:
+                logger.error(f"❌ CRITICAL: No documents retrieved for business_id='{business_id}'")
+                logger.error(f"❌ This means either:")
+                logger.error(f"   1. No documents were uploaded for this business_id")
+                logger.error(f"   2. Documents were uploaded but not stored in vector DB")
+                logger.error(f"   3. Collection 'business_{business_id}' doesn't exist or is empty")
+                # Check collection status
+                try:
+                    collection = self.vector_store.get_collection(business_id)
+                    doc_count = collection.count() if collection else 0
+                    logger.error(f"   Collection 'business_{business_id}' has {doc_count} documents")
+                except Exception as e:
+                    logger.error(f"   Could not check collection: {e}")
+            
             # 3) Dedup/filter/rerank
             top_docs = self._dedup_filter_rerank(raw_docs, qinfo, max_sources=max_sources)
             logger.info(f"✅ After rerank: {len(top_docs)}")
-
+            
+            # CRITICAL DIAGNOSTIC: Check if we have context after reranking
+            if len(top_docs) == 0:
+                logger.error(f"❌ CRITICAL: No documents after reranking - LLM will have no context!")
+                logger.error(f"   Raw docs: {len(raw_docs)}, After rerank: {len(top_docs)}")
+            
             context = self._format_context_grouped(top_docs) if top_docs else ""
+            
+            # CRITICAL DIAGNOSTIC: Log context length
+            if not context or len(context) < 100:
+                logger.error(f"❌ CRITICAL: Context is empty or too short ({len(context)} chars) - LLM cannot answer!")
+                logger.error(f"   This will cause the LLM to say 'document does not provide information'")
+            else:
+                logger.info(f"📄 Context length: {len(context)} chars")
             messages = self._build_synthesis_messages(query, context, conversation_history, reply_as_me=reply_as_me)
 
             # 4) Generate answer

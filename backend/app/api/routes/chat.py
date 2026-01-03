@@ -138,6 +138,37 @@ async def chat(
         
         # Fall back to normal RAG
         logger.info(f"💬 Falling back to RAG service for business_id='{business_id}'")
+        
+        # CRITICAL DIAGNOSTIC: Check if documents exist for this business_id
+        try:
+            from ...services.vector_store import get_vector_store
+            vector_store = get_vector_store()
+            collection = vector_store.get_collection(business_id)
+            if collection:
+                doc_count = collection.count()
+                logger.info(f"📊 DIAGNOSTIC: Collection 'business_{business_id}' has {doc_count} documents")
+                if doc_count == 0:
+                    logger.error(f"❌ CRITICAL: Collection 'business_{business_id}' is EMPTY!")
+                    logger.error(f"   This means no documents were uploaded for this conversation")
+                    logger.error(f"   OR documents were uploaded to a different business_id")
+                    logger.error(f"   Check if upload used the same business_id: '{business_id}'")
+                    # List all documents to see what business_ids exist
+                    try:
+                        all_docs = load_documents()
+                        matching_docs = [d for d in all_docs if d.business_id == business_id]
+                        logger.error(f"   Documents in DB with business_id='{business_id}': {len(matching_docs)}")
+                        if len(matching_docs) > 0:
+                            logger.error(f"   Document IDs: {[d.id for d in matching_docs[:5]]}")
+                            logger.error(f"   ⚠️  Documents exist in DB but NOT in vector store - storage may have failed!")
+                        else:
+                            logger.error(f"   ⚠️  No documents in DB with business_id='{business_id}' - upload may have failed!")
+                    except Exception as e:
+                        logger.error(f"   Could not check documents: {e}")
+            else:
+                logger.error(f"❌ CRITICAL: Could not get collection for business_id='{business_id}'")
+        except Exception as e:
+            logger.error(f"❌ Could not check collection status: {e}", exc_info=True)
+        
         try:
             result = rag_service.query(
                 business_id=business_id,
