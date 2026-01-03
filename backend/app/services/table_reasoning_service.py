@@ -528,11 +528,15 @@ class TableReasoningService:
             # Retrieve relevant sheets (with coverage filtering)
             hits = self.retrieve_relevant_sheets(business_id, query)
             
-            # STRICT: If entity found but no sheets match coverage, return clarification
+            # STRICT: If entity found but no sheets match coverage, check if sheets have NO coverage data
             if entity and not hits:
-                # Try to get closest matches from all sheets
+                logger.warning(f"⚠️  Entity '{entity}' found but no sheets matched coverage")
+                
+                # Check if we have sheets with NO coverage_entities (old ingestion)
                 all_results = self.vector_store.search_table_sheets(business_id=business_id, query=query, k=10) or []
+                sheets_without_coverage = []
                 all_entities = set()
+                
                 for r in all_results:
                     md = r.get("metadata") or {}
                     schema_path = md.get("schema_path")
@@ -540,23 +544,60 @@ class TableReasoningService:
                         try:
                             with open(schema_path, "r", encoding="utf-8") as f:
                                 schema = json.load(f)
-                                all_entities.update(schema.get("coverage_entities", []))
-                        except Exception:
-                            pass
+                                coverage = schema.get("coverage_entities", []) or []
+                                if coverage:
+                                    all_entities.update(coverage)
+                                else:
+                                    # Sheet has no coverage_entities - might be from old ingestion
+                                    sheets_without_coverage.append({
+                                        "filename": md.get("filename", ""),
+                                        "sheet_name": md.get("sheet_name", "")
+                                    })
+                        except Exception as e:
+                            logger.warning(f"Could not check schema {schema_path}: {e}")
                 
-                closest = self._fuzzy_match_entity(entity, list(all_entities), threshold=0.4)[1]
-                if closest:
-                    clarification = f"{entity} not found in any sheet coverage list. Closest matches: {', '.join(closest[:5])}"
-                else:
-                    clarification = f"{entity} not found in any sheet coverage list. Please check the entity name."
+                # FALLBACK: If we have sheets without coverage data, use them (old ingestion)
+                if sheets_without_coverage:
+                    logger.warning(f"⚠️  Found {len(sheets_without_coverage)} sheets with NO coverage_entities (likely old ingestion)")
+                    logger.warning(f"   ⚠️  RE-UPLOAD the file to extract coverage entities, but proceeding anyway...")
+                    # Force include sheets without coverage (bypass coverage check for old files)
+                    for r in all_results[:3]:
+                        md = r.get("metadata") or {}
+                        schema_path = md.get("schema_path")
+                        if schema_path:
+                            try:
+                                with open(schema_path, "r", encoding="utf-8") as f:
+                                    schema = json.load(f)
+                                    coverage = schema.get("coverage_entities", []) or []
+                                    # Include if no coverage (old file) OR if coverage matches
+                                    if not coverage:
+                                        hits.append(TableHit(
+                                            document_id=md.get("document_id", ""),
+                                            filename=md.get("filename", ""),
+                                            sheet_name=md.get("sheet_name", ""),
+                                            parquet_path=md.get("parquet_path", ""),
+                                            schema_path=md.get("schema_path", ""),
+                                            score=float(r.get("score", 0.0))
+                                        ))
+                                        logger.info(f"   ✅ Including sheet '{md.get('sheet_name')}' (no coverage data - old ingestion)")
+                            except Exception:
+                                pass
                 
-                return {
-                    "answer": clarification,
-                    "sources": [],
-                    "confidence": 0.1,
-                    "provenance": {"type": "table", "coverage_mismatch": True},
-                    "needs_clarification": True
-                }
+                # If still no hits, return clarification
+                if not hits:
+                    closest = self._fuzzy_match_entity(entity, list(all_entities), threshold=0.4)[1]
+                    if closest:
+                        clarification = f"{entity} not found in any sheet coverage list. Closest matches: {', '.join(closest[:5])}"
+                    else:
+                        clarification = f"{entity} not found in any sheet coverage list. Please check the entity name or re-upload the file to ensure coverage entities are extracted."
+                    
+                    return {
+                        "answer": clarification,
+                        "sources": [],
+                        "confidence": 0.1,
+                        "provenance": {"type": "table", "coverage_mismatch": True},
+                        "needs_clarification": True
+                    }
             
             if not hits:
                 logger.info("No relevant table sheets found")
