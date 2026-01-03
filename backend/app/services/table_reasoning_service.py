@@ -1207,8 +1207,9 @@ class TableReasoningService:
                     return {"error": f"Join failed: {str(e)}", "rows_used": 0}
             
             # ✅ CRITICAL FIX: If entity found but not in filters, search for it in LA columns
+            # (Do this AFTER dataframes are loaded)
+            filters = plan.get("filters", [])
             if entity:
-                filters = plan.get("filters", [])
                 has_entity_filter = any(
                     entity.lower() in str(f.get("value", "")).lower() 
                     for f in filters
@@ -1224,28 +1225,31 @@ class TableReasoningService:
                             "op": "contains",
                             "value": entity
                         })
-                        plan["filters"] = filters  # Update plan
                         logger.info(f"✅ Auto-adding entity filter in executor: {la_col} contains '{entity}'")
                     else:
                         # Search ALL columns for entity (last resort)
-                        logger.warning(f"⚠️  No LA column found - will search all columns for '{entity}'")
-                        # Add filter to search all string columns
+                        logger.warning(f"⚠️  No LA column found - searching all columns for '{entity}'")
+                        # Search all string columns for entity
+                        found_col = None
                         for col in df.columns:
                             if df[col].dtype == "object":
                                 # Check if entity appears in this column
                                 matches = df[df[col].astype(str).str.contains(entity, case=False, na=False)]
                                 if len(matches) > 0:
-                                    filters.append({
-                                        "column": col,
-                                        "op": "contains",
-                                        "value": entity
-                                    })
-                                    plan["filters"] = filters  # Update plan
-                                    logger.info(f"✅ Found '{entity}' in column '{col}' - adding filter")
+                                    found_col = col
                                     break
+                        
+                        if found_col:
+                            filters.append({
+                                "column": found_col,
+                                "op": "contains",
+                                "value": entity
+                            })
+                            logger.info(f"✅ Found '{entity}' in column '{found_col}' - adding filter")
+                        else:
+                            logger.warning(f"⚠️  Entity '{entity}' not found in any column - will search without filter")
             
             # Apply filters with range support
-            filters = plan.get("filters", [])
             filters_applied = []
             filter_matches = {}
             
