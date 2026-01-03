@@ -707,11 +707,15 @@ class TableReasoningService:
         df.columns = cols
         return df
     
-    def _extract_coverage_entities(self, df: pd.DataFrame) -> List[str]:
+    def _extract_coverage_entities(self, df: pd.DataFrame, sheet_name: str = "unknown") -> List[str]:
         """
         Extract coverage entities (LA names, councils, etc.) from sheet.
         CRITICAL: Scans ALL unique values in LA/council columns, plus sample rows.
-        FIXED: Increased scan width to 30 columns (was scanning all, but now explicitly limited for performance).
+        FIXED: Uses label-based indexing (df.at) instead of iloc with string column names.
+        
+        Args:
+            df: DataFrame to scan
+            sheet_name: Sheet name for logging
         """
         coverage_entities = set()
         
@@ -731,33 +735,34 @@ class TableReasoningService:
                 except Exception as e:
                     logger.warning(f"   Error checking column '{col}': {e}")
         
-        # PRIORITY 2: Scan first 100 rows × up to 30 cols (broader search)
+        # PRIORITY 2: Scan first 100 rows × all cols (broader search)
+        # ✅ FIX: Use label-based indexing (df.at) instead of iloc with string column names
         scan_rows = min(100, len(df))
-        scan_cols = min(30, len(df.columns))  # FIXED: Increased from implicit all to explicit 30
         for i in range(scan_rows):
-            for j in range(scan_cols):
+            for col in df.columns:
                 try:
-                    col = df.columns[j]
-                    val = str(df.iloc[i, j]).strip()
+                    # ✅ FIX: use label-based indexing, not iloc with a string
+                    val = str(df.at[df.index[i], col]).strip()
                     if self._looks_like_entity(val):
                         coverage_entities.add(val)
-                except:
+                except Exception:
                     pass
-        
+
         # PRIORITY 3: Scan last 100 rows
         if len(df) > scan_rows:
-            for i in range(max(0, len(df) - scan_rows), len(df)):
-                for j in range(scan_cols):
+            start = max(0, len(df) - scan_rows)
+            for i in range(start, len(df)):
+                for col in df.columns:
                     try:
-                        col = df.columns[j]
-                        val = str(df.iloc[i, j]).strip()
+                        val = str(df.at[df.index[i], col]).strip()
                         if self._looks_like_entity(val):
                             coverage_entities.add(val)
-                    except:
+                    except Exception:
                         pass
         
         entities_list = sorted(list(coverage_entities))[:200]  # Limit to 200 entities (increased from 100)
-        logger.info(f"   📋 Extracted {len(entities_list)} coverage entities: {entities_list[:10]}..." if len(entities_list) > 10 else f"   📋 Extracted {len(entities_list)} coverage entities: {entities_list}")
+        # ✅ Add diagnostic log with sheet name
+        logger.info(f"✅ COVERAGE_ENTITIES[{sheet_name}]: {len(entities_list)} sample={entities_list[:20]}")
         return entities_list
     
     def _extract_coverage_entities_from_raw(self, df_raw: pd.DataFrame) -> List[str]:
@@ -861,7 +866,7 @@ class TableReasoningService:
             "sheet_name": sheet,
             "row_count": int(len(df)),
             "columns": [],
-            "coverage_entities": self._extract_coverage_entities(df)
+            "coverage_entities": self._extract_coverage_entities(df, sheet_name=sheet)
         }
         
         for col in df.columns:

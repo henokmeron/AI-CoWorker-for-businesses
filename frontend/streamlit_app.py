@@ -1292,6 +1292,11 @@ else:
             logger.error(f"❌ Failed to load conversation: {e}", exc_info=True)
             st.session_state.chat_history_loaded = True
     
+    # ✅ RULE A: Gate chat UI - no conversation selected = no chat input, no upload
+    if not st.session_state.current_conversation_id:
+        st.info("💬 Select a chat from the sidebar or click 'New Chat' to start.")
+        st.stop()
+    
     # Chat interface - Display chat history FIRST
     chat_container = st.container()
     
@@ -1336,7 +1341,8 @@ else:
             """, unsafe_allow_html=True)
     
     # File upload area - compact, ChatGPT-style sidebar
-    if st.session_state.get("show_file_upload", False):
+    # ✅ RULE A: Only show upload if conversation is selected (already gated above, but double-check)
+    if st.session_state.get("show_file_upload", False) and st.session_state.current_conversation_id:
         # Use a compact sidebar-style container instead of full width
         with st.container():
             # Compact upload area
