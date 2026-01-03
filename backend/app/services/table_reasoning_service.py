@@ -124,6 +124,10 @@ class TableReasoningService:
                     try:
                         # Read raw to detect header
                         df_raw = xls.parse(sheet_name, header=None)
+                        
+                        # ✅ Extract coverage from RAW sheet (pre-header) so LA lists aren't lost
+                        coverage_from_raw = self._extract_coverage_entities_from_raw(df_raw)
+                        
                         header_row = self._detect_header_row(df_raw)
                         
                         # Read with detected header
@@ -138,9 +142,15 @@ class TableReasoningService:
                         # Infer schema (includes coverage_entities extraction)
                         logger.info(f"   🔍 Inferring schema for sheet '{sheet_name}' ({len(df)} rows, {len(df.columns)} cols)...")
                         schema = self._infer_schema(df, filename, sheet_name)
+                        
+                        # Merge raw coverage into schema coverage
+                        schema_cov = set(schema.get("coverage_entities", []) or [])
+                        schema_cov.update(coverage_from_raw or [])
+                        schema["coverage_entities"] = sorted(list(schema_cov))[:200]
+                        
                         coverage_entities = schema.get("coverage_entities", [])
                         coverage_count = len(coverage_entities)
-                        logger.info(f"   ✅ Schema inferred: {len(schema['columns'])} columns, {coverage_count} coverage entities")
+                        logger.info(f"   ✅ Schema inferred: {len(schema['columns'])} columns, {coverage_count} coverage entities (merged from raw + processed)")
                         if coverage_entities:
                             logger.info(f"   📋 Coverage entities sample: {coverage_entities[:10]}")
                         else:
@@ -600,6 +610,7 @@ class TableReasoningService:
         """
         Extract coverage entities (LA names, councils, etc.) from sheet.
         CRITICAL: Scans ALL unique values in LA/council columns, plus sample rows.
+        FIXED: Increased scan width to 30 columns (was scanning all, but now explicitly limited for performance).
         """
         coverage_entities = set()
         
@@ -619,12 +630,14 @@ class TableReasoningService:
                 except Exception as e:
                     logger.warning(f"   Error checking column '{col}': {e}")
         
-        # PRIORITY 2: Scan first 100 rows × all cols (broader search)
+        # PRIORITY 2: Scan first 100 rows × up to 30 cols (broader search)
         scan_rows = min(100, len(df))
+        scan_cols = min(30, len(df.columns))  # FIXED: Increased from implicit all to explicit 30
         for i in range(scan_rows):
-            for col in df.columns:
+            for j in range(scan_cols):
                 try:
-                    val = str(df.iloc[i, col]).strip()
+                    col = df.columns[j]
+                    val = str(df.iloc[i, j]).strip()
                     if self._looks_like_entity(val):
                         coverage_entities.add(val)
                 except:
@@ -633,51 +646,111 @@ class TableReasoningService:
         # PRIORITY 3: Scan last 100 rows
         if len(df) > scan_rows:
             for i in range(max(0, len(df) - scan_rows), len(df)):
-                for col in df.columns:
+                for j in range(scan_cols):
                     try:
-                        val = str(df.iloc[i, col]).strip()
+                        col = df.columns[j]
+                        val = str(df.iloc[i, j]).strip()
                         if self._looks_like_entity(val):
                             coverage_entities.add(val)
                     except:
                         pass
         
-        entities_list = sorted(list(coverage_entities))[:100]  # Limit to 100 entities
+        entities_list = sorted(list(coverage_entities))[:200]  # Limit to 200 entities (increased from 100)
         logger.info(f"   📋 Extracted {len(entities_list)} coverage entities: {entities_list[:10]}..." if len(entities_list) > 10 else f"   📋 Extracted {len(entities_list)} coverage entities: {entities_list}")
+        return entities_list
+    
+    def _extract_coverage_entities_from_raw(self, df_raw: pd.DataFrame) -> List[str]:
+        """
+        Extract coverage entities from RAW sheet (header=None).
+        Scans a larger grid and samples the middle to catch LA lists anywhere.
+        FIXED: This catches entities in header rows or outside the main table structure.
+        """
+        coverage = set()
+
+        if df_raw is None or len(df_raw) == 0:
+            return []
+
+        rows = len(df_raw)
+        cols = len(df_raw.columns)
+
+        # scan up to 30 cols (not 10)
+        scan_cols = min(30, cols)
+
+        # first 80 rows
+        for i in range(min(80, rows)):
+            for j in range(scan_cols):
+                try:
+                    v = str(df_raw.iloc[i, j]).strip()
+                    if self._looks_like_entity(v):
+                        coverage.add(v)
+                except:
+                    pass
+
+        # middle sample (40 rows around the middle)
+        mid = rows // 2
+        start = max(0, mid - 20)
+        end = min(rows, mid + 20)
+        for i in range(start, end):
+            for j in range(scan_cols):
+                try:
+                    v = str(df_raw.iloc[i, j]).strip()
+                    if self._looks_like_entity(v):
+                        coverage.add(v)
+                except:
+                    pass
+
+        # last 80 rows
+        for i in range(max(0, rows - 80), rows):
+            for j in range(scan_cols):
+                try:
+                    v = str(df_raw.iloc[i, j]).strip()
+                    if self._looks_like_entity(v):
+                        coverage.add(v)
+                except:
+                    pass
+
+        entities_list = sorted(list(coverage))[:200]
+        if entities_list:
+            logger.info(f"   📋 Extracted {len(entities_list)} coverage entities from RAW sheet: {entities_list[:10]}..." if len(entities_list) > 10 else f"   📋 Extracted {len(entities_list)} coverage entities from RAW sheet: {entities_list}")
         return entities_list
     
     def _looks_like_entity(self, text: str) -> bool:
         """
         Check if text looks like an LA/council/authority name.
-        Made more aggressive to catch single-word names like "Redbridge".
+        FIXED: Now accepts single-word Title Case entities like "Redbridge", "Camden", etc.
         """
-        if not text or len(text) < 3:
+        if not text:
             return False
-        
-        # Skip obvious non-entities
-        text_lower = text.lower().strip()
-        if text_lower in ["nan", "none", "null", "", "n/a", "na"]:
+
+        t = str(text).strip()
+        if len(t) < 3 or len(t) > 60:
             return False
-        
-        # Skip pure numbers or dates
-        if text_lower.replace(".", "").replace("-", "").replace("/", "").isdigit():
+
+        # Reject obvious junk
+        if any(ch.isdigit() for ch in t):
             return False
-        
-        # Contains council/borough/authority keywords
-        if any(kw in text_lower for kw in ["council", "borough", "county", "authority", "alliance", "partnership", "commissioning"]):
+        if t.lower() in {"nan", "none", "null"}:
+            return False
+        if len(t) <= 2:
+            return False
+
+        tl = t.lower()
+
+        # Strong keyword signals
+        if any(kw in tl for kw in ["council", "borough", "county", "authority", "alliance", "partnership"]):
             return True
-        
-        # Title case pattern - ACCEPT SINGLE WORDS (e.g., "Redbridge", "Brent")
-        if text[0].isupper() and any(c.islower() for c in text[1:]):
-            # Single word in title case (e.g., "Redbridge", "Brent", "Hackney")
-            if len(text.split()) == 1 and len(text) >= 4:
-                # Common LA name patterns
-                if not text_lower.startswith(("col_", "row_", "sheet", "table", "data")):
-                    return True
-            # Multiple words in title case (e.g., "South Central", "Commissioning Alliance")
-            words = text.split()
-            if len(words) > 1 and all(w[0].isupper() if w else False for w in words):
+
+        # ✅ NEW: single-word Title Case entities (e.g., "Redbridge")
+        # Accept if it looks like a proper noun and not a generic header word.
+        if " " not in t and t[0].isupper() and any(c.islower() for c in t[1:]):
+            if tl not in {"standard", "enhanced", "complex", "solo", "core", "fees", "rates", "sheet", "table"}:
                 return True
-        
+
+        # Multi-word Title Case (e.g., "South Central")
+        words = t.split()
+        if len(words) > 1 and all(w and w[0].isupper() for w in words):
+            return True
+
         return False
     
     def _infer_schema(self, df: pd.DataFrame, filename: str, sheet: str) -> Dict[str, Any]:
