@@ -152,9 +152,14 @@ class TableReasoningService:
                         coverage_count = len(coverage_entities)
                         logger.info(f"   ✅ Schema inferred: {len(schema['columns'])} columns, {coverage_count} coverage entities (merged from raw + processed)")
                         if coverage_entities:
-                            logger.info(f"   📋 Coverage entities sample: {coverage_entities[:10]}")
+                            logger.info(f"   📋 Coverage entities ({len(coverage_entities)} total): {coverage_entities[:20]}")
+                            # CRITICAL: Check if "Redbridge" is in the list (for debugging)
+                            if any("redbridge" in str(e).lower() for e in coverage_entities):
+                                logger.info(f"   ✅ 'Redbridge' FOUND in coverage entities!")
+                            else:
+                                logger.warning(f"   ⚠️  'Redbridge' NOT found in coverage entities (check extraction logic)")
                         else:
-                            logger.warning(f"   ⚠️  NO coverage entities extracted from sheet '{sheet_name}' - this may cause entity matching to fail!")
+                            logger.error(f"   ❌ NO coverage entities extracted from sheet '{sheet_name}' - this WILL cause entity matching to fail!")
                         
                         # Create storage directory
                         base_dir = self.storage_base / business_id / document_id
@@ -329,13 +334,18 @@ class TableReasoningService:
     def _extract_entity_from_query(self, query: str) -> Optional[str]:
         """
         Extract entity (LA/council name) from query.
-        Made more aggressive to catch patterns like "from Redbridge", "Redbridge LA", etc.
+        FIXED: More robust patterns and better fallback logic.
         """
-        # Pattern: "from Redbridge" or "Redbridge LA" or "Redbridge Council"
+        if not query:
+            return None
+        
+        # Pattern 1: "from Redbridge" or "for Redbridge" (case-insensitive)
         patterns = [
             r"(?:from|for)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*(?:LA|local authority|council)?",
             r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:LA|local authority|council)",
             r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:borough|county|authority)",
+            # More flexible: "Redbridge" anywhere before "LA"
+            r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:LA|council|borough)",
         ]
         
         for pattern in patterns:
@@ -343,31 +353,72 @@ class TableReasoningService:
             if match:
                 entity = match.group(1).strip()
                 if len(entity) > 2:
-                    logger.info(f"🔍 Extracted entity from query: '{entity}'")
+                    logger.info(f"🔍 Extracted entity from query (pattern): '{entity}'")
                     return entity
         
-        # Fallback: Look for capitalized words that might be LA names
+        # Fallback 1: Look for capitalized words before "LA", "Council", etc.
         words = query.split()
         for i, word in enumerate(words):
             # Check if word is capitalized and might be an LA name
-            if word[0].isupper() and len(word) >= 4 and word.lower() not in ["from", "the", "for", "and", "with", "this", "that", "what", "which"]:
-                # Check if next word is "LA", "Council", etc.
-                if i + 1 < len(words):
-                    next_word = words[i + 1].lower()
-                    if next_word in ["la", "council", "borough", "authority"]:
-                        logger.info(f"🔍 Extracted entity from query (fallback): '{word}'")
-                        return word
+            if word and word[0].isupper() and len(word) >= 4:
+                word_lower = word.lower()
+                # Skip common words
+                if word_lower not in ["from", "the", "for", "and", "with", "this", "that", "what", "which", "local", "authority", "standard", "enhanced", "complex"]:
+                    # Check if next word is "LA", "Council", etc.
+                    if i + 1 < len(words):
+                        next_word = words[i + 1].lower()
+                        if next_word in ["la", "council", "borough", "authority"]:
+                            logger.info(f"🔍 Extracted entity from query (fallback 1): '{word}'")
+                            return word
         
-        logger.debug(f"🔍 No entity extracted from query: '{query[:50]}...'")
+        # Fallback 2: Look for capitalized words after "from" or "for"
+        for i, word in enumerate(words):
+            word_lower = word.lower()
+            if word_lower in ["from", "for"] and i + 1 < len(words):
+                next_word = words[i + 1]
+                if next_word and next_word[0].isupper() and len(next_word) >= 4:
+                    next_lower = next_word.lower()
+                    if next_lower not in ["the", "local", "authority", "standard", "enhanced"]:
+                        logger.info(f"🔍 Extracted entity from query (fallback 2): '{next_word}'")
+                        return next_word
+        
+        logger.warning(f"🔍 No entity extracted from query: '{query[:100]}'")
         return None
     
-    def _fuzzy_match_entity(self, entity: str, coverage_list: List[str], threshold: float = 0.6) -> Tuple[bool, List[str]]:
-        """Fuzzy match entity against coverage list."""
+    def _fuzzy_match_entity(self, entity: str, coverage_list: List[str], threshold: float = 0.5) -> Tuple[bool, List[str]]:
+        """
+        Match entity against coverage list.
+        FIXED: Now does exact case-insensitive matching FIRST, then fuzzy matching.
+        """
         from difflib import get_close_matches
         
-        entity_lower = entity.lower()
-        coverage_lower = [c.lower() for c in coverage_list]
+        if not entity or not coverage_list:
+            return False, []
         
+        entity_lower = entity.lower().strip()
+        coverage_lower = [c.lower().strip() if c else "" for c in coverage_list]
+        
+        # ✅ STEP 1: Exact case-insensitive match (most reliable)
+        exact_matches = []
+        for i, cov_lower in enumerate(coverage_lower):
+            if cov_lower == entity_lower:
+                exact_matches.append(coverage_list[i])
+        
+        if exact_matches:
+            logger.info(f"   ✅ EXACT match found: '{entity}' = '{exact_matches[0]}'")
+            return True, exact_matches
+        
+        # ✅ STEP 2: Substring match (entity contained in coverage or vice versa)
+        substring_matches = []
+        for i, cov_lower in enumerate(coverage_lower):
+            if entity_lower in cov_lower or cov_lower in entity_lower:
+                substring_matches.append(coverage_list[i])
+        
+        if substring_matches:
+            logger.info(f"   ✅ SUBSTRING match found: '{entity}' in '{substring_matches[0]}'")
+            return True, substring_matches
+        
+        # ✅ STEP 3: Fuzzy match (lowered threshold from 0.6 to 0.5 for better recall)
         matches = get_close_matches(entity_lower, coverage_lower, n=5, cutoff=threshold)
         
         if matches:
@@ -375,11 +426,13 @@ class TableReasoningService:
             original_matches = []
             for m in matches:
                 for c in coverage_list:
-                    if c.lower() == m:
+                    if c and c.lower().strip() == m:
                         original_matches.append(c)
                         break
+            logger.info(f"   ✅ FUZZY match found: '{entity}' ≈ '{original_matches[0]}' (similarity: {threshold}+)")
             return True, original_matches
         
+        logger.warning(f"   ❌ NO match found for '{entity}' in coverage list: {coverage_list[:10]}")
         return False, []
     
     def retrieve_relevant_sheets(self, business_id: str, query: str, k: int = 6) -> List[TableHit]:
@@ -398,9 +451,11 @@ class TableReasoningService:
         try:
             # Extract entity from query
             entity = self._extract_entity_from_query(query)
+            logger.info(f"🔍 Entity extraction result: '{entity}' from query: '{query[:100]}'")
             
             # Retrieve candidate sheets
             results = self.vector_store.search_table_sheets(business_id=business_id, query=query, k=k * 2) or []
+            logger.info(f"📊 Retrieved {len(results)} candidate sheets from vector store")
             hits: List[TableHit] = []
             
             for r in results:
@@ -419,20 +474,25 @@ class TableReasoningService:
                     try:
                         with open(hit.schema_path, "r", encoding="utf-8") as f:
                             schema = json.load(f)
-                            coverage = schema.get("coverage_entities", [])
+                            coverage = schema.get("coverage_entities", []) or []
+                            
+                            logger.info(f"   🔍 Checking sheet '{hit.sheet_name}' for entity '{entity}'")
+                            logger.info(f"   📋 Sheet has {len(coverage)} coverage entities: {coverage[:10]}")
                             
                             if coverage:
                                 matched, closest = self._fuzzy_match_entity(entity, coverage)
                                 if matched:
                                     hits.append(hit)
-                                    logger.info(f"✅ Sheet '{hit.sheet_name}' matches entity '{entity}' (coverage: {closest[:3]})")
+                                    logger.info(f"✅ Sheet '{hit.sheet_name}' matches entity '{entity}' (matched: {closest[:3]})")
                                 else:
-                                    logger.info(f"⚠️  Sheet '{hit.sheet_name}' does NOT match entity '{entity}' (coverage: {coverage[:5]})")
+                                    logger.warning(f"⚠️  Sheet '{hit.sheet_name}' does NOT match entity '{entity}'")
+                                    logger.warning(f"   Coverage list: {coverage[:10]}")
                             else:
                                 # No coverage data - include it but with lower priority
+                                logger.warning(f"⚠️  Sheet '{hit.sheet_name}' has NO coverage_entities - including anyway")
                                 hits.append(hit)
                     except Exception as e:
-                        logger.warning(f"Could not check coverage for {hit.schema_path}: {e}")
+                        logger.error(f"❌ Error checking coverage for {hit.schema_path}: {e}", exc_info=True)
                         # Include anyway if we can't check
                         hits.append(hit)
                 else:
