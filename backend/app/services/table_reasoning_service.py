@@ -534,9 +534,11 @@ class TableReasoningService:
                             else:
                                 logger.info(f"✅ Sheet '{hit.sheet_name}' matches entity '{entity}' (matched: {closest[:3]})")
                         else:
-                            logger.warning(f"⚠️  Sheet '{hit.sheet_name}' does NOT match entity '{entity}'")
+                            logger.warning(f"⚠️  Sheet '{hit.sheet_name}' does NOT match entity '{entity}' in coverage list")
                             logger.warning(f"   Coverage list: {coverage[:10]}")
-                            # Do NOT add to hits - coverage mismatch means this sheet is not relevant
+                            # ✅ CRITICAL FIX: Still add to unknown_hits as fallback - entity might be in data even if not in coverage
+                            unknown_hits.append(hit)
+                            logger.info(f"   ⚠️  Keeping as fallback - will search data directly for '{entity}'")
                     else:
                         # No coverage data - keep as fallback only
                         unknown_hits.append(hit)
@@ -588,76 +590,23 @@ class TableReasoningService:
             # Retrieve relevant sheets (with coverage filtering for ranking)
             hits = self.retrieve_relevant_sheets(business_id, query)
             
-            # ✅ FIX: If coverage match fails, DO NOT stop - continue with all sheets
+            # ✅ CRITICAL FIX: If no coverage matches, use ALL sheets - entity might be in data
             if entity and not hits:
-                logger.warning(f"⚠️  Entity '{entity}' found but no sheets matched coverage")
+                logger.warning(f"⚠️  Entity '{entity}' found but no sheets matched coverage - using ALL sheets as fallback")
+                logger.warning(f"   Will search through actual data in all sheets to find '{entity}'")
                 
-                # Check if we have sheets with NO coverage_entities (old ingestion)
-                all_results = self.vector_store.search_table_sheets(business_id=business_id, query=query, k=10) or []
-                sheets_without_coverage = []
-                all_entities = set()
-                
-                for r in all_results:
+                # Use ALL candidate sheets - coverage is just a hint, not a requirement
+                for r in all_results[:10]:  # Top 10 sheets
                     md = r.get("metadata") or {}
-                    schema_path = md.get("schema_path")
-                    if schema_path:
-                        try:
-                            with open(schema_path, "r", encoding="utf-8") as f:
-                                schema = json.load(f)
-                                coverage = schema.get("coverage_entities", []) or []
-                                if coverage:
-                                    all_entities.update(coverage)
-                                else:
-                                    # Sheet has no coverage_entities - might be from old ingestion
-                                    sheets_without_coverage.append({
-                                        "filename": md.get("filename", ""),
-                                        "sheet_name": md.get("sheet_name", "")
-                                    })
-                        except Exception as e:
-                            logger.warning(f"Could not check schema {schema_path}: {e}")
-                
-                # FALLBACK: If we have sheets without coverage data, use them (old ingestion)
-                if sheets_without_coverage:
-                    logger.warning(f"⚠️  Found {len(sheets_without_coverage)} sheets with NO coverage_entities (likely old ingestion)")
-                    logger.warning(f"   ⚠️  RE-UPLOAD the file to extract coverage entities, but proceeding anyway...")
-                    # Force include sheets without coverage (bypass coverage check for old files)
-                    for r in all_results[:3]:
-                        md = r.get("metadata") or {}
-                        schema_path = md.get("schema_path")
-                        if schema_path:
-                            try:
-                                with open(schema_path, "r", encoding="utf-8") as f:
-                                    schema = json.load(f)
-                                    coverage = schema.get("coverage_entities", []) or []
-                                    # Include if no coverage (old file) OR if coverage matches
-                                    if not coverage:
-                                        hits.append(TableHit(
-                                            document_id=md.get("document_id", ""),
-                                            filename=md.get("filename", ""),
-                                            sheet_name=md.get("sheet_name", ""),
-                                            parquet_path=md.get("parquet_path", ""),
-                                            schema_path=md.get("schema_path", ""),
-                                            score=float(r.get("score", 0.0))
-                                        ))
-                                        logger.info(f"   ✅ Including sheet '{md.get('sheet_name')}' (no coverage data - old ingestion)")
-                            except Exception:
-                                pass
-                
-                # ✅ FIX: Do NOT hard-block on coverage. Use all sheets if coverage match fails.
-                if not hits:
-                    logger.warning(f"⚠️  Coverage match failed for entity='{entity}'. Continuing with table search (no hard block).")
-                    # Include all candidate sheets (coverage is ranking signal only)
-                    for r in all_results[:5]:  # Top 5 sheets
-                        md = r.get("metadata") or {}
-                        hits.append(TableHit(
-                            document_id=md.get("document_id", ""),
-                            filename=md.get("filename", ""),
-                            sheet_name=md.get("sheet_name", ""),
-                            parquet_path=md.get("parquet_path", ""),
-                            schema_path=md.get("schema_path", ""),
-                            score=float(r.get("score", 0.0)) * 0.5  # Lower score for non-coverage matches
-                        ))
-                    logger.info(f"✅ Continuing with {len(hits)} sheets despite coverage mismatch")
+                    hits.append(TableHit(
+                        document_id=md.get("document_id", ""),
+                        filename=md.get("filename", ""),
+                        sheet_name=md.get("sheet_name", ""),
+                        parquet_path=md.get("parquet_path", ""),
+                        schema_path=md.get("schema_path", ""),
+                        score=float(r.get("score", 0.0)) * 0.7  # Slightly lower score but still use them
+                    ))
+                logger.info(f"✅ Continuing with {len(hits)} sheets - will search data directly for '{entity}'")
             
             if not hits:
                 logger.info("No relevant table sheets found")
@@ -693,7 +642,43 @@ class TableReasoningService:
                 }
             
             # Generate execution plan
-            plan = self._llm_plan(query, hits[:3], schemas, rules)
+            plan = self._llm_plan(query, hits[:3], schemas, rules, entity=entity)
+            
+            # ✅ CRITICAL FIX: Auto-add entity filter if entity found and not in plan
+            if entity and plan:
+                # Check if entity filter already exists
+                filters = plan.get("filters", [])
+                has_entity_filter = any(
+                    f.get("value", "").lower() == entity.lower() or 
+                    entity.lower() in str(f.get("value", "")).lower()
+                    for f in filters
+                )
+                
+                if not has_entity_filter:
+                    # Find LA/council column in schemas
+                    la_column = None
+                    for schema in schemas:
+                        for col_info in schema.get("columns", []):
+                            col_name = col_info.get("name", "").lower()
+                            if any(kw in col_name for kw in ["la", "local authority", "council", "authority", "borough"]):
+                                la_column = col_info.get("name")
+                                break
+                        if la_column:
+                            break
+                    
+                    if la_column:
+                        # Add entity filter to plan
+                        if "filters" not in plan:
+                            plan["filters"] = []
+                        plan["filters"].append({
+                            "column": la_column,
+                            "op": "contains",  # Use contains for fuzzy matching
+                            "value": entity
+                        })
+                        logger.info(f"✅ Auto-added entity filter: {la_column} contains '{entity}'")
+                    else:
+                        logger.warning(f"⚠️  Entity '{entity}' found but no LA column found in schemas - will search all columns")
+            
             if not plan or plan.get("needs_clarification"):
                 clarification = plan.get("clarification_question") if plan else "I need more information to answer this question."
                 # Include column warnings in clarification
@@ -708,7 +693,7 @@ class TableReasoningService:
                 }
             
             # Execute plan
-            result = self._execute_plan(plan, hits)
+            result = self._execute_plan(plan, hits, entity=entity)
             
             # STRICT: If result rows == 0, return clarification (no guessing)
             if result.get("rows_used", 0) == 0:
@@ -1081,7 +1066,7 @@ class TableReasoningService:
         
         return rules
     
-    def _llm_plan(self, query: str, hits: List[TableHit], schemas: List[Dict[str, Any]], rules: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _llm_plan(self, query: str, hits: List[TableHit], schemas: List[Dict[str, Any]], rules: Dict[str, Any], entity: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Generate execution plan using LLM."""
         try:
             system_prompt = (
@@ -1106,7 +1091,8 @@ class TableReasoningService:
                 "question": query,
                 "tables": [{"filename": h.filename, "sheet_name": h.sheet_name, "index": i} for i, h in enumerate(hits)],
                 "schemas": schemas,
-                "rules": rules
+                "rules": rules,
+                "entity": entity  # ✅ Pass entity to LLM so it can add filter
             }
             
             user_prompt = json.dumps(payload, indent=2)
@@ -1131,7 +1117,7 @@ class TableReasoningService:
             logger.error(f"Error generating plan: {e}", exc_info=True)
             return None
     
-    def _execute_plan(self, plan: Dict[str, Any], hits: List[TableHit]) -> Dict[str, Any]:
+    def _execute_plan(self, plan: Dict[str, Any], hits: List[TableHit], entity: Optional[str] = None) -> Dict[str, Any]:
         """
         Execute plan using pandas (deterministic, universal operations).
         
@@ -1219,6 +1205,44 @@ class TableReasoningService:
 
                 except Exception as e:
                     return {"error": f"Join failed: {str(e)}", "rows_used": 0}
+            
+            # ✅ CRITICAL FIX: If entity found but not in filters, search for it in LA columns
+            if entity:
+                filters = plan.get("filters", [])
+                has_entity_filter = any(
+                    entity.lower() in str(f.get("value", "")).lower() 
+                    for f in filters
+                )
+                
+                if not has_entity_filter:
+                    # Find LA/council column and add entity filter
+                    la_columns = [c for c in df.columns if any(kw in c.lower() for kw in ["la", "local authority", "council", "authority", "borough"])]
+                    if la_columns:
+                        la_col = la_columns[0]
+                        filters.append({
+                            "column": la_col,
+                            "op": "contains",
+                            "value": entity
+                        })
+                        plan["filters"] = filters  # Update plan
+                        logger.info(f"✅ Auto-adding entity filter in executor: {la_col} contains '{entity}'")
+                    else:
+                        # Search ALL columns for entity (last resort)
+                        logger.warning(f"⚠️  No LA column found - will search all columns for '{entity}'")
+                        # Add filter to search all string columns
+                        for col in df.columns:
+                            if df[col].dtype == "object":
+                                # Check if entity appears in this column
+                                matches = df[df[col].astype(str).str.contains(entity, case=False, na=False)]
+                                if len(matches) > 0:
+                                    filters.append({
+                                        "column": col,
+                                        "op": "contains",
+                                        "value": entity
+                                    })
+                                    plan["filters"] = filters  # Update plan
+                                    logger.info(f"✅ Found '{entity}' in column '{col}' - adding filter")
+                                    break
             
             # Apply filters with range support
             filters = plan.get("filters", [])
