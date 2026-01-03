@@ -1348,15 +1348,16 @@ else:
             # Compact upload area
             st.markdown('<div style="max-width: 400px; margin: 0 auto;">', unsafe_allow_html=True)
             upload_key = f"prompt_file_uploader_{st.session_state.get('upload_counter', 0)}"
-            uploaded_file = st.file_uploader(
-                "📎 Attach file",
+            uploaded_files = st.file_uploader(
+                "📎 Attach file(s)",
                 type=["pdf", "docx", "txt", "xlsx", "doc", "xls", "pptx", "csv"],
                 key=upload_key,
+                accept_multiple_files=True,
                 help="Supported: PDF, DOCX, TXT, XLSX, CSV"
             )
             
-            # Process file immediately when uploaded (don't store file object - not serializable)
-            if uploaded_file:
+            # Process files immediately when uploaded (don't store file objects - not serializable)
+            if uploaded_files:
                 upload_state_key = f"pending_upload_{upload_key}"
                 # Check if this exact file is already being processed
                 if upload_state_key not in st.session_state:
@@ -1367,129 +1368,74 @@ else:
                         "processed": False
                     }
                 
-                upload_info = st.session_state[upload_state_key]
+                # ✅ FIX: Process multiple files
+                # Ensure conversation exists BEFORE any upload
+                if not st.session_state.current_conversation_id:
+                    conv_title = f"Chat {datetime.now().strftime('%I:%M %p')}"
+                    conv = create_conversation(st.session_state.selected_gpt, title=conv_title)
+                    if conv:
+                        st.session_state.current_conversation_id = conv.get("id")
+                        # Refresh conversations list
+                        try:
+                            conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                            cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+                            st.session_state[cache_key] = conversations
+                            st.session_state.conversations = conversations
+                        except:
+                            pass
                 
-                # Process if not already processed
-                if not upload_info["processed"]:
-                    # CRITICAL FIX: Force conversation_id before upload
-                    if not st.session_state.current_conversation_id:
-                        # Create conversation immediately
-                        conv_title = f"Chat {datetime.now().strftime('%I:%M %p')}"
-                        conv = create_conversation(st.session_state.selected_gpt, title=conv_title)
-                        if conv:
-                            st.session_state.current_conversation_id = conv.get("id")
-                    
-                    # Use conversation_id as business_id for document isolation
-                    if not st.session_state.current_conversation_id:
-                        st.error("Please start a conversation first before uploading documents.")
-                        # Clear pending upload
-                        if upload_state_key in st.session_state:
-                            del st.session_state[upload_state_key]
-                        st.stop()  # Stop execution instead of return
-                    
-                    business_id = st.session_state.current_conversation_id
-                    file_key = f"processed_{business_id}_{upload_info['name']}_{upload_info['size']}"
-                    
-                    # Log for debugging
-                    logger.info(f"Processing upload: {upload_info['name']} for business_id={business_id}")
-                    
-                    if file_key not in st.session_state:
-                        # Mark as processing immediately to prevent duplicate processing
-                        st.session_state[upload_state_key]["processed"] = True
+                if not st.session_state.current_conversation_id:
+                    st.error("Please start a conversation first before uploading documents.")
+                    st.stop()
+                
+                business_id = st.session_state.current_conversation_id
+                
+                # Track processed files per conversation
+                if "processed_files_by_chat" not in st.session_state:
+                    st.session_state.processed_files_by_chat = {}
+                st.session_state.processed_files_by_chat.setdefault(business_id, set())
+                
+                # Process each file
+                with st.spinner("📤 Uploading and processing files..."):
+                    for f in uploaded_files:
+                        file_sig = f"{f.name}:{f.size}"
+                        if file_sig in st.session_state.processed_files_by_chat[business_id]:
+                            continue  # already processed in this chat
                         
-                        # Process file immediately (file object is available now)
-                        with st.spinner(f"📤 Uploading and processing {upload_info['name']}... This may take a moment."):
-                            try:
-                                # Read file content now while object is available
-                                logger.info(f"📤 Calling upload_document API for {upload_info['name']} with business_id={business_id}")
-                                result = upload_document(business_id, uploaded_file)
-                                logger.info(f"📥 Upload API response: {result is not None}, type: {type(result)}")
+                        try:
+                            logger.info(f"📤 Calling upload_document API for {f.name} with business_id={business_id}")
+                            result = upload_document(business_id, f)
+                            
+                            if result and isinstance(result, dict) and "error" not in result:
+                                st.session_state.processed_files_by_chat[business_id].add(file_sig)
                                 
-                                # Check if upload was successful
-                                if result and isinstance(result, dict):
-                                    if "error" in result:
-                                        # Upload failed
-                                        error_msg = f"❌ Failed to process {upload_info['name']}"
-                                        error_detail = result.get("error", "Unknown error")
-                                        error_msg += f"\n\nError: {error_detail}"
-                                        st.error(error_msg)
-                                        logger.error(f"Upload failed: {error_detail}")
-                                        
-                                        # Reset upload state to allow retry
-                                        if upload_state_key in st.session_state:
-                                            del st.session_state[upload_state_key]
-                                        if file_key in st.session_state:
-                                            del st.session_state[file_key]
-                                    else:
-                                        # Upload succeeded
-                                        st.success(f"✅ {upload_info['name']} processed successfully!")
-                                        logger.info(f"✅ Upload succeeded: {result.get('message', 'No message')}")
-                                        
-                                        # Add confirmation message to chat
-                                        confirmation_msg = {
-                                            "role": "assistant",
-                                            "content": f"I've processed '{upload_info['name']}'. You can now ask me questions about it!",
-                                            "sources": []
-                                        }
-                                        st.session_state.chat_history.append(confirmation_msg)
-                                        
-                                        # Save confirmation message to backend if we have a conversation
-                                        if st.session_state.current_conversation_id:
-                                            try:
-                                                api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages", 
-                                                          json={"role": "assistant", "content": confirmation_msg["content"], "sources": []})
-                                            except:
-                                                pass
-                                        
-                                        # Mark file as processed
-                                        st.session_state[file_key] = True
-                                        
-                                        # Clean up and close upload area
-                                        if upload_state_key in st.session_state:
-                                            del st.session_state[upload_state_key]
-                                        st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
-                                        st.session_state.show_file_upload = False
-                                        
-                                        # Small delay before rerun to ensure message is visible
-                                        import time
-                                        time.sleep(0.5)
-                                        st.rerun()
-                                elif result is None:
-                                    # No response from server
-                                    error_msg = f"❌ Upload failed: No response from server. Please check your connection and try again."
-                                    st.error(error_msg)
-                                    logger.error("Upload failed: No response from server")
-                                    
-                                    # Reset upload state to allow retry
-                                    if upload_state_key in st.session_state:
-                                        del st.session_state[upload_state_key]
-                                    if file_key in st.session_state:
-                                        del st.session_state[file_key]
-                                else:
-                                    # Unexpected result type
-                                    error_msg = f"❌ Upload failed: Unexpected response type. Please try again."
-                                    st.error(error_msg)
-                                    logger.error(f"Upload failed: Unexpected result type {type(result)}")
-                                    
-                                    # Reset upload state to allow retry
-                                    if upload_state_key in st.session_state:
-                                        del st.session_state[upload_state_key]
-                                    if file_key in st.session_state:
-                                        del st.session_state[file_key]
-                            except Exception as e:
-                                logger.error(f"Upload exception: {e}", exc_info=True)
-                                st.error(f"❌ Upload failed: {str(e)}")
-                                # Reset upload state
-                                if upload_state_key in st.session_state:
-                                    del st.session_state[upload_state_key]
-                    else:
-                        st.info(f"ℹ️ {upload_info['name']} was already processed.")
-                        # Clean up
-                        if upload_state_key in st.session_state:
-                            del st.session_state[upload_state_key]
-                        st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
-                        st.session_state.show_file_upload = False
-                        st.rerun()
+                                confirmation = {
+                                    "role": "assistant",
+                                    "content": f"I've processed '{f.name}'. You can now ask me questions about it!",
+                                    "sources": []
+                                }
+                                st.session_state.chat_history.append(confirmation)
+                                
+                                # Persist confirmation message
+                                try:
+                                    api_request(
+                                        "POST",
+                                        f"/api/v1/conversations/{business_id}/messages",
+                                        json={"role": "assistant", "content": confirmation["content"], "sources": []}
+                                    )
+                                except:
+                                    pass
+                                
+                                st.success(f"✅ {f.name} processed successfully!")
+                            else:
+                                error_msg = result.get('error', 'Unknown error') if isinstance(result, dict) else 'No response'
+                                st.error(f"❌ Failed to process {f.name}: {error_msg}")
+                        except Exception as e:
+                            st.error(f"❌ Failed to process {f.name}: {str(e)}")
+                            logger.error(f"Upload error for {f.name}: {e}", exc_info=True)
+                
+                # ✅ IMPORTANT: Do NOT auto-close upload area - allow multiple uploads
+                # Users can upload many files one after another without UI collapsing
             
             # Close button - compact
             if st.button("✕ Close", key="close_file_upload_btn", help="Close file upload"):

@@ -331,10 +331,30 @@ class TableReasoningService:
                 "sheets_ingested": 0
             }
     
+    def _normalize_entity_name(self, entity: str) -> str:
+        """
+        Normalize entity name by stripping suffixes like "LA", "Local Authority", etc.
+        Also handles common variations.
+        """
+        if not entity:
+            return entity
+        
+        entity = entity.strip()
+        # Remove common suffixes (case-insensitive)
+        suffixes = [" la", " local authority", " council", " borough", " county", " authority"]
+        for suffix in suffixes:
+            if entity.lower().endswith(suffix):
+                entity = entity[:-len(suffix)].strip()
+        
+        # Remove punctuation
+        entity = re.sub(r'[^\w\s]', '', entity)
+        
+        return entity.strip()
+    
     def _extract_entity_from_query(self, query: str) -> Optional[str]:
         """
         Extract entity (LA/council name) from query.
-        FIXED: More robust patterns and better fallback logic.
+        FIXED: More robust patterns, fuzzy normalization, and better fallback logic.
         """
         if not query:
             return None
@@ -353,6 +373,8 @@ class TableReasoningService:
             if match:
                 entity = match.group(1).strip()
                 if len(entity) > 2:
+                    # ✅ Normalize entity name (strip "LA", etc.)
+                    entity = self._normalize_entity_name(entity)
                     logger.info(f"🔍 Extracted entity from query (pattern): '{entity}'")
                     return entity
         
@@ -368,8 +390,9 @@ class TableReasoningService:
                     if i + 1 < len(words):
                         next_word = words[i + 1].lower()
                         if next_word in ["la", "council", "borough", "authority"]:
-                            logger.info(f"🔍 Extracted entity from query (fallback 1): '{word}'")
-                            return word
+                            entity = self._normalize_entity_name(word)
+                            logger.info(f"🔍 Extracted entity from query (fallback 1): '{entity}'")
+                            return entity
         
         # Fallback 2: Look for capitalized words after "from" or "for"
         for i, word in enumerate(words):
@@ -379,24 +402,31 @@ class TableReasoningService:
                 if next_word and next_word[0].isupper() and len(next_word) >= 4:
                     next_lower = next_word.lower()
                     if next_lower not in ["the", "local", "authority", "standard", "enhanced"]:
-                        logger.info(f"🔍 Extracted entity from query (fallback 2): '{next_word}'")
-                        return next_word
+                        entity = self._normalize_entity_name(next_word)
+                        logger.info(f"🔍 Extracted entity from query (fallback 2): '{entity}'")
+                        return entity
         
         logger.warning(f"🔍 No entity extracted from query: '{query[:100]}'")
         return None
     
-    def _fuzzy_match_entity(self, entity: str, coverage_list: List[str], threshold: float = 0.5) -> Tuple[bool, List[str]]:
+    def _fuzzy_match_entity(self, entity: str, coverage_list: List[str], threshold: float = 0.5) -> Tuple[bool, List[str], Optional[str]]:
         """
-        Match entity against coverage list.
+        Match entity against coverage list with fuzzy normalization and typo handling.
         FIXED: Now does exact case-insensitive matching FIRST, then fuzzy matching.
+        Returns: (matched, matches, suggestion)
         """
         from difflib import get_close_matches
         
         if not entity or not coverage_list:
-            return False, []
+            return False, [], None
         
-        entity_lower = entity.lower().strip()
-        coverage_lower = [c.lower().strip() if c else "" for c in coverage_list]
+        # ✅ Normalize entity (strip "LA", etc.)
+        entity_normalized = self._normalize_entity_name(entity)
+        entity_lower = entity_normalized.lower().strip()
+        
+        # Normalize coverage list too
+        coverage_normalized = [self._normalize_entity_name(c) if c else "" for c in coverage_list]
+        coverage_lower = [c.lower().strip() if c else "" for c in coverage_normalized]
         
         # ✅ STEP 1: Exact case-insensitive match (most reliable)
         exact_matches = []
@@ -405,8 +435,8 @@ class TableReasoningService:
                 exact_matches.append(coverage_list[i])
         
         if exact_matches:
-            logger.info(f"   ✅ EXACT match found: '{entity}' = '{exact_matches[0]}'")
-            return True, exact_matches
+            logger.info(f"   ✅ EXACT match found: '{entity_normalized}' = '{exact_matches[0]}'")
+            return True, exact_matches, None
         
         # ✅ STEP 2: Substring match (entity contained in coverage or vice versa)
         substring_matches = []
@@ -415,25 +445,33 @@ class TableReasoningService:
                 substring_matches.append(coverage_list[i])
         
         if substring_matches:
-            logger.info(f"   ✅ SUBSTRING match found: '{entity}' in '{substring_matches[0]}'")
-            return True, substring_matches
+            logger.info(f"   ✅ SUBSTRING match found: '{entity_normalized}' in '{substring_matches[0]}'")
+            return True, substring_matches, None
         
-        # ✅ STEP 3: Fuzzy match (lowered threshold from 0.6 to 0.5 for better recall)
-        matches = get_close_matches(entity_lower, coverage_lower, n=5, cutoff=threshold)
+        # ✅ STEP 3: Fuzzy match with typo handling (lowered threshold to 0.4 for typos like "Rainbridge")
+        matches = get_close_matches(entity_lower, coverage_lower, n=5, cutoff=0.4)
         
         if matches:
             # Return original case matches
             original_matches = []
             for m in matches:
-                for c in coverage_list:
-                    if c and c.lower().strip() == m:
+                for i, c in enumerate(coverage_list):
+                    if coverage_normalized[i] and coverage_normalized[i].lower().strip() == m:
                         original_matches.append(c)
                         break
-            logger.info(f"   ✅ FUZZY match found: '{entity}' ≈ '{original_matches[0]}' (similarity: {threshold}+)")
-            return True, original_matches
+            
+            # If fuzzy match is close but not exact, suggest correction
+            best_match = original_matches[0] if original_matches else None
+            if best_match and best_match.lower() != entity_lower:
+                suggestion = f"Did you mean: {best_match}?"
+                logger.info(f"   ✅ FUZZY match found: '{entity_normalized}' ≈ '{best_match}' (typo correction)")
+                return True, original_matches, suggestion
+            
+            logger.info(f"   ✅ FUZZY match found: '{entity_normalized}' ≈ '{original_matches[0]}'")
+            return True, original_matches, None
         
-        logger.warning(f"   ❌ NO match found for '{entity}' in coverage list: {coverage_list[:10]}")
-        return False, []
+        logger.warning(f"   ❌ NO match found for '{entity_normalized}' in coverage list: {coverage_list[:10]}")
+        return False, [], None
     
     def retrieve_relevant_sheets(self, business_id: str, query: str, k: int = 6) -> List[TableHit]:
         """
@@ -480,10 +518,13 @@ class TableReasoningService:
                             logger.info(f"   📋 Sheet has {len(coverage)} coverage entities: {coverage[:10]}")
                             
                             if coverage:
-                                matched, closest = self._fuzzy_match_entity(entity, coverage)
+                                matched, closest, suggestion = self._fuzzy_match_entity(entity, coverage)
                                 if matched:
                                     hits.append(hit)
-                                    logger.info(f"✅ Sheet '{hit.sheet_name}' matches entity '{entity}' (matched: {closest[:3]})")
+                                    if suggestion:
+                                        logger.info(f"✅ Sheet '{hit.sheet_name}' matches entity '{entity}' (typo correction: {suggestion})")
+                                    else:
+                                        logger.info(f"✅ Sheet '{hit.sheet_name}' matches entity '{entity}' (matched: {closest[:3]})")
                                 else:
                                     logger.warning(f"⚠️  Sheet '{hit.sheet_name}' does NOT match entity '{entity}'")
                                     logger.warning(f"   Coverage list: {coverage[:10]}")
@@ -525,10 +566,15 @@ class TableReasoningService:
             # Extract entity from query
             entity = self._extract_entity_from_query(query)
             
-            # Retrieve relevant sheets (with coverage filtering)
+            # ✅ FIX: Coverage is a ranking signal, NOT a hard block
+            # Retrieve ALL candidate sheets first (no coverage filtering)
+            all_results = self.vector_store.search_table_sheets(business_id=business_id, query=query, k=10) or []
+            logger.info(f"📊 Retrieved {len(all_results)} candidate sheets from vector store")
+            
+            # Retrieve relevant sheets (with coverage filtering for ranking)
             hits = self.retrieve_relevant_sheets(business_id, query)
             
-            # STRICT: If entity found but no sheets match coverage, check if sheets have NO coverage data
+            # ✅ FIX: If coverage match fails, DO NOT stop - continue with all sheets
             if entity and not hits:
                 logger.warning(f"⚠️  Entity '{entity}' found but no sheets matched coverage")
                 
@@ -583,21 +629,21 @@ class TableReasoningService:
                             except Exception:
                                 pass
                 
-                # If still no hits, return clarification
+                # ✅ FIX: Do NOT hard-block on coverage. Use all sheets if coverage match fails.
                 if not hits:
-                    closest = self._fuzzy_match_entity(entity, list(all_entities), threshold=0.4)[1]
-                    if closest:
-                        clarification = f"{entity} not found in any sheet coverage list. Closest matches: {', '.join(closest[:5])}"
-                    else:
-                        clarification = f"{entity} not found in any sheet coverage list. Please check the entity name or re-upload the file to ensure coverage entities are extracted."
-                    
-                    return {
-                        "answer": clarification,
-                        "sources": [],
-                        "confidence": 0.1,
-                        "provenance": {"type": "table", "coverage_mismatch": True},
-                        "needs_clarification": True
-                    }
+                    logger.warning(f"⚠️  Coverage match failed for entity='{entity}'. Continuing with table search (no hard block).")
+                    # Include all candidate sheets (coverage is ranking signal only)
+                    for r in all_results[:5]:  # Top 5 sheets
+                        md = r.get("metadata") or {}
+                        hits.append(TableHit(
+                            document_id=md.get("document_id", ""),
+                            filename=md.get("filename", ""),
+                            sheet_name=md.get("sheet_name", ""),
+                            parquet_path=md.get("parquet_path", ""),
+                            schema_path=md.get("schema_path", ""),
+                            score=float(r.get("score", 0.0)) * 0.5  # Lower score for non-coverage matches
+                        ))
+                    logger.info(f"✅ Continuing with {len(hits)} sheets despite coverage mismatch")
             
             if not hits:
                 logger.info("No relevant table sheets found")
