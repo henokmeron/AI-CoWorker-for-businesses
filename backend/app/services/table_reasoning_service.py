@@ -409,6 +409,34 @@ class TableReasoningService:
         logger.warning(f"🔍 No entity extracted from query: '{query[:100]}'")
         return None
     
+    def _normalize_entity(self, s: str) -> str:
+        """Normalize entity name for matching (strip common suffixes/prefixes)."""
+        if not s:
+            return ""
+        s = s.strip().lower()
+        # common suffixes/prefixes users add
+        for junk in [" local authority", " la", " council", " borough", " london borough of", " city of"]:
+            s = s.replace(junk, "")
+        return " ".join(s.split())
+    
+    def _sheet_contains_entity_fallback(self, df: pd.DataFrame, entity: str) -> bool:
+        """
+        Robust fallback: scan a reasonable slice of the sheet for the entity
+        (works even when coverage_entities extraction missed it).
+        """
+        ent = self._normalize_entity(entity)
+        if not ent:
+            return False
+
+        # limit scan to avoid huge cost; still covers most real spreadsheets
+        max_rows = min(len(df), 2500)
+        max_cols = min(len(df.columns), 60)
+        sub = df.iloc[:max_rows, :max_cols].astype(str)
+
+        # normalize cell strings lightly for matching
+        hay = sub.applymap(lambda x: self._normalize_entity(x))
+        return hay.apply(lambda col: col.str.contains(ent, na=False)).any().any()
+    
     def _fuzzy_match_entity(self, entity: str, coverage_list: List[str], threshold: float = 0.5) -> Tuple[bool, List[str], Optional[str]]:
         """
         Match entity against coverage list with fuzzy normalization and typo handling.
@@ -553,10 +581,30 @@ class TableReasoningService:
                 logger.info(f"📊 Returning {len(matched_hits[:k])} coverage-matched sheets (entity: '{entity}')")
                 return matched_hits[:k]
             
-            # Fallback: sheets with no coverage data
+            # ✅ CRITICAL FIX: If coverage doesn't match, scan actual sheet content (never hard-fail)
+            # Coverage list can be incomplete. If nothing matched, scan the actual sheets.
             if entity and unknown_hits:
-                logger.info(f"📊 Returning {len(unknown_hits[:k])} sheets with no coverage data (entity: '{entity}')")
-                return unknown_hits[:k]
+                logger.warning(f"⚠️  No coverage match for '{entity}' - scanning actual sheet content as fallback")
+                verified_hits = []
+                for hit in unknown_hits:
+                    try:
+                        # Load parquet data (actual sheet content)
+                        df = pd.read_parquet(hit.parquet_path)
+                        if self._sheet_contains_entity_fallback(df, entity):
+                            verified_hits.append(hit)
+                            logger.info(f"✅ Sheet '{hit.sheet_name}' contains '{entity}' (verified by content scan)")
+                    except Exception as e:
+                        logger.warning(f"Could not scan sheet '{hit.sheet_name}' for entity: {e}")
+                        # Include anyway as last resort
+                        verified_hits.append(hit)
+                
+                if verified_hits:
+                    logger.info(f"📊 Returning {len(verified_hits[:k])} sheets verified by content scan (entity: '{entity}')")
+                    return verified_hits[:k]
+                else:
+                    # Still return unknown_hits as last resort - don't block
+                    logger.warning(f"⚠️  Entity '{entity}' not found in content scan, but using all sheets anyway (coverage may be incomplete)")
+                    return unknown_hits[:k]
             
             # No entity: return all sheets
             logger.info(f"📊 Returning {len(plain_hits[:k])} sheets (no entity in query)")
@@ -590,23 +638,59 @@ class TableReasoningService:
             # Retrieve relevant sheets (with coverage filtering for ranking)
             hits = self.retrieve_relevant_sheets(business_id, query)
             
-            # ✅ CRITICAL FIX: If no coverage matches, use ALL sheets - entity might be in data
+            # ✅ CRITICAL FIX: If no coverage matches, scan actual sheet content (never hard-fail)
             if entity and not hits:
-                logger.warning(f"⚠️  Entity '{entity}' found but no sheets matched coverage - using ALL sheets as fallback")
-                logger.warning(f"   Will search through actual data in all sheets to find '{entity}'")
+                logger.warning(f"⚠️  Entity '{entity}' found but no sheets matched coverage - scanning actual content as fallback")
                 
-                # Use ALL candidate sheets - coverage is just a hint, not a requirement
+                # Scan actual sheet content to verify entity exists
+                verified_hits = []
                 for r in all_results[:10]:  # Top 10 sheets
                     md = r.get("metadata") or {}
-                    hits.append(TableHit(
-                        document_id=md.get("document_id", ""),
-                        filename=md.get("filename", ""),
-                        sheet_name=md.get("sheet_name", ""),
-                        parquet_path=md.get("parquet_path", ""),
-                        schema_path=md.get("schema_path", ""),
-                        score=float(r.get("score", 0.0)) * 0.7  # Slightly lower score but still use them
-                    ))
-                logger.info(f"✅ Continuing with {len(hits)} sheets - will search data directly for '{entity}'")
+                    parquet_path = md.get("parquet_path")
+                    if not parquet_path:
+                        continue
+                    
+                    try:
+                        # Load parquet data (actual sheet content)
+                        df = pd.read_parquet(parquet_path)
+                        if self._sheet_contains_entity_fallback(df, entity):
+                            verified_hits.append(TableHit(
+                                document_id=md.get("document_id", ""),
+                                filename=md.get("filename", ""),
+                                sheet_name=md.get("sheet_name", ""),
+                                parquet_path=parquet_path,
+                                schema_path=md.get("schema_path", ""),
+                                score=float(r.get("score", 0.0)) * 0.8  # Good score for verified match
+                            ))
+                            logger.info(f"✅ Sheet '{md.get('sheet_name')}' contains '{entity}' (verified by content scan)")
+                    except Exception as e:
+                        logger.warning(f"Could not scan sheet '{md.get('sheet_name')}' for entity: {e}")
+                        # Include anyway as last resort
+                        verified_hits.append(TableHit(
+                            document_id=md.get("document_id", ""),
+                            filename=md.get("filename", ""),
+                            sheet_name=md.get("sheet_name", ""),
+                            parquet_path=parquet_path,
+                            schema_path=md.get("schema_path", ""),
+                            score=float(r.get("score", 0.0)) * 0.5  # Lower score for unverified
+                        ))
+                
+                if verified_hits:
+                    hits = verified_hits
+                    logger.info(f"✅ Continuing with {len(hits)} sheets verified by content scan for '{entity}'")
+                else:
+                    # Last resort: use all sheets anyway (coverage may be incomplete)
+                    logger.warning(f"⚠️  Entity '{entity}' not found in content scan, but using all sheets anyway")
+                    for r in all_results[:5]:  # Top 5 sheets as last resort
+                        md = r.get("metadata") or {}
+                        hits.append(TableHit(
+                            document_id=md.get("document_id", ""),
+                            filename=md.get("filename", ""),
+                            sheet_name=md.get("sheet_name", ""),
+                            parquet_path=md.get("parquet_path", ""),
+                            schema_path=md.get("schema_path", ""),
+                            score=float(r.get("score", 0.0)) * 0.3  # Very low score but still use
+                        ))
             
             if not hits:
                 logger.info("No relevant table sheets found")

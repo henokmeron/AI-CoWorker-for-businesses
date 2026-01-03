@@ -1085,11 +1085,18 @@ with st.sidebar:
                                     for msg in loaded_conv.get("messages", [])
                                 ]
                                 st.session_state.current_conversation_id = conv.get('id')
+                                st.session_state.current_conversation = loaded_conv
+
+                                # Force Streamlit to treat the uploader as a fresh widget per chat
+                                # (prevents previous chat attachments leaking into this chat)
+                                st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
                                 st.session_state.chat_history_loaded = True
                                 logger.info(f"✅ Loaded conversation {conv.get('id')} with {len(st.session_state.chat_history)} messages")
                             else:
                                 st.session_state.chat_history = []
                                 st.session_state.current_conversation_id = conv.get('id')
+                                st.session_state.current_conversation = conv
+                                st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
                                 st.session_state.chat_history_loaded = True
                             st.rerun()
                 
@@ -1347,7 +1354,8 @@ else:
         with st.container():
             # Compact upload area
             st.markdown('<div style="max-width: 400px; margin: 0 auto;">', unsafe_allow_html=True)
-            upload_key = f"prompt_file_uploader_{st.session_state.get('upload_counter', 0)}"
+            # File uploader key MUST be unique per conversation, otherwise Streamlit reuses old uploads
+            upload_key = f"prompt_file_uploader_{st.session_state.current_conversation_id}_{st.session_state.get('upload_counter', 0)}"
             uploaded_files = st.file_uploader(
                 "📎 Attach file(s)",
                 type=["pdf", "docx", "txt", "xlsx", "doc", "xls", "pptx", "csv"],
