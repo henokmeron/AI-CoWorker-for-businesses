@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
 from datetime import datetime
+from decimal import Decimal
 
 try:
     import pandas as pd
@@ -712,18 +713,10 @@ class TableReasoningService:
             # Apply common sense rules (including fee-type binding)
             rules = self._common_sense_rules(query, schemas)
             
-            # Check fee-type binding clarification
+            # ✅ FIX: "standard fee" never needs clarification - it means Core, exclude Solo
+            # Only ask for clarification if user explicitly mentions both or is ambiguous
             fee_mapping = rules.get("fee_type_mapping", {})
-            if fee_mapping.get("needs_clarification"):
-                options = fee_mapping.get("options", [])
-                clarification = f"Do you mean {options[0]} (standard) or {options[1]}?"
-                return {
-                    "answer": clarification,
-                    "sources": [],
-                    "confidence": 0.1,
-                    "provenance": {"type": "table", "fee_type_clarification": True},
-                    "needs_clarification": True
-                }
+            # Remove needs_clarification check - standard fee = Core, period
             
             # Generate execution plan
             plan = self._llm_plan(query, hits[:3], schemas, rules, entity=entity)
@@ -776,8 +769,8 @@ class TableReasoningService:
                     "needs_clarification": True
                 }
             
-            # Execute plan
-            result = self._execute_plan(plan, hits, entity=entity)
+            # Execute plan (pass rules for exclude filtering)
+            result = self._execute_plan(plan, hits, entity=entity, rules=rules)
             
             # STRICT: If result rows == 0, return clarification (no guessing)
             if result.get("rows_used", 0) == 0:
@@ -1051,40 +1044,47 @@ class TableReasoningService:
         rules = {"notes": [], "age_mapping": {}, "column_warnings": [], "fee_type_mapping": {}}
         
         # Rule 1: Fee-type binding
-        # "standard fee" → "Core" (default mapping)
-        if "standard fee" in q or "standard" in q:
-            # Check what fee types exist in schemas
-            fee_types_found = set()
-            for sc in schemas:
-                cols = [c["name"].lower() for c in sc["columns"]]
-                for col in cols:
-                    if any(kw in col for kw in ["fee", "rate", "type"]):
-                        # Get examples from this column
-                        for c_info in sc["columns"]:
-                            if c_info["name"].lower() == col:
-                                examples = c_info.get("examples", [])
-                                for ex in examples:
-                                    ex_lower = str(ex).lower()
-                                    if "core" in ex_lower:
-                                        fee_types_found.add("Core")
-                                    if "solo" in ex_lower:
-                                        fee_types_found.add("Solo")
-                                    if "enhanced" in ex_lower:
-                                        fee_types_found.add("Enhanced")
-                                    if "complex" in ex_lower:
-                                        fee_types_found.add("Complex")
-            
-            if "Core" in fee_types_found and "Solo" in fee_types_found:
-                # Ambiguous - need clarification
-                rules["fee_type_mapping"]["needs_clarification"] = True
-                rules["fee_type_mapping"]["options"] = ["Core", "Solo"]
-                rules["notes"].append("User asked for 'standard fee' but both 'Core' and 'Solo' exist. Need clarification.")
-            elif "Core" in fee_types_found:
+        # Fee-type disambiguation (do NOT default to Solo unless user asks for Solo)
+        query_lower = (query or "").lower()
+        
+        # Check what fee types exist in schemas
+        fee_types_found = set()
+        for sc in schemas:
+            cols = [c["name"].lower() for c in sc["columns"]]
+            for col in cols:
+                if any(kw in col for kw in ["fee", "rate", "type"]):
+                    # Get examples from this column
+                    for c_info in sc["columns"]:
+                        if c_info["name"].lower() == col:
+                            examples = c_info.get("examples", [])
+                            for ex in examples:
+                                ex_lower = str(ex).lower()
+                                if "core" in ex_lower:
+                                    fee_types_found.add("Core")
+                                if "solo" in ex_lower:
+                                    fee_types_found.add("Solo")
+                                if "enhanced" in ex_lower:
+                                    fee_types_found.add("Enhanced")
+                                if "complex" in ex_lower:
+                                    fee_types_found.add("Complex")
+        
+        if "solo" in query_lower:
+            # User explicitly wants Solo placement
+            if "Solo" in fee_types_found:
+                rules["fee_type_mapping"]["target"] = "Solo"
+        elif "standard" in query_lower or "core" in query_lower:
+            # "Standard" means standard/core, NOT Solo
+            if "Core" in fee_types_found:
                 rules["fee_type_mapping"]["target"] = "Core"
-            else:
-                # No Core found - use first available
-                if fee_types_found:
-                    rules["fee_type_mapping"]["target"] = list(fee_types_found)[0]
+            # Exclude Solo results unless explicitly requested
+            rules["fee_type_mapping"]["exclude"] = ["Solo"]
+        else:
+            # Default preference: Core over Solo when both exist
+            if "Core" in fee_types_found:
+                rules["fee_type_mapping"]["target"] = "Core"
+                rules["fee_type_mapping"]["exclude"] = ["Solo"]
+            elif fee_types_found:
+                rules["fee_type_mapping"]["target"] = list(fee_types_found)[0]
         
         # Rule 2: Check if user asks to filter by X but no column resembles X
         filter_keywords = []
@@ -1201,7 +1201,7 @@ class TableReasoningService:
             logger.error(f"Error generating plan: {e}", exc_info=True)
             return None
     
-    def _execute_plan(self, plan: Dict[str, Any], hits: List[TableHit], entity: Optional[str] = None) -> Dict[str, Any]:
+    def _execute_plan(self, plan: Dict[str, Any], hits: List[TableHit], entity: Optional[str] = None, rules: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Execute plan using pandas (deterministic, universal operations).
         
@@ -1332,6 +1332,31 @@ class TableReasoningService:
                             logger.info(f"✅ Found '{entity}' in column '{found_col}' - adding filter")
                         else:
                             logger.warning(f"⚠️  Entity '{entity}' not found in any column - will search without filter")
+            
+            # ✅ Apply exclude filters from fee_type_mapping (e.g., exclude Solo when user asks for "standard fee")
+            if rules:
+                fee_mapping = rules.get("fee_type_mapping", {})
+                exclude_list = fee_mapping.get("exclude", [])
+                if exclude_list:
+                    # Find fee-type columns (columns that might contain fee types like "Solo", "Core", etc.)
+                    fee_type_columns = []
+                    for col in df.columns:
+                        col_lower = str(col).lower()
+                        if any(kw in col_lower for kw in ["fee", "type", "placement", "category"]):
+                            # Check if this column contains any of the exclude values
+                            col_values = df[col].astype(str).str.lower()
+                            for exclude_val in exclude_list:
+                                if col_values.str.contains(exclude_val.lower(), case=False, na=False).any():
+                                    fee_type_columns.append(col)
+                                    break
+                    
+                    # Filter out rows containing excluded values
+                    for col in fee_type_columns:
+                        initial_count = len(df)
+                        for exclude_val in exclude_list:
+                            df = df[~df[col].astype(str).str.contains(exclude_val, case=False, na=False)]
+                        if len(df) < initial_count:
+                            logger.info(f"✅ Excluded {initial_count - len(df)} rows containing '{exclude_val}' from column '{col}'")
             
             # Apply filters with range support
             filters_applied = []
@@ -1665,7 +1690,7 @@ class TableReasoningService:
                     # Format currency/percent if detected
                     if isinstance(v, (int, float)):
                         if "fee" in k.lower() or "rate" in k.lower() or "price" in k.lower() or "cost" in k.lower():
-                            answer_parts.append(f"{k}: £{v:,.2f}")
+                            answer_parts.append(f"{k}: {self._format_money_exact(v)}")
                         elif "percent" in k.lower() or "%" in k:
                             answer_parts.append(f"{k}: {v:.2f}%")
                         else:
@@ -1674,7 +1699,11 @@ class TableReasoningService:
                         answer_parts.append(f"{k}: {v}")
             answer = "\n".join(answer_parts) if answer_parts else "Found matching data but couldn't format it."
         elif isinstance(result_value, (int, float)):
-            answer = f"The result is: {result_value:,.2f}" if isinstance(result_value, float) else f"The result is: {result_value}"
+            # Preserve exact decimals for currency values
+            if isinstance(result_value, float):
+                answer = f"The result is: {self._format_money_exact(result_value)}"
+            else:
+                answer = f"The result is: {result_value}"
         elif isinstance(result_value, list):
             if len(result_value) == 1:
                 answer = f"Found 1 matching result: {result_value[0]}"
