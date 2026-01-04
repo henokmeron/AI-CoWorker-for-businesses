@@ -1355,8 +1355,9 @@ class TableReasoningService:
                         initial_count = len(df)
                         for exclude_val in exclude_list:
                             df = df[~df[col].astype(str).str.contains(exclude_val, case=False, na=False)]
-                        if len(df) < initial_count:
-                            logger.info(f"✅ Excluded {initial_count - len(df)} rows containing '{exclude_val}' from column '{col}'")
+                        excluded_count = initial_count - len(df)
+                        if excluded_count > 0:
+                            logger.info(f"✅ Excluded {excluded_count} rows containing excluded values {exclude_list} from column '{col}'")
             
             # Apply filters with range support
             filters_applied = []
