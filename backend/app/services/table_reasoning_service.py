@@ -721,7 +721,7 @@ class TableReasoningService:
 
                 # ✅ Spot-fee routing: if we hit West Midlands, force lookup from SPOT FEES sheet.
                 # (The workbook explicitly states West Midlands uses spot fees; the fee table is in SPOT FEES.)
-                if any(h.sheet_name.lower() == "west midlands" for h in hits):
+                if any("west midlands" in h.sheet_name.lower() or "spot fee" in h.sheet_name.lower() for h in hits):
                     try:
                         spot_candidates = self.vector_store.search_table_sheets(
                             business_id=business_id,
