@@ -733,7 +733,8 @@ class TableReasoningService:
                         spot_candidates = [s for s in spot_candidates if s.get("metadata", {}).get("document_id") in doc_ids]
                         for s in spot_candidates:
                             md = s.get("metadata") or {}
-                            if (md.get("sheet_name") or "").lower() != "spot fees":
+                            sheet_name_lower = (md.get("sheet_name") or "").lower()
+                            if "spot fee" not in sheet_name_lower:
                                 continue
                             try:
                                 df = pd.read_parquet(md.get("parquet_path"))
