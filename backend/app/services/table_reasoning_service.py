@@ -23,6 +23,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from .vector_store import get_vector_store
 from .rag_service import get_rag_service
+from .table_query_engine import parse_fee_query, lookup_fee_in_table
 from ..core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -639,59 +640,23 @@ class TableReasoningService:
             # Retrieve relevant sheets (with coverage filtering for ranking)
             hits = self.retrieve_relevant_sheets(business_id, query)
             
-            # ✅ CRITICAL FIX: If no coverage matches, scan actual sheet content (never hard-fail)
-            if entity and not hits:
-                logger.warning(f"⚠️  Entity '{entity}' found but no sheets matched coverage - scanning actual content as fallback")
-                
-                # Scan actual sheet content to verify entity exists
-                verified_hits = []
-                for r in all_results[:10]:  # Top 10 sheets
+            # ✅ CRITICAL FIX: If no coverage matches, DO NOT hard-fail.
+            # Coverage lists can miss entities due to naming differences / typos (e.g. Dudly vs Dudley).
+            # Fall back to the best semantic sheets and attempt deterministic extraction anyway.
+            if not hits:
+                logger.warning(f"⚠️  No coverage matches found - falling back to top semantic sheets")
+                # Convert all_results to TableHit objects
+                hits = []
+                for r in all_results[:3]:
                     md = r.get("metadata") or {}
-                    parquet_path = md.get("parquet_path")
-                    if not parquet_path:
-                        continue
-                    
-                    try:
-                        # Load parquet data (actual sheet content)
-                        df = pd.read_parquet(parquet_path)
-                        if self._sheet_contains_entity_fallback(df, entity):
-                            verified_hits.append(TableHit(
-                                document_id=md.get("document_id", ""),
-                                filename=md.get("filename", ""),
-                                sheet_name=md.get("sheet_name", ""),
-                                parquet_path=parquet_path,
-                                schema_path=md.get("schema_path", ""),
-                                score=float(r.get("score", 0.0)) * 0.8  # Good score for verified match
-                            ))
-                            logger.info(f"✅ Sheet '{md.get('sheet_name')}' contains '{entity}' (verified by content scan)")
-                    except Exception as e:
-                        logger.warning(f"Could not scan sheet '{md.get('sheet_name')}' for entity: {e}")
-                        # Include anyway as last resort
-                        verified_hits.append(TableHit(
-                            document_id=md.get("document_id", ""),
-                            filename=md.get("filename", ""),
-                            sheet_name=md.get("sheet_name", ""),
-                            parquet_path=parquet_path,
-                            schema_path=md.get("schema_path", ""),
-                            score=float(r.get("score", 0.0)) * 0.5  # Lower score for unverified
-                        ))
-                
-                if verified_hits:
-                    hits = verified_hits
-                    logger.info(f"✅ Continuing with {len(hits)} sheets verified by content scan for '{entity}'")
-                else:
-                    # Last resort: use all sheets anyway (coverage may be incomplete)
-                    logger.warning(f"⚠️  Entity '{entity}' not found in content scan, but using all sheets anyway")
-                    for r in all_results[:5]:  # Top 5 sheets as last resort
-                        md = r.get("metadata") or {}
-                        hits.append(TableHit(
-                            document_id=md.get("document_id", ""),
-                            filename=md.get("filename", ""),
-                            sheet_name=md.get("sheet_name", ""),
-                            parquet_path=md.get("parquet_path", ""),
-                            schema_path=md.get("schema_path", ""),
-                            score=float(r.get("score", 0.0)) * 0.3  # Very low score but still use
-                        ))
+                    hits.append(TableHit(
+                        document_id=md.get("document_id", ""),
+                        filename=md.get("filename", ""),
+                        sheet_name=md.get("sheet_name", ""),
+                        parquet_path=md.get("parquet_path", ""),
+                        schema_path=md.get("schema_path", ""),
+                        score=float(r.get("score", 0.0))
+                    ))
             
             if not hits:
                 logger.info("No relevant table sheets found")
@@ -718,7 +683,92 @@ class TableReasoningService:
             fee_mapping = rules.get("fee_type_mapping", {})
             # Remove needs_clarification check - standard fee = Core, period
             
-            # Generate execution plan
+            # ✅ Deterministic fee lookup (no guessing, no rounding).
+            # If we can answer directly from the table cell, return immediately and skip LLM planning.
+            fee_query = parse_fee_query(query)
+            if fee_query.age is not None:
+                for h in hits[:5]:
+                    try:
+                        df = pd.read_parquet(h.parquet_path)
+                    except Exception:
+                        continue
+
+                    value, prov = lookup_fee_in_table(df, fee_query)
+                    if value is not None:
+                        fee_type_label = (prov.get("fee_type_row") or "").strip() or fee_query.fee_kind
+                        age_band = prov.get("age_band")
+                        context_bits = []
+                        if fee_type_label:
+                            context_bits.append(fee_type_label)
+                        if age_band:
+                            context_bits.append(f"age band {age_band}")
+                        context = " (" + ", ".join(context_bits) + ")" if context_bits else ""
+                        display = str(value).strip()
+                        if display and not display.startswith("£"):
+                            display = f"£{display}"
+                        return {
+                            "answer": f"{display}{context}",
+                            "sources": [{
+                                "document_id": h.document_id,
+                                "sheet": h.sheet_name,
+                                "parquet_path": h.parquet_path,
+                                "schema_path": h.schema_path,
+                                "provenance": prov,
+                            }],
+                            "confidence": 0.92,
+                            "provenance": {"type": "table", "mode": "deterministic"},
+                        }
+
+                # ✅ Spot-fee routing: if we hit West Midlands, force lookup from SPOT FEES sheet.
+                # (The workbook explicitly states West Midlands uses spot fees; the fee table is in SPOT FEES.)
+                if any(h.sheet_name.lower() == "west midlands" for h in hits):
+                    try:
+                        spot_candidates = self.vector_store.search_table_sheets(
+                            business_id=business_id,
+                            query="SPOT FEES spot fees",
+                            k=10,
+                        )
+                        # Prefer same document_id as our current hit set
+                        doc_ids = {h.document_id for h in hits}
+                        spot_candidates = [s for s in spot_candidates if s.get("metadata", {}).get("document_id") in doc_ids]
+                        for s in spot_candidates:
+                            md = s.get("metadata") or {}
+                            if (md.get("sheet_name") or "").lower() != "spot fees":
+                                continue
+                            try:
+                                df = pd.read_parquet(md.get("parquet_path"))
+                            except Exception:
+                                continue
+                            value, prov = lookup_fee_in_table(df, fee_query)
+                            if value is None:
+                                continue
+                            fee_type_label = (prov.get("fee_type_row") or "").strip() or fee_query.fee_kind
+                            age_band = prov.get("age_band")
+                            context_bits = []
+                            if fee_type_label:
+                                context_bits.append(fee_type_label)
+                            if age_band:
+                                context_bits.append(f"age band {age_band}")
+                            context = " (" + ", ".join(context_bits) + ")" if context_bits else ""
+                            display = str(value).strip()
+                            if display and not display.startswith("£"):
+                                display = f"£{display}"
+                            return {
+                                "answer": f"{display}{context}",
+                                "sources": [{
+                                    "document_id": md.get("document_id"),
+                                    "sheet": md.get("sheet_name"),
+                                    "parquet_path": md.get("parquet_path"),
+                                    "schema_path": md.get("schema_path"),
+                                    "provenance": prov,
+                                }],
+                                "confidence": 0.90,
+                                "provenance": {"type": "table", "mode": "spot_fee_routing"},
+                            }
+                    except Exception as e:
+                        logger.warning(f"Spot fee routing failed: {e}")
+            
+            # Build plan with LLM (fallback)
             plan = self._llm_plan(query, hits[:3], schemas, rules, entity=entity)
             
             # ✅ CRITICAL FIX: Auto-add entity filter if entity found and not in plan
@@ -1043,48 +1093,16 @@ class TableReasoningService:
         q = query.lower()
         rules = {"notes": [], "age_mapping": {}, "column_warnings": [], "fee_type_mapping": {}}
         
-        # Rule 1: Fee-type binding
-        # Fee-type disambiguation (do NOT default to Solo unless user asks for Solo)
-        query_lower = (query or "").lower()
-        
-        # Check what fee types exist in schemas
-        fee_types_found = set()
-        for sc in schemas:
-            cols = [c["name"].lower() for c in sc["columns"]]
-            for col in cols:
-                if any(kw in col for kw in ["fee", "rate", "type"]):
-                    # Get examples from this column
-                    for c_info in sc["columns"]:
-                        if c_info["name"].lower() == col:
-                            examples = c_info.get("examples", [])
-                            for ex in examples:
-                                ex_lower = str(ex).lower()
-                                if "core" in ex_lower:
-                                    fee_types_found.add("Core")
-                                if "solo" in ex_lower:
-                                    fee_types_found.add("Solo")
-                                if "enhanced" in ex_lower:
-                                    fee_types_found.add("Enhanced")
-                                if "complex" in ex_lower:
-                                    fee_types_found.add("Complex")
-        
-        if "solo" in query_lower:
-            # User explicitly wants Solo placement
-            if "Solo" in fee_types_found:
-                rules["fee_type_mapping"]["target"] = "Solo"
-        elif "standard" in query_lower or "core" in query_lower:
-            # "Standard" means standard/core, NOT Solo
-            if "Core" in fee_types_found:
-                rules["fee_type_mapping"]["target"] = "Core"
-            # Exclude Solo results unless explicitly requested
-            rules["fee_type_mapping"]["exclude"] = ["Solo"]
-        else:
-            # Default preference: Core over Solo when both exist
-            if "Core" in fee_types_found:
-                rules["fee_type_mapping"]["target"] = "Core"
-                rules["fee_type_mapping"]["exclude"] = ["Solo"]
-            elif fee_types_found:
-                rules["fee_type_mapping"]["target"] = list(fee_types_found)[0]
+        # Rule 1: Fee-type intent guardrails (Standard must NOT become Solo unless user says "solo")
+        if "solo" in q:
+            rules["fee_type_mapping"]["requested"] = "solo"
+            rules["fee_type_mapping"]["target"] = "solo"
+        elif "standard" in q or "standard fee" in q or "core" in q:
+            rules["fee_type_mapping"]["requested"] = "standard"
+            rules["fee_type_mapping"]["target"] = "standard"
+            # Never ask clarification here. If user wants solo, they must say solo.
+            rules["fee_type_mapping"]["needs_clarification"] = False
+            rules["fee_type_mapping"]["options"] = []
         
         # Rule 2: Check if user asks to filter by X but no column resembles X
         filter_keywords = []
