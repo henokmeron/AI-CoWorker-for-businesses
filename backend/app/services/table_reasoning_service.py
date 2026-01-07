@@ -685,15 +685,42 @@ class TableReasoningService:
             
             # ✅ Deterministic fee lookup (no guessing, no rounding).
             # If we can answer directly from the table cell, return immediately and skip LLM planning.
+            # CRITICAL: Only search sheets that contain the entity (if entity specified).
             fee_query = parse_fee_query(query)
             if fee_query.age is not None:
-                for h in hits[:5]:
+                # Filter hits by entity FIRST - only search sheets that contain the LA
+                entity_filtered_hits = []
+                if entity:
+                    logger.info(f"🔍 Filtering {len(hits)} hits by entity '{entity}' before deterministic lookup")
+                    for h in hits:
+                        try:
+                            # Quick check: verify entity exists in this sheet
+                            df_check = pd.read_parquet(h.parquet_path)
+                            if self._sheet_contains_entity_fallback(df_check, entity):
+                                entity_filtered_hits.append(h)
+                                logger.info(f"✅ Sheet '{h.sheet_name}' contains entity '{entity}' - will use for lookup")
+                            else:
+                                logger.warning(f"⚠️  Sheet '{h.sheet_name}' does NOT contain entity '{entity}' - skipping")
+                        except Exception as e:
+                            logger.warning(f"⚠️  Could not verify entity in sheet '{h.sheet_name}': {e}")
+                            # If we can't verify, skip it (don't guess from wrong framework)
+                            continue
+                    
+                    if not entity_filtered_hits:
+                        logger.warning(f"⚠️  No sheets found containing entity '{entity}' - will try all hits as fallback")
+                        entity_filtered_hits = hits[:3]  # Fallback to top 3
+                else:
+                    # No entity specified - use all hits
+                    entity_filtered_hits = hits[:5]
+                
+                # Now run deterministic lookup ONLY on entity-filtered sheets
+                for h in entity_filtered_hits:
                     try:
                         df = pd.read_parquet(h.parquet_path)
                     except Exception:
                         continue
 
-                    value, prov = lookup_fee_in_table(df, fee_query)
+                    value, prov = lookup_fee_in_table(df, fee_query, entity=entity)
                     if value is not None:
                         fee_type_label = (prov.get("fee_type_row") or "").strip() or fee_query.fee_kind
                         age_band = prov.get("age_band")
@@ -706,6 +733,7 @@ class TableReasoningService:
                         display = str(value).strip()
                         if display and not display.startswith("£"):
                             display = f"£{display}"
+                        logger.info(f"✅ Deterministic lookup found: {display} from sheet '{h.sheet_name}' for entity '{entity}'")
                         return {
                             "answer": f"{display}{context}",
                             "sources": [{
@@ -740,7 +768,7 @@ class TableReasoningService:
                                 df = pd.read_parquet(md.get("parquet_path"))
                             except Exception:
                                 continue
-                            value, prov = lookup_fee_in_table(df, fee_query)
+                            value, prov = lookup_fee_in_table(df, fee_query, entity=entity)
                             if value is None:
                                 continue
                             fee_type_label = (prov.get("fee_type_row") or "").strip() or fee_query.fee_kind

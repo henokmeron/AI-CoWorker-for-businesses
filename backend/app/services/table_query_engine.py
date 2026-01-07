@@ -152,12 +152,18 @@ def _row_matches(label: str, fee_kind: str) -> bool:
     return False
 
 
-def lookup_fee_in_table(df: pd.DataFrame, fq: FeeQuery) -> Tuple[Optional[str], Dict[str, Any]]:
+def lookup_fee_in_table(df: pd.DataFrame, fq: FeeQuery, entity: Optional[str] = None) -> Tuple[Optional[str], Dict[str, Any]]:
     """
     Deterministically locate a single fee cell for queries like:
       - "standard fee for 11 year old"
       - "enhanced fee for 7 year old"
       - "solo fee for 11 year old"
+    
+    Args:
+        df: DataFrame containing the fee table
+        fq: FeeQuery with age and fee_kind
+        entity: Optional entity (LA name) to filter by - if provided, only return fee if entity exists in table
+    
     Returns (fee_string, provenance_dict).
     """
     prov: Dict[str, Any] = {}
@@ -172,6 +178,20 @@ def lookup_fee_in_table(df: pd.DataFrame, fq: FeeQuery) -> Tuple[Optional[str], 
     if fq.fee_kind not in {"standard", "solo", "enhanced", "complex", "core"}:
         return None, {"reason": "unsupported_fee_kind", "fee_kind": fq.fee_kind}
 
+    # CRITICAL: If entity is provided, verify it exists in this table before proceeding
+    if entity:
+        entity_norm = _norm(entity)
+        entity_found = False
+        # Check all columns for the entity
+        for col in df.columns:
+            col_str = df[col].astype(str).str.lower()
+            if col_str.str.contains(entity_norm, na=False, regex=False).any():
+                entity_found = True
+                prov["entity_column"] = str(col)
+                break
+        if not entity_found:
+            return None, {"reason": "entity_not_in_table", "entity": entity}
+
     label_col = _pick_label_column(df)
     if not label_col:
         return None, {"reason": "no_label_column"}
@@ -180,7 +200,7 @@ def lookup_fee_in_table(df: pd.DataFrame, fq: FeeQuery) -> Tuple[Optional[str], 
     if not age_col:
         return None, {"reason": "no_age_column", "age_band": age_band, "columns": [str(c) for c in df.columns]}
 
-    # Find best matching row
+    # Find best matching row (ONLY the specific fee type requested)
     candidates = []
     for idx, row in df.iterrows():
         label = row.get(label_col, None)
