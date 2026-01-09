@@ -1459,6 +1459,18 @@ else:
     
     # Handle chat input
     if user_query:
+        # Dedupe guard: prevent same message from being sent multiple times on rerun
+        if "last_submitted_prompt" not in st.session_state:
+            st.session_state.last_submitted_prompt = None
+        
+        dedupe_key = f"{st.session_state.current_conversation_id}::{user_query.strip()}"
+        if dedupe_key == st.session_state.last_submitted_prompt:
+            # This is a duplicate from Streamlit rerun - ignore it
+            user_query = None
+            st.stop()
+        else:
+            st.session_state.last_submitted_prompt = dedupe_key
+        
         # CRITICAL FIX: Force-create conversation BEFORE allowing query
         if not st.session_state.current_conversation_id:
             conv_title = user_query[:50] + "..." if len(user_query) > 50 else user_query
