@@ -58,6 +58,7 @@ def save_documents(documents: List[Document]):
 async def upload_document(
     business_id: str = Form(...),
     file: UploadFile = File(...),
+    conversation_id: Optional[str] = Form(None),
     api_key: str = Depends(verify_api_key),
     doc_processor = Depends(get_doc_processor),
     vector_db = Depends(get_vector_db)
@@ -393,6 +394,11 @@ async def upload_document(
             )
         
         # Save document metadata - only if vector storage succeeded
+        # Include conversation_id in metadata for chat filtering
+        doc_metadata = result.get("metadata", {}) or {}
+        if conversation_id:
+            doc_metadata["conversation_id"] = conversation_id
+        
         doc = Document(
             id=result["document_id"],
             business_id=business_id,
@@ -402,7 +408,7 @@ async def upload_document(
             file_path=saved_path,
             status="completed",
             chunk_count=len(result["chunks"]),
-            metadata=result.get("metadata", {})
+            metadata=doc_metadata
         )
         
         documents = load_documents()

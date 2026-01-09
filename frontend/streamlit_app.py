@@ -341,7 +341,7 @@ def create_business(name: str, description: Optional[str] = None) -> Optional[Di
     return None
 
 
-def upload_document(business_id: str, file) -> Optional[Dict[str, Any]]:
+def upload_document(business_id: str, conversation_id: str, file) -> Optional[Dict[str, Any]]:
     """Upload a document to a business (GPT)."""
     try:
         # Prepare file for multipart/form-data upload
@@ -364,7 +364,7 @@ def upload_document(business_id: str, file) -> Optional[Dict[str, Any]]:
             file_content = file_content.encode('utf-8')
         
         file_tuple = (file_name, file_content, file_type)
-        data = {"business_id": business_id}
+        data = {"business_id": business_id, "conversation_id": conversation_id}
         files = {"file": file_tuple}
         
         response = api_request("POST", "/api/v1/documents/upload", files=files, data=data)
@@ -1385,26 +1385,27 @@ else:
                     st.error("Please start a conversation first before uploading documents.")
                     st.stop()
                 
-                business_id = st.session_state.current_conversation_id
+                # Use the selected GPT/business for uploads (NOT the conversation id)
+                business_id = st.session_state.selected_gpt
+                chat_id = st.session_state.current_conversation_id
                 
-                # Track processed files per conversation
                 if "processed_files_by_chat" not in st.session_state:
                     st.session_state.processed_files_by_chat = {}
-                st.session_state.processed_files_by_chat.setdefault(business_id, set())
+                st.session_state.processed_files_by_chat.setdefault(chat_id, set())
                 
                 # Process each file
                 with st.spinner("📤 Uploading and processing files..."):
                     for f in uploaded_files:
                         file_sig = f"{f.name}:{f.size}"
-                        if file_sig in st.session_state.processed_files_by_chat[business_id]:
+                        if file_sig in st.session_state.processed_files_by_chat[chat_id]:
                             continue  # already processed in this chat
                         
                         try:
-                            logger.info(f"📤 Calling upload_document API for {f.name} with business_id={business_id}")
-                            result = upload_document(business_id, f)
+                            logger.info(f"📤 Calling upload_document API for {f.name} with business_id={business_id}, conversation_id={chat_id}")
+                            result = upload_document(business_id, chat_id, f)
                             
                             if result and isinstance(result, dict) and "error" not in result:
-                                st.session_state.processed_files_by_chat[business_id].add(file_sig)
+                                st.session_state.processed_files_by_chat[chat_id].add(file_sig)
                                 
                                 confirmation = {
                                     "role": "assistant",
@@ -1417,7 +1418,7 @@ else:
                                 try:
                                     api_request(
                                         "POST",
-                                        f"/api/v1/conversations/{business_id}/messages",
+                                        f"/api/v1/conversations/{chat_id}/messages",
                                         json={"role": "assistant", "content": confirmation["content"], "sources": []}
                                     )
                                 except:
@@ -1492,13 +1493,13 @@ else:
         except Exception as e:
             logger.warning(f"Could not save user message to backend: {e}")
         
-        # Get response IMMEDIATELY - CRITICAL: Use conversation_id as business_id
+        # Get response IMMEDIATELY
         with st.spinner("Thinking..."):
             try:
-                # CRITICAL FIX: Use conversation_id as business_id for document isolation
-                business_id_for_query = st.session_state.current_conversation_id
+                # CRITICAL FIX: Always use selected_business_id for queries, not conversation_id
+                business_id_for_query = st.session_state.selected_gpt
                 
-                logger.info(f"🔍 Making chat query with business_id={business_id_for_query}, query={user_query[:50]}")
+                logger.info(f"🔍 Making chat query with business_id={business_id_for_query}, conversation_id={st.session_state.current_conversation_id}, query={user_query[:50]}")
                 response = chat_query(
                     business_id_for_query,
                     user_query,
@@ -1575,8 +1576,8 @@ else:
                     "sources": []
                 })
         
-        # CRITICAL: Force rerun to display both user message and response
-        st.rerun()
+        # Do NOT force rerun - Streamlit will automatically rerun when needed
+        # Removing this prevents duplicate message sends
     
     # JavaScript to fix prompt field position and avatar visibility
     st.markdown("""

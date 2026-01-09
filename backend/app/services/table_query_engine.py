@@ -122,20 +122,32 @@ def _find_age_column(df: pd.DataFrame, age_band: str) -> Optional[str]:
 
 def _row_matches(label: str, fee_kind: str) -> bool:
     l = (label or "").lower()
+    ln = _norm(l)
 
     if fee_kind == "standard":
+        # Must not be solo
         if "solo" in l:
             return False
-        return ("standard" in l) or ("core" in l)
+        # Prefer explicit "standard" rows
+        if "standard" in l:
+            return True
+        # Many table use "core" as standard-equivalent
+        if "core" in l:
+            return True
+        return False
 
     if fee_kind == "solo":
         return "solo" in l
 
     if fee_kind == "enhanced":
-        return ("enhanced" in l) or ("mild" in l)
+        return ("enhanced" in l) or ("specialist" in l) or ("mild" in l)
 
     if fee_kind == "complex":
         return ("complex" in l) or ("severe" in l)
+
+    if fee_kind == "core":
+        # Treated as standard upstream; keep for completeness
+        return ("core" in l) and ("solo" not in l)
 
     return False
 
@@ -217,7 +229,5 @@ def lookup_fee_in_table(df: pd.DataFrame, fq: FeeQuery, entity: Optional[str] = 
         return None, {"reason": "cell_empty", **prov}
 
     fee = _format_numeric(value)
-    prov["raw_value"] = value
-    prov["resolved_value"] = fee
     return fee, prov
 

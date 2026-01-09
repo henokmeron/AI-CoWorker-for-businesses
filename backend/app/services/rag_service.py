@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class RAGService:
     """
     RAG service for document-based question answering.
-
+    
     Upgrades included:
     - Query understanding + rewrite
     - Multi-pass retrieval
@@ -33,13 +33,13 @@ class RAGService:
     - Post-answer validation + confidence control
     - Streaming parity: final correction + confidence event
     """
-
+    
     def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         self.provider = llm_provider or settings.LLM_PROVIDER
         self.model = model or self._get_default_model()
         self.llm = self._initialize_llm()
         self.vector_store = get_vector_store()
-
+    
     def _get_default_model(self) -> str:
         if self.provider == "openai":
             return settings.OPENAI_MODEL
@@ -48,7 +48,7 @@ class RAGService:
         elif self.provider == "ollama":
             return settings.OLLAMA_MODEL
         return "gpt-4-turbo-preview"
-
+    
     def _initialize_llm(self):
         if self.provider == "openai":
             if not settings.OPENAI_API_KEY:
@@ -63,7 +63,7 @@ class RAGService:
         elif self.provider == "anthropic":
             try:
                 from langchain_anthropic import ChatAnthropic
-
+                
                 if not settings.ANTHROPIC_API_KEY:
                     raise ValueError("Anthropic API key not configured")
                 logger.info(f"Initializing Anthropic LLM with model: {self.model}")
@@ -83,7 +83,7 @@ class RAGService:
             )
         else:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")
-
+    
     # -----------------------------
     # Advanced RAG helpers
     # -----------------------------
@@ -549,7 +549,7 @@ class RAGService:
     ) -> Dict[str, Any]:
         """Answer a query using advanced RAG with all intelligence layers."""
         start_time = time.time()
-
+        
         try:
             logger.info(f"🔍 Advanced RAG: business_id='{business_id}', q='{query[:120]}'")
 
@@ -573,9 +573,9 @@ class RAGService:
                     collection = self.vector_store.get_collection(business_id)
                     doc_count = collection.count() if collection else 0
                     logger.error(f"   Collection 'business_{business_id}' has {doc_count} documents")
-                except Exception as e:
-                    logger.error(f"   Could not check collection: {e}")
-            
+                    except Exception as e:
+                        logger.error(f"   Could not check collection: {e}")
+                    
             # 3) Dedup/filter/rerank
             top_docs = self._dedup_filter_rerank(raw_docs, qinfo, max_sources=max_sources)
             logger.info(f"✅ After rerank: {len(top_docs)}")
@@ -608,12 +608,12 @@ class RAGService:
 
             confidence = self._assess_confidence(top_docs, qinfo)
             logger.info(f"📊 Confidence: {confidence.get('level')} ({confidence.get('score')})")
-
+            
             # 6) Sources + metrics
             sources = self._format_sources(top_docs)
             response_time = time.time() - start_time
             tokens_used = self._estimate_tokens(messages, answer)
-
+            
             return {
                 "answer": answer,
                 "sources": sources,
@@ -629,11 +629,11 @@ class RAGService:
                     "intent": qinfo.get("intent"),
                 }
             }
-
+            
         except Exception as e:
             logger.error(f"Error in advanced RAG query: {e}", exc_info=True)
             raise RuntimeError(f"Failed to process query: {str(e)}")
-
+    
     async def query_stream(
         self,
         business_id: str,
@@ -694,7 +694,7 @@ class RAGService:
     # -----------------------------
     # Existing helpers
     # -----------------------------
-
+    
     def _format_sources(self, docs: List[Dict[str, Any]]) -> List[Source]:
         """Format documents as source citations."""
         sources = []
@@ -703,11 +703,11 @@ class RAGService:
             document_id = metadata.get("document_id", "unknown")
             filename = metadata.get("filename", "Unknown Document")
             page = metadata.get("page_number")
-
+            
             chunk_text = (doc.get("text") or "")[:200]
             if len((doc.get("text") or "")) > 200:
                 chunk_text += "..."
-
+            
             sources.append(Source(
                 document_id=document_id,
                 document_name=filename,
@@ -716,7 +716,7 @@ class RAGService:
                 relevance_score=doc.get("score", 0.0),
             ))
         return sources
-
+    
     def _estimate_tokens(self, messages: List, response: str) -> int:
         """Estimate token usage (rough approximation)."""
         total_chars = sum(len(str(msg.content)) for msg in messages)

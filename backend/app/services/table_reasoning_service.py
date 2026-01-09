@@ -61,7 +61,6 @@ class TableReasoningService:
         self.rag_service = get_rag_service()
         self.storage_base = Path(settings.DATA_DIR) / "tables"
         self.storage_base.mkdir(parents=True, exist_ok=True)
-        self.session_state = {}  # For conversational context persistence
         logger.info("✅ TableReasoningService initialized")
     
     def should_use_table(self, query: str, has_tabular_uploads: bool) -> bool:
@@ -630,22 +629,8 @@ class TableReasoningService:
             Dict with answer, provenance, and metadata, or None if cannot answer
         """
         try:
-            # Persist conversational context
-            if not hasattr(self, 'session_state'):
-                self.session_state = {}
-            if "last_context" not in self.session_state:
-                self.session_state["last_context"] = {}
-            
-            ctx = self.session_state["last_context"]
-            
             # Extract entity from query
             entity = self._extract_entity_from_query(query)
-            
-            # Use persisted entity if current query doesn't have one
-            if entity:
-                ctx["entity"] = entity
-            else:
-                entity = ctx.get("entity")
             
             # ✅ FIX: Coverage is a ranking signal, NOT a hard block
             # Retrieve ALL candidate sheets first (no coverage filtering)
@@ -865,16 +850,6 @@ class TableReasoningService:
             
             # Execute plan (pass rules for exclude filtering)
             result = self._execute_plan(plan, hits, entity=entity, rules=rules)
-            
-            # Strip any numeric hallucinations from LLM fallback
-            if isinstance(result, dict):
-                txt = result.get("answer", "")
-                # If answer contains digits and we're in LLM fallback mode, block it
-                if any(char.isdigit() for char in txt) and result.get("provenance", {}).get("type") == "table":
-                    # Check if we have actual table provenance - if not, it's hallucinated
-                    if not result.get("sources") or not any(s.get("parquet_path") for s in result.get("sources", [])):
-                        result["answer"] = "The document does not contain a definitive numeric value for this query."
-                        result["confidence"] = 0.05
             
             # STRICT: If result rows == 0, return clarification (no guessing)
             if result.get("rows_used", 0) == 0:

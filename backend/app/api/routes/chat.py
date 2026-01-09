@@ -52,8 +52,17 @@ async def chat(
         
         # Check if we should use table reasoning
         # First, check if user has uploaded tabular files
+        # CRITICAL: Filter documents by business_id AND conversation_id (if provided)
         documents = load_documents()
-        tabular_docs = [d for d in documents if d.business_id == business_id and d.filename.lower().endswith(('.xlsx', '.xls', '.csv'))]
+        docs = [d for d in documents if d.business_id == business_id and d.status == "processed"]
+        
+        if request.conversation_id:
+            docs = [
+                d for d in docs
+                if (d.metadata or {}).get("conversation_id") == request.conversation_id
+            ]
+        
+        tabular_docs = [d for d in docs if d.filename.lower().endswith(('.xlsx', '.xls', '.csv'))]
         has_tabular_uploads = len(tabular_docs) > 0
         
         # Try table reasoning first if appropriate
