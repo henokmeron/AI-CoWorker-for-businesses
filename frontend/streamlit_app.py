@@ -1260,15 +1260,21 @@ else:
     # Normal chat view
     st.markdown('<div class="main-header">💬 Chat</div>', unsafe_allow_html=True)
     
-    # Check backend connection
+    # Check backend connection (non-blocking - allow app to work even if health check fails)
     try:
         health_response = api_request("GET", "/health")
-        if not health_response or health_response.status_code != 200:
-            st.error(f"⚠️ Backend is not responding. Check if it's running at {BACKEND_URL}")
-            st.stop()
+        if not health_response:
+            st.warning(f"⚠️ Backend connection check failed. The app may not work correctly. Backend URL: {BACKEND_URL}")
+            logger.warning("Health check returned None - backend may be unreachable")
+        elif health_response.status_code != 200:
+            st.warning(f"⚠️ Backend health check returned status {health_response.status_code}. Backend URL: {BACKEND_URL}")
+            logger.warning(f"Health check returned status {health_response.status_code}")
+        else:
+            logger.info("✅ Backend health check passed")
     except Exception as e:
-        st.error(f"⚠️ Cannot connect to backend: {e}")
-        st.stop()
+        st.warning(f"⚠️ Backend connection check failed: {e}. The app may not work correctly.")
+        logger.warning(f"Health check exception: {e}")
+        # Don't stop - allow user to try anyway
     
     # CRITICAL: Load chat history on page load/refresh if we have a conversation_id
     if st.session_state.current_conversation_id and (not st.session_state.get("chat_history_loaded", False) or len(st.session_state.chat_history) == 0):
