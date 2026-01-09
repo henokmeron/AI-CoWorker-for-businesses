@@ -300,9 +300,16 @@ def api_request(method: str, endpoint: str, **kwargs) -> Optional[requests.Respo
 
 def get_businesses() -> List[Dict[str, Any]]:
     """Get all businesses (GPTs)."""
-    response = api_request("GET", "/api/v1/businesses")
-    if response and response.status_code == 200:
-        return response.json()
+    try:
+        response = api_request("GET", "/api/v1/businesses")
+        if response and response.status_code == 200:
+            return response.json()
+        elif response:
+            logger.warning(f"get_businesses returned status {response.status_code}: {response.text}")
+        else:
+            logger.warning("get_businesses returned None - backend may be unreachable")
+    except Exception as e:
+        logger.error(f"Error getting businesses: {e}", exc_info=True)
     return []
 
 
@@ -332,13 +339,26 @@ def update_business(business_id: str, name: Optional[str] = None, description: O
 
 def create_business(name: str, description: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Create a new business (GPT)."""
-    data = {"name": name}
-    if description:
-        data["description"] = description
-    response = api_request("POST", "/api/v1/businesses", json=data)
-    if response and response.status_code == 200:
-        return response.json()
-    return None
+    try:
+        data = {"name": name}
+        if description:
+            data["description"] = description
+        response = api_request("POST", "/api/v1/businesses", json=data)
+        if response and response.status_code == 200:
+            return response.json()
+        elif response:
+            logger.error(f"create_business returned status {response.status_code}: {response.text}")
+            try:
+                error_data = response.json()
+                return {"error": error_data.get("detail", f"Failed to create GPT: {response.status_code}")}
+            except:
+                return {"error": f"Failed to create GPT: {response.status_code}"}
+        else:
+            logger.error("create_business returned None - backend may be unreachable")
+            return {"error": "Backend is not responding. Cannot create GPT."}
+    except Exception as e:
+        logger.error(f"Error creating business: {e}", exc_info=True)
+        return {"error": f"Error creating GPT: {str(e)}"}
 
 
 def upload_document(business_id: str, conversation_id: str, file) -> Optional[Dict[str, Any]]:
@@ -438,13 +458,26 @@ def get_conversations(business_id: Optional[str] = None, archived: Optional[bool
 
 def create_conversation(business_id: Optional[str], title: str) -> Optional[Dict[str, Any]]:
     """Create a new conversation."""
-    data = {"title": title}
-    if business_id:
-        data["business_id"] = business_id
-    response = api_request("POST", "/api/v1/conversations", json=data)
-    if response and response.status_code == 200:
-        return response.json()
-    return None
+    try:
+        data = {"title": title}
+        if business_id:
+            data["business_id"] = business_id
+        response = api_request("POST", "/api/v1/conversations", json=data)
+        if response and response.status_code == 200:
+            return response.json()
+        elif response:
+            logger.error(f"create_conversation returned status {response.status_code}: {response.text}")
+            try:
+                error_data = response.json()
+                return {"error": error_data.get("detail", f"Failed to create chat: {response.status_code}")}
+            except:
+                return {"error": f"Failed to create chat: {response.status_code}"}
+        else:
+            logger.error("create_conversation returned None - backend may be unreachable")
+            return {"error": "Backend is not responding. Cannot create chat."}
+    except Exception as e:
+        logger.error(f"Error creating conversation: {e}", exc_info=True)
+        return {"error": f"Error creating chat: {str(e)}"}
 
 
 def rename_conversation(conversation_id: str, new_title: str) -> bool:
@@ -941,56 +974,80 @@ with st.sidebar:
         if name:
             new_gpt = create_business(name)
             if new_gpt:
-                st.success("GPT created!")
-                st.rerun()
+                if "error" in new_gpt:
+                    st.error(f"❌ {new_gpt['error']}")
+                    st.info("💡 **Tip:** Make sure the backend is running. Check the troubleshooting guide.")
+                else:
+                    st.success("✅ GPT created!")
+                    # Add to cache immediately
+                    if "gpts" not in st.session_state:
+                        st.session_state.gpts = []
+                    st.session_state.gpts.append(new_gpt)
+                    st.rerun()
     
     # Load and display GPTs
+    # Use cached GPTs if backend is down, but try to refresh
+    backend_available = True
     try:
         gpts = get_businesses()
-        st.session_state.gpts = gpts
-        
         if gpts:
-            for gpt in gpts:
-                gpt_id = gpt.get('id')
-                gpt_name = gpt.get('name', 'Unnamed GPT')
-                is_selected = st.session_state.selected_gpt == gpt_id
-                
-                col1, col2 = st.columns([8, 1])
-                with col1:
-                    button_style = "primary" if is_selected else "secondary"
-                    if st.button(gpt_name, key=f"gpt_{gpt_id}", use_container_width=True, type=button_style):
-                        st.session_state.selected_gpt = gpt_id
-                        st.session_state.current_conversation_id = None
-                        st.session_state.chat_history = []
-                        st.session_state.chat_history_loaded = False
-                        st.rerun()
-                
-                with col2:
-                    if st.button("⋮", key=f"gpt_menu_{gpt_id}", help="Options"):
-                        st.session_state.gpt_dropdown_open[gpt_id] = not st.session_state.gpt_dropdown_open.get(gpt_id, False)
-                        st.rerun()
-                
-                if st.session_state.gpt_dropdown_open.get(gpt_id, False):
-                    st.markdown("---")
-                    if st.button("✏️ Edit", key=f"gpt_edit_{gpt_id}", use_container_width=True):
-                        st.session_state.editing_gpt_id = gpt_id
-                        st.session_state.show_edit_gpt = True
-                        st.session_state.gpt_dropdown_open[gpt_id] = False
-                        st.rerun()
-                    if st.button("🗑️ Delete", key=f"gpt_delete_{gpt_id}", use_container_width=True):
-                        # Delete functionality would go here
-                        st.info("Delete feature coming soon")
-                        st.session_state.gpt_dropdown_open[gpt_id] = False
-                        st.rerun()
-                    if st.button("✕ Close", key=f"gpt_close_{gpt_id}", use_container_width=True):
-                        st.session_state.gpt_dropdown_open[gpt_id] = False
-                        st.rerun()
+            st.session_state.gpts = gpts  # Update cache with fresh data
+        elif not st.session_state.gpts:
+            # No GPTs from backend and no cache - backend might be down
+            backend_available = False
+            # Use cached GPTs if available
+            gpts = st.session_state.gpts if st.session_state.gpts else []
         else:
-            st.info("No GPTs yet. Create one to get started!")
+            # Backend returned empty but we have cache - use cache
+            gpts = st.session_state.gpts
+            backend_available = False
     except Exception as e:
         logger.error(f"Error loading GPTs: {e}", exc_info=True)
-        st.error(f"Error loading GPTs: {str(e)}")
-        st.info("Please check your backend connection and try again.")
+        # Use cached GPTs if available
+        gpts = st.session_state.gpts if st.session_state.gpts else []
+        backend_available = False
+    
+    # Display GPTs (from backend or cache)
+    if gpts:
+        for gpt in gpts:
+            gpt_id = gpt.get('id')
+            gpt_name = gpt.get('name', 'Unnamed GPT')
+            is_selected = st.session_state.selected_gpt == gpt_id
+            
+            col1, col2 = st.columns([8, 1])
+            with col1:
+                button_style = "primary" if is_selected else "secondary"
+                if st.button(gpt_name, key=f"gpt_{gpt_id}", use_container_width=True, type=button_style):
+                    st.session_state.selected_gpt = gpt_id
+                    st.session_state.current_conversation_id = None
+                    st.session_state.chat_history = []
+                    st.session_state.chat_history_loaded = False
+                    st.rerun()
+            
+            with col2:
+                if st.button("⋮", key=f"gpt_menu_{gpt_id}", help="Options"):
+                    st.session_state.gpt_dropdown_open[gpt_id] = not st.session_state.gpt_dropdown_open.get(gpt_id, False)
+                    st.rerun()
+            
+            if st.session_state.gpt_dropdown_open.get(gpt_id, False):
+                st.markdown("---")
+                if st.button("✏️ Edit", key=f"gpt_edit_{gpt_id}", use_container_width=True):
+                    st.session_state.editing_gpt_id = gpt_id
+                    st.session_state.show_edit_gpt = True
+                    st.session_state.gpt_dropdown_open[gpt_id] = False
+                    st.rerun()
+                if st.button("🗑️ Delete", key=f"gpt_delete_{gpt_id}", use_container_width=True):
+                    # Delete functionality would go here
+                    st.info("Delete feature coming soon")
+                    st.session_state.gpt_dropdown_open[gpt_id] = False
+                    st.rerun()
+                if st.button("✕ Close", key=f"gpt_close_{gpt_id}", use_container_width=True):
+                    st.session_state.gpt_dropdown_open[gpt_id] = False
+                    st.rerun()
+    else:
+        if not backend_available:
+            st.warning("⚠️ Backend is offline. Using cached data. Some features may not work.")
+        st.info("No GPTs yet. Create one to get started!")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -1018,25 +1075,31 @@ with st.sidebar:
         try:
             new_conv = create_conversation(st.session_state.selected_gpt, title=new_conv_title)
             if new_conv:
-                st.session_state.current_conversation_id = new_conv.get('id')
-                st.session_state.chat_history = []
-                st.session_state.chat_history_loaded = False
-                
-                # CRITICAL: Immediately refresh conversations list
-                cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
-                try:
-                    conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
-                    st.session_state[cache_key] = conversations
-                    st.session_state.conversations = conversations
-                    st.session_state["last_gpt_for_conversations"] = st.session_state.selected_gpt
-                    logger.info(f"✅ Created new conversation and refreshed list: {len(conversations)} conversations")
-                except Exception as e:
-                    logger.warning(f"Could not refresh conversations list: {e}")
+                if "error" in new_conv:
+                    st.error(f"❌ {new_conv['error']}")
+                    st.info("💡 **Tip:** Make sure the backend is running. Check the troubleshooting guide.")
+                else:
+                    st.session_state.current_conversation_id = new_conv.get('id')
+                    st.session_state.chat_history = []
+                    st.session_state.chat_history_loaded = False
+                    
+                    # CRITICAL: Immediately refresh conversations list
+                    cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+                    try:
+                        conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                        st.session_state[cache_key] = conversations
+                        st.session_state.conversations = conversations
+                        st.session_state["last_gpt_for_conversations"] = st.session_state.selected_gpt
+                        logger.info(f"✅ Created new conversation and refreshed list: {len(conversations)} conversations")
+                    except Exception as e:
+                        logger.warning(f"Could not refresh conversations list: {e}")
             else:
-                st.error("Could not create conversation on server. Please try again.")
+                st.error("❌ Could not create conversation on server. Backend may be offline.")
+                st.info("💡 **Tip:** Make sure the backend is running. Check the troubleshooting guide.")
         except Exception as e:
             logger.error(f"Error creating new conversation: {e}")
-            st.error(f"Failed to create conversation: {e}")
+            st.error(f"❌ Failed to create conversation: {e}")
+            st.info("💡 **Tip:** Make sure the backend is running. Check the troubleshooting guide.")
         
         st.rerun()
     
