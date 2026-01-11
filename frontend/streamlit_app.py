@@ -15,8 +15,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration
-# Backend is on Fly.io - update this if your Fly.io app name is different
-BACKEND_URL = os.getenv("BACKEND_URL", "https://ai-coworker-for-businesses.fly.dev")
+# Backend URL - Set via environment variable BACKEND_URL
+# For Railway: Get your backend URL from Railway dashboard (e.g., https://your-app-name.up.railway.app)
+# For Fly.io: https://ai-coworker-for-businesses.fly.dev
+# For local: http://localhost:8000
+BACKEND_URL = os.getenv("BACKEND_URL", "")  # Empty default - must be set via environment variable
 API_KEY = os.getenv("API_KEY", "ai-coworker-secret-key-2024")
 
 # Set page config
@@ -1323,11 +1326,33 @@ else:
     # Normal chat view
     st.markdown('<div class="main-header">💬 Chat</div>', unsafe_allow_html=True)
     
+    # Check if BACKEND_URL is configured
+    if not BACKEND_URL:
+        st.error("""
+        ⚠️ **BACKEND_URL is not configured!**
+        
+        Please set the `BACKEND_URL` environment variable to your Railway backend URL.
+        
+        **To get your Railway backend URL:**
+        1. Go to Railway Dashboard: https://railway.app
+        2. Click on your backend service
+        3. Go to "Settings" tab
+        4. Copy the "Public Domain" URL (e.g., `https://your-app.up.railway.app`)
+        5. Set it as `BACKEND_URL` environment variable in Streamlit Cloud
+        
+        **For Streamlit Cloud:**
+        - Go to: https://share.streamlit.io/
+        - Click on your app → Settings → Secrets
+        - Add: `BACKEND_URL = "https://your-railway-url.up.railway.app"`
+        """)
+        st.stop()
+    
     # Check backend connection (non-blocking - allow app to work even if health check fails)
     try:
         health_response = api_request("GET", "/health")
         if not health_response:
             st.warning(f"⚠️ Backend connection check failed. The app may not work correctly. Backend URL: {BACKEND_URL}")
+            st.info("💡 **Tip:** Make sure your Railway backend is running and the URL is correct.")
             logger.warning("Health check returned None - backend may be unreachable")
         elif health_response.status_code != 200:
             st.warning(f"⚠️ Backend health check returned status {health_response.status_code}. Backend URL: {BACKEND_URL}")
@@ -1336,6 +1361,7 @@ else:
             logger.info("✅ Backend health check passed")
     except Exception as e:
         st.warning(f"⚠️ Backend connection check failed: {e}. The app may not work correctly.")
+        st.info(f"💡 **Tip:** Verify your Railway backend URL is correct: {BACKEND_URL}")
         logger.warning(f"Health check exception: {e}")
         # Don't stop - allow user to try anyway
     
