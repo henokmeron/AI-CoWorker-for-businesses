@@ -157,7 +157,13 @@ def validate_startup():
     
     # 1. Validate OpenAI API key (required for embeddings and LLM)
     if not settings.OPENAI_API_KEY:
-        critical_errors.append("OPENAI_API_KEY is not set. This is REQUIRED for embeddings and LLM.")
+        critical_errors.append(
+            "OPENAI_API_KEY is not set. This is REQUIRED for embeddings and LLM.\n"
+            "FIX: Railway Dashboard → Your Service → Variables → Add:\n"
+            "  Name: OPENAI_API_KEY\n"
+            "  Value: sk-your-actual-openai-api-key\n"
+            "Get your key from: https://platform.openai.com/api-keys"
+        )
     else:
         logger.info("✅ OpenAI API key is set")
     
