@@ -116,12 +116,32 @@ if not settings.OPENAI_API_KEY:
         os.getenv("openai_api_key") or 
         os.getenv("OpenAI_API_Key")
     )
+    
+    # RAILWAY WORKAROUND: Check if Railway is using a different mechanism
+    # Sometimes Railway variables are available but not in os.environ immediately
+    # Try reading from Railway's internal variable system
+    if not openai_key:
+        # Railway might expose variables via different mechanisms
+        # Check all environment variables for anything that looks like an OpenAI key
+        all_env = dict(os.environ)
+        for key, value in all_env.items():
+            if "OPENAI" in key.upper() and value and value.startswith("sk-"):
+                logger.info(f"✅ Found OpenAI key in variable: {key} (Railway workaround)")
+                openai_key = value
+                break
+    
     if openai_key:
         logger.info("✅ Found OPENAI_API_KEY via os.environ fallback (Railway compatibility)")
         settings.OPENAI_API_KEY = openai_key
     else:
         logger.error("❌ OPENAI_API_KEY not found in environment variables")
         logger.error("   Checked: OPENAI_API_KEY, openai_api_key, OpenAI_API_Key")
+        logger.error("   Scanned all env vars for OpenAI-related keys")
         logger.error("   Railway Variables must have exact name: OPENAI_API_KEY")
+        logger.error("   ACTION REQUIRED: In Railway, try:")
+        logger.error("   1. Delete the variable and re-add it")
+        logger.error("   2. Use 'Raw Editor' to set it")
+        logger.error("   3. Set it at PROJECT level (not just service level)")
+        logger.error("   4. Force a full redeploy after setting")
 
 
