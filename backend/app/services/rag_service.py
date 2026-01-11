@@ -573,8 +573,8 @@ class RAGService:
                     collection = self.vector_store.get_collection(business_id)
                     doc_count = collection.count() if collection else 0
                     logger.error(f"   Collection 'business_{business_id}' has {doc_count} documents")
-                    except Exception as e:
-                        logger.error(f"   Could not check collection: {e}")
+                except Exception as e:
+                    logger.error(f"   Could not check collection: {e}")
                     
             # 3) Dedup/filter/rerank
             top_docs = self._dedup_filter_rerank(raw_docs, qinfo, max_sources=max_sources)
