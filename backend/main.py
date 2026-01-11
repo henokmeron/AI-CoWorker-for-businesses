@@ -255,14 +255,31 @@ async def startup_event():
     logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info("=" * 80)
     
-    # DIAGNOSTIC: Log all environment variables (for debugging Railway issues)
+    # DIAGNOSTIC: Log ALL environment variables (for debugging Railway issues)
     logger.info("=" * 80)
-    logger.info("🔍 ENVIRONMENT VARIABLES DIAGNOSTIC")
+    logger.info("🔍 ENVIRONMENT VARIABLES DIAGNOSTIC - ALL VARIABLES")
     logger.info("=" * 80)
+    
+    # List ALL environment variables (Railway might be setting it with a different name)
+    all_env_vars = dict(os.environ)
+    openai_related = {k: v for k, v in all_env_vars.items() if "OPENAI" in k.upper() or "API" in k.upper()}
+    
+    if openai_related:
+        logger.info("🔍 Found OpenAI/API related variables:")
+        for key, value in sorted(openai_related.items()):
+            if "KEY" in key.upper():
+                masked = value[:10] + "..." + value[-4:] if len(value) > 14 else "***"
+                logger.info(f"  {key}: {masked} (length: {len(value)})")
+            else:
+                logger.info(f"  {key}: {value}")
+    else:
+        logger.warning("⚠️  No OpenAI/API related variables found in environment!")
+    
+    # Check specific variables
     env_vars_to_check = [
         "OPENAI_API_KEY",
         "openai_api_key",
-        "OPENAI_API_KEY_",
+        "OpenAI_API_Key",
         "API_KEY",
         "SECRET_KEY",
         "DATA_DIR",
@@ -270,6 +287,8 @@ async def startup_event():
         "VECTOR_DB_TYPE",
         "PORT"
     ]
+    logger.info("=" * 80)
+    logger.info("🔍 CHECKING SPECIFIC VARIABLES:")
     for var_name in env_vars_to_check:
         value = os.getenv(var_name, "NOT SET")
         if "KEY" in var_name and value != "NOT SET":
@@ -278,6 +297,10 @@ async def startup_event():
             logger.info(f"  {var_name}: {masked} (length: {len(value)})")
         else:
             logger.info(f"  {var_name}: {value}")
+    
+    # Count total env vars
+    logger.info(f"📊 Total environment variables: {len(all_env_vars)}")
+    logger.info("=" * 80)
     
     # Check Settings object values
     logger.info("=" * 80)
