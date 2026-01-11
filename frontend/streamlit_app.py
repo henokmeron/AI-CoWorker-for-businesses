@@ -15,16 +15,26 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration
-# Backend URL - Set via environment variable BACKEND_URL
-# For Railway: Get your backend URL from Railway dashboard (e.g., https://your-app-name.up.railway.app)
-# For Fly.io: https://ai-coworker-for-businesses.fly.dev
-# For local: http://localhost:8000
-BACKEND_URL = os.getenv("BACKEND_URL", "").strip()  # Empty default - must be set via environment variable
+# Backend URL - Set via Streamlit Cloud secrets or environment variable
+# Streamlit Cloud: Use .streamlit/secrets.toml or Settings → Secrets
+# Format in secrets.toml:
+#   [default]
+#   BACKEND_URL = "https://your-railway-url.up.railway.app"
+#   API_KEY = "ai-coworker-secret-key-2024"
+
+# Try to get from Streamlit secrets first (for Streamlit Cloud), then environment variable
+try:
+    # Streamlit Cloud uses st.secrets
+    BACKEND_URL = st.secrets.get("BACKEND_URL", "").strip() if hasattr(st, 'secrets') else ""
+    API_KEY = st.secrets.get("API_KEY", "ai-coworker-secret-key-2024") if hasattr(st, 'secrets') else "ai-coworker-secret-key-2024"
+except Exception:
+    # Fallback to environment variables (for local development)
+    BACKEND_URL = os.getenv("BACKEND_URL", "").strip()
+    API_KEY = os.getenv("API_KEY", "ai-coworker-secret-key-2024")
 
 # Check if BACKEND_URL is a placeholder (user copied example text)
-if BACKEND_URL and ("your-railway-url" in BACKEND_URL.lower() or "your-app" in BACKEND_URL.lower()):
+if BACKEND_URL and ("your-railway-url" in BACKEND_URL.lower() or "your-app" in BACKEND_URL.lower() or "example" in BACKEND_URL.lower()):
     BACKEND_URL = ""  # Treat placeholder as not configured
-API_KEY = os.getenv("API_KEY", "ai-coworker-secret-key-2024")
 
 # Set page config
 st.set_page_config(
