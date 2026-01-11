@@ -2,9 +2,12 @@
 Application configuration management using Pydantic settings.
 """
 import os
+import logging
 from typing import List, Optional
 from pydantic_settings import BaseSettings
 from pydantic import Field
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -21,7 +24,25 @@ class Settings(BaseSettings):
     API_KEY: str = "change-this-in-production"
     
     # LLM Settings
-    OPENAI_API_KEY: Optional[str] = None
+    # CRITICAL: Check both os.getenv and BaseSettings for Railway compatibility
+    OPENAI_API_KEY: Optional[str] = Field(
+        default=None,
+        description="OpenAI API key from environment variable"
+    )
+    
+    def __init__(self, **kwargs):
+        """Override init to explicitly check os.environ for Railway compatibility."""
+        super().__init__(**kwargs)
+        
+        # Railway may set env vars that Pydantic doesn't pick up - check os.environ directly
+        if not self.OPENAI_API_KEY:
+            # Try direct os.environ access (Railway compatibility)
+            openai_key = os.getenv("OPENAI_API_KEY") or os.getenv("openai_api_key")
+            if openai_key:
+                logger.info("✅ Found OPENAI_API_KEY via os.environ (Railway compatibility)")
+                self.OPENAI_API_KEY = openai_key
+            else:
+                logger.warning("⚠️ OPENAI_API_KEY not found in os.environ")
     OPENAI_MODEL: str = "gpt-4-turbo-preview"
     
     ANTHROPIC_API_KEY: Optional[str] = None

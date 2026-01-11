@@ -254,6 +254,44 @@ async def startup_event():
     logger.info("=" * 80)
     logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info("=" * 80)
+    
+    # DIAGNOSTIC: Log all environment variables (for debugging Railway issues)
+    logger.info("=" * 80)
+    logger.info("🔍 ENVIRONMENT VARIABLES DIAGNOSTIC")
+    logger.info("=" * 80)
+    env_vars_to_check = [
+        "OPENAI_API_KEY",
+        "openai_api_key",
+        "OPENAI_API_KEY_",
+        "API_KEY",
+        "SECRET_KEY",
+        "DATA_DIR",
+        "CHROMA_PERSIST_DIR",
+        "VECTOR_DB_TYPE",
+        "PORT"
+    ]
+    for var_name in env_vars_to_check:
+        value = os.getenv(var_name, "NOT SET")
+        if "KEY" in var_name and value != "NOT SET":
+            # Mask sensitive values but show they exist
+            masked = value[:10] + "..." + value[-4:] if len(value) > 14 else "***"
+            logger.info(f"  {var_name}: {masked} (length: {len(value)})")
+        else:
+            logger.info(f"  {var_name}: {value}")
+    
+    # Check Settings object values
+    logger.info("=" * 80)
+    logger.info("🔍 SETTINGS OBJECT VALUES")
+    logger.info("=" * 80)
+    logger.info(f"  settings.OPENAI_API_KEY: {'SET' if settings.OPENAI_API_KEY else 'NOT SET'}")
+    if settings.OPENAI_API_KEY:
+        logger.info(f"  settings.OPENAI_API_KEY length: {len(settings.OPENAI_API_KEY)}")
+        logger.info(f"  settings.OPENAI_API_KEY prefix: {settings.OPENAI_API_KEY[:10]}...")
+    logger.info(f"  settings.API_KEY: {'SET' if settings.API_KEY else 'NOT SET'}")
+    logger.info(f"  settings.DATA_DIR: {settings.DATA_DIR}")
+    logger.info(f"  settings.CHROMA_PERSIST_DIR: {settings.CHROMA_PERSIST_DIR}")
+    logger.info("=" * 80)
+    
     logger.info(f"LLM Provider: {settings.LLM_PROVIDER}")
     logger.info(f"Vector DB: {settings.VECTOR_DB_TYPE}")
     logger.info(f"Embedding Provider: {settings.EMBEDDING_PROVIDER}")
