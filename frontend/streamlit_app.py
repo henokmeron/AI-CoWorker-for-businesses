@@ -1332,19 +1332,39 @@ else:
         ⚠️ **BACKEND_URL is not configured!**
         
         Please set the `BACKEND_URL` environment variable to your Railway backend URL.
-        
-        **To get your Railway backend URL:**
-        1. Go to Railway Dashboard: https://railway.app
-        2. Click on your backend service
-        3. Go to "Settings" tab
-        4. Copy the "Public Domain" URL (e.g., `https://your-app.up.railway.app`)
-        5. Set it as `BACKEND_URL` environment variable in Streamlit Cloud
-        
-        **For Streamlit Cloud:**
-        - Go to: https://share.streamlit.io/
-        - Click on your app → Settings → Secrets
-        - Add: `BACKEND_URL = "https://your-railway-url.up.railway.app"`
         """)
+        
+        with st.expander("📖 **How to Fix This (Click to Expand)**", expanded=True):
+            st.markdown("""
+            ### **Step 1: Get Your Railway Backend URL**
+            
+            1. Go to **Railway Dashboard:** https://railway.app
+            2. Click on your **backend service**
+            3. Look for **"Public Domain"** at the top (or go to Settings → Networking)
+            4. Copy the URL (looks like: `https://your-app.up.railway.app`)
+            
+            ### **Step 2: Set It in Streamlit Cloud**
+            
+            1. Go to **Streamlit Cloud:** https://share.streamlit.io/
+            2. Click on your app → **⚙️ Settings** → **Secrets** tab
+            3. Add this:
+               ```toml
+               BACKEND_URL = "https://your-railway-url.up.railway.app"
+               API_KEY = "ai-coworker-secret-key-2024"
+               ```
+            4. Click **"Save"**
+            5. Wait 1-2 minutes for app to restart
+            
+            ### **Step 3: Test Your Railway Backend First**
+            
+            Before setting the URL, test it works:
+            - Open: `https://your-railway-url.up.railway.app/health`
+            - Should return: `{"status":"healthy"}`
+            
+            **📖 Full guide:** See `QUICK_FIX_BACKEND_URL.md` in the repository
+            """)
+        
+        st.info("💡 **Tip:** Make sure your Railway backend is running and the `/health` endpoint works before setting `BACKEND_URL`.")
         st.stop()
     
     # Check backend connection (non-blocking - allow app to work even if health check fails)
