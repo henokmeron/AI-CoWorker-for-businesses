@@ -19,8 +19,8 @@ RUN apt-get update && apt-get install -y \
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Copy application code (only backend directory)
+COPY backend/ .
 
 # Create data directory
 RUN mkdir -p /app/data
