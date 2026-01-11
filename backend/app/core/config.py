@@ -111,9 +111,31 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        # CRITICAL: Ensure Railway environment variables are read
+        env_file_encoding = 'utf-8'
+        # Allow reading from os.environ directly (Railway compatibility)
+        extra = "ignore"
 
 
 # Global settings instance
+# CRITICAL: After instantiation, check os.environ directly for Railway compatibility
 settings = Settings()
+
+# RAILWAY FIX: Pydantic Settings may not always pick up Railway env vars
+# Check os.environ directly and override if needed
+if not settings.OPENAI_API_KEY:
+    # Try multiple possible variable names (Railway might set it differently)
+    openai_key = (
+        os.getenv("OPENAI_API_KEY") or 
+        os.getenv("openai_api_key") or 
+        os.getenv("OpenAI_API_Key")
+    )
+    if openai_key:
+        logger.info("✅ Found OPENAI_API_KEY via os.environ fallback (Railway compatibility)")
+        settings.OPENAI_API_KEY = openai_key
+    else:
+        logger.error("❌ OPENAI_API_KEY not found in environment variables")
+        logger.error("   Checked: OPENAI_API_KEY, openai_api_key, OpenAI_API_Key")
+        logger.error("   Railway Variables must have exact name: OPENAI_API_KEY")
 
 
