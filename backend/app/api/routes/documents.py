@@ -4,7 +4,7 @@ Document management API routes.
 import logging
 import os
 import json
-from typing import List
+from typing import List, Optional
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from ...models.document import Document, DocumentUploadResponse
