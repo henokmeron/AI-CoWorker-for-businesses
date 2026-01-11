@@ -29,20 +29,6 @@ class Settings(BaseSettings):
         default=None,
         description="OpenAI API key from environment variable"
     )
-    
-    def __init__(self, **kwargs):
-        """Override init to explicitly check os.environ for Railway compatibility."""
-        super().__init__(**kwargs)
-        
-        # Railway may set env vars that Pydantic doesn't pick up - check os.environ directly
-        if not self.OPENAI_API_KEY:
-            # Try direct os.environ access (Railway compatibility)
-            openai_key = os.getenv("OPENAI_API_KEY") or os.getenv("openai_api_key")
-            if openai_key:
-                logger.info("✅ Found OPENAI_API_KEY via os.environ (Railway compatibility)")
-                self.OPENAI_API_KEY = openai_key
-            else:
-                logger.warning("⚠️ OPENAI_API_KEY not found in os.environ")
     OPENAI_MODEL: str = "gpt-4-turbo-preview"
     
     ANTHROPIC_API_KEY: Optional[str] = None
