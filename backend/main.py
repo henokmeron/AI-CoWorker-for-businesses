@@ -262,18 +262,48 @@ async def startup_event():
     
     # List ALL environment variables (Railway might be setting it with a different name)
     all_env_vars = dict(os.environ)
-    openai_related = {k: v for k, v in all_env_vars.items() if "OPENAI" in k.upper() or "API" in k.upper()}
     
-    if openai_related:
-        logger.info("🔍 Found OpenAI/API related variables:")
-        for key, value in sorted(openai_related.items()):
-            if "KEY" in key.upper():
-                masked = value[:10] + "..." + value[-4:] if len(value) > 14 else "***"
-                logger.info(f"  {key}: {masked} (length: {len(value)})")
+    # Count total env vars FIRST
+    logger.info(f"📊 Total environment variables Railway passed: {len(all_env_vars)}")
+    
+    # If very few variables, Railway isn't passing them correctly
+    if len(all_env_vars) < 10:
+        logger.error("🚨 CRITICAL: Railway is passing VERY FEW environment variables!")
+        logger.error(f"   Expected 20+ variables, got only {len(all_env_vars)}")
+        logger.error("   This indicates Railway is NOT passing custom variables to the container.")
+        logger.error("   ACTION: Use Railway CLI or contact Railway support.")
+    
+    # List ALL variables (mask sensitive ones)
+    logger.info("=" * 80)
+    logger.info("📋 ALL ENVIRONMENT VARIABLES (Railway passed these):")
+    logger.info("=" * 80)
+    for key in sorted(all_env_vars.keys()):
+        value = all_env_vars[key]
+        # Mask sensitive values
+        if any(sensitive in key.upper() for sensitive in ["KEY", "SECRET", "PASSWORD", "TOKEN", "API"]):
+            if len(value) > 14:
+                masked = value[:10] + "..." + value[-4:]
             else:
-                logger.info(f"  {key}: {value}")
+                masked = "***" if value else "(empty)"
+            logger.info(f"  {key}: {masked} (length: {len(value)})")
+        else:
+            # Show non-sensitive values (truncate long ones)
+            display_value = value if len(value) < 100 else value[:97] + "..."
+            logger.info(f"  {key}: {display_value}")
+    
+    # Check for OpenAI-related variables
+    openai_related = {k: v for k, v in all_env_vars.items() if "OPENAI" in k.upper() or ("API" in k.upper() and "KEY" in k.upper())}
+    
+    logger.info("=" * 80)
+    if openai_related:
+        logger.info("✅ Found OpenAI/API related variables:")
+        for key, value in sorted(openai_related.items()):
+            masked = value[:10] + "..." + value[-4:] if len(value) > 14 else "***"
+            logger.info(f"  {key}: {masked} (length: {len(value)})")
     else:
-        logger.warning("⚠️  No OpenAI/API related variables found in environment!")
+        logger.error("❌ NO OpenAI/API related variables found in environment!")
+        logger.error("   Railway is NOT passing OPENAI_API_KEY to the container.")
+        logger.error("   Even though it's set in Railway dashboard, it's not reaching the app.")
     
     # Check specific variables
     env_vars_to_check = [
@@ -297,9 +327,6 @@ async def startup_event():
             logger.info(f"  {var_name}: {masked} (length: {len(value)})")
         else:
             logger.info(f"  {var_name}: {value}")
-    
-    # Count total env vars
-    logger.info(f"📊 Total environment variables: {len(all_env_vars)}")
     logger.info("=" * 80)
     
     # Check Settings object values
