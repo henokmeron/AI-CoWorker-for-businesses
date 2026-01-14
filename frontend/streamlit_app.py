@@ -1133,23 +1133,29 @@ with st.sidebar:
         
         st.rerun()
     
-    # Load and display conversations
-    cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
-    last_gpt_key = "last_gpt_for_conversations"
-    
-    gpt_changed = st.session_state.get(last_gpt_key) != st.session_state.selected_gpt
-    has_cache = cache_key in st.session_state and len(st.session_state.get(cache_key, [])) > 0
-    
-    try:
-        if not has_cache or gpt_changed:
-            conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
-            st.session_state[cache_key] = conversations
-            st.session_state[last_gpt_key] = st.session_state.selected_gpt
-            st.session_state.conversations = conversations
-            logger.info(f"✅ Loaded {len(conversations)} conversations for GPT: {st.session_state.selected_gpt}")
-        else:
-            conversations = st.session_state.get(cache_key, [])
-            st.session_state.conversations = conversations
+    # Load and display conversations - only if GPT is selected
+    if st.session_state.selected_gpt:
+        cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+        last_gpt_key = "last_gpt_for_conversations"
+        
+        gpt_changed = st.session_state.get(last_gpt_key) != st.session_state.selected_gpt
+        has_cache = cache_key in st.session_state and len(st.session_state.get(cache_key, [])) > 0
+        
+        try:
+            if not has_cache or gpt_changed:
+                conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                st.session_state[cache_key] = conversations
+                st.session_state[last_gpt_key] = st.session_state.selected_gpt
+                st.session_state.conversations = conversations
+                logger.info(f"✅ Loaded {len(conversations)} conversations for GPT: {st.session_state.selected_gpt}")
+            else:
+                conversations = st.session_state.get(cache_key, [])
+                st.session_state.conversations = conversations
+        except Exception as e:
+            logger.error(f"Error loading conversations: {e}")
+            conversations = []
+    else:
+        conversations = []
         
         if conversations:
             for conv in conversations[:20]:
