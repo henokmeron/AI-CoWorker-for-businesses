@@ -1008,6 +1008,9 @@ with st.sidebar:
                         # Only clear if switching to a different GPT
                         if st.session_state.selected_gpt != gpt_id:
                             st.session_state.selected_gpt = gpt_id
+                            # Set the last_gpt key immediately to prevent reload on rerun
+                            st.session_state["last_gpt_for_conversations"] = gpt_id
+                            
                             # Load conversations for this GPT
                             try:
                                 existing_convs = get_conversations(business_id=gpt_id, archived=False)
@@ -1134,14 +1137,14 @@ with st.sidebar:
         st.rerun()
     
     # Load and display conversations - only if GPT is selected
-    if st.session_state.selected_gpt:
-        cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
-        last_gpt_key = "last_gpt_for_conversations"
-        
-        gpt_changed = st.session_state.get(last_gpt_key) != st.session_state.selected_gpt
-        has_cache = cache_key in st.session_state and len(st.session_state.get(cache_key, [])) > 0
-        
-        try:
+    try:
+        if st.session_state.selected_gpt:
+            cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+            last_gpt_key = "last_gpt_for_conversations"
+            
+            gpt_changed = st.session_state.get(last_gpt_key) != st.session_state.selected_gpt
+            has_cache = cache_key in st.session_state and len(st.session_state.get(cache_key, [])) > 0
+            
             if not has_cache or gpt_changed:
                 conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
                 st.session_state[cache_key] = conversations
@@ -1151,13 +1154,8 @@ with st.sidebar:
             else:
                 conversations = st.session_state.get(cache_key, [])
                 st.session_state.conversations = conversations
-        except Exception as e:
-            logger.error(f"Error loading conversations: {e}")
-            conversations = []
-    else:
-        conversations = []
-        
-        if conversations:
+            
+            if conversations:
             for conv in conversations[:20]:
                 conv_title = conv.get('title', 'Untitled')
                 display_title = conv_title[:30] + "..." if len(conv_title) > 30 else conv_title
@@ -1263,8 +1261,10 @@ with st.sidebar:
                                 st.session_state[f"renaming_{conv.get('id')}"] = False
                                 st.rerun()
                     st.markdown("---")
+            else:
+                st.info("No conversations yet. Start chatting!")
         else:
-            st.info("No conversations yet. Start chatting!")
+            st.info("Please select a GPT to view conversations")
     except Exception as e:
         logger.error(f"Error loading conversations: {e}")
         st.warning("Error loading conversations")
