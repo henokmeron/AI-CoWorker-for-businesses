@@ -330,15 +330,23 @@ def update_business(business_id: str, name: Optional[str] = None, description: O
     return None
 
 
-def create_business(name: str, description: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def create_business(name: str, description: Optional[str] = None, settings: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """Create a new business (GPT)."""
     data = {"name": name}
     if description:
         data["description"] = description
+    if settings:
+        data["settings"] = settings
     response = api_request("POST", "/api/v1/businesses", json=data)
     if response and response.status_code == 200:
         return response.json()
-    return None
+    elif response:
+        try:
+            error_json = response.json()
+            return {"error": error_json.get("detail", "Failed to create GPT")}
+        except:
+            return {"error": response.text}
+    return {"error": "No response from server"}
 
 
 def upload_document(business_id: str, file) -> Optional[Dict[str, Any]]:
@@ -937,12 +945,50 @@ with st.sidebar:
     
     # Create GPT button
     if st.button("➕ Create GPT", use_container_width=True, key="create_gpt_btn"):
-        name = st.text_input("GPT Name", key="new_gpt_name_input")
-        if name:
-            new_gpt = create_business(name)
-            if new_gpt:
-                st.success("GPT created!")
-                st.rerun()
+        st.session_state.show_create_gpt = True
+        st.rerun()
+    
+    # Show create GPT form
+    if st.session_state.get("show_create_gpt", False):
+        st.markdown("---")
+        st.markdown("### Create New GPT")
+        with st.form("create_gpt_form", clear_on_submit=False):
+            gpt_name = st.text_input("GPT Name *", key="new_gpt_name", help="Enter a name for your GPT")
+            gpt_description = st.text_area("Description", key="new_gpt_description", height=80, help="Describe what this GPT does")
+            gpt_instructions = st.text_area("Instructions", key="new_gpt_instructions", height=120, help="Provide specific instructions for how this GPT should behave and respond")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.form_submit_button("💾 Save", use_container_width=True, type="primary"):
+                    if gpt_name and gpt_name.strip():
+                        # Prepare settings with instructions
+                        settings = {}
+                        if gpt_instructions and gpt_instructions.strip():
+                            settings["instructions"] = gpt_instructions.strip()
+                        
+                        # Create GPT with name, description, and settings
+                        new_gpt = create_business(
+                            gpt_name.strip(), 
+                            description=gpt_description.strip() if gpt_description else None,
+                            settings=settings if settings else None
+                        )
+                        if new_gpt:
+                            if "error" in new_gpt:
+                                st.error(f"❌ {new_gpt['error']}")
+                            else:
+                                st.success("✅ GPT created!")
+                                st.session_state.show_create_gpt = False
+                                # Add to cache immediately
+                                if "gpts" not in st.session_state:
+                                    st.session_state.gpts = []
+                                st.session_state.gpts.append(new_gpt)
+                                st.rerun()
+                    else:
+                        st.error("Please enter a GPT name")
+            with col2:
+                if st.form_submit_button("✕ Cancel", use_container_width=True):
+                    st.session_state.show_create_gpt = False
+                    st.rerun()
     
     # Load and display GPTs
     try:
@@ -959,10 +1005,57 @@ with st.sidebar:
                 with col1:
                     button_style = "primary" if is_selected else "secondary"
                     if st.button(gpt_name, key=f"gpt_{gpt_id}", use_container_width=True, type=button_style):
-                        st.session_state.selected_gpt = gpt_id
-                        st.session_state.current_conversation_id = None
-                        st.session_state.chat_history = []
-                        st.session_state.chat_history_loaded = False
+                        # Only clear if switching to a different GPT
+                        if st.session_state.selected_gpt != gpt_id:
+                            st.session_state.selected_gpt = gpt_id
+                            # Load conversations for this GPT
+                            try:
+                                existing_convs = get_conversations(business_id=gpt_id, archived=False)
+                                cache_key = f"conversations_cache_{gpt_id}"
+                                st.session_state[cache_key] = existing_convs
+                                st.session_state.conversations = existing_convs
+                                
+                                # Switch to most recent conversation if available
+                                if existing_convs:
+                                    # Load the most recent conversation
+                                    most_recent = existing_convs[0]
+                                    st.session_state.current_conversation_id = most_recent.get('id')
+                                    # Load its chat history
+                                    response = api_request("GET", f"/api/v1/conversations/{most_recent.get('id')}")
+                                    if response and response.status_code == 200:
+                                        loaded_conv = response.json()
+                                        st.session_state.chat_history = [
+                                            {
+                                                "role": msg.get("role"),
+                                                "content": msg.get("content"),
+                                                "sources": msg.get("sources", [])
+                                            }
+                                            for msg in loaded_conv.get("messages", [])
+                                        ]
+                                        st.session_state.chat_history_loaded = True
+                                    else:
+                                        st.session_state.chat_history = []
+                                        st.session_state.chat_history_loaded = True
+                                else:
+                                    # No conversations yet - create one
+                                    new_conv = create_conversation(gpt_id, title="New Chat")
+                                    if new_conv and "error" not in new_conv:
+                                        st.session_state.current_conversation_id = new_conv.get('id')
+                                        st.session_state.chat_history = []
+                                        st.session_state.chat_history_loaded = True
+                                        cache_key = f"conversations_cache_{gpt_id}"
+                                        st.session_state[cache_key] = [new_conv]
+                                        st.session_state.conversations = [new_conv]
+                                    else:
+                                        st.session_state.current_conversation_id = None
+                                        st.session_state.chat_history = []
+                                        st.session_state.chat_history_loaded = False
+                            except Exception as e:
+                                logger.error(f"Error loading conversations for GPT {gpt_id}: {e}", exc_info=True)
+                                st.session_state.current_conversation_id = None
+                                st.session_state.chat_history = []
+                                st.session_state.chat_history_loaded = False
+                        
                         st.rerun()
                 
                 with col2:

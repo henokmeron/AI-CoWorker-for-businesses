@@ -146,8 +146,12 @@ def _row_matches(label: str, fee_kind: str) -> bool:
         return ("complex" in l) or ("severe" in l)
 
     if fee_kind == "core":
-        # Treated as standard upstream; keep for completeness
-        return ("core" in l) and ("solo" not in l)
+        # CRITICAL: Prefer pure "core" rows over "solo for core"
+        # First check for pure "core" (without "solo")
+        if "core" in l and "solo" not in l:
+            return True
+        # Reject "solo for core" when user asks for just "core"
+        return False
 
     return False
 
@@ -212,9 +216,19 @@ def lookup_fee_in_table(df: pd.DataFrame, fq: FeeQuery, entity: Optional[str] = 
     if not candidates:
         return None, {"reason": "no_matching_row", "fee_kind": fq.fee_kind, "label_col": str(label_col)}
 
-    # Prefer explicit "standard" over "core" if fee_kind=standard
+    # Prefer explicit matches over generic ones
     chosen_idx, chosen_label = candidates[0]
-    if fq.fee_kind == "standard":
+    
+    if fq.fee_kind == "core":
+        # CRITICAL: Prefer pure "core" over "solo for core"
+        for idx, label in candidates:
+            label_lower = label.lower()
+            # Prefer rows that say just "core" without "solo"
+            if "core" in label_lower and "solo" not in label_lower:
+                chosen_idx, chosen_label = idx, label
+                break
+    elif fq.fee_kind == "standard":
+        # Prefer explicit "standard" over "core" if fee_kind=standard
         for idx, label in candidates:
             if "standard" in label.lower() and "solo" not in label.lower():
                 chosen_idx, chosen_label = idx, label
