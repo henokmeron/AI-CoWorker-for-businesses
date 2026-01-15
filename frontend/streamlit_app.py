@@ -1156,111 +1156,111 @@ with st.sidebar:
                 st.session_state.conversations = conversations
             
             if conversations:
-            for conv in conversations[:20]:
-                conv_title = conv.get('title', 'Untitled')
-                display_title = conv_title[:30] + "..." if len(conv_title) > 30 else conv_title
-                is_current = conv.get('id') == st.session_state.current_conversation_id
-                
-                col1, col2 = st.columns([8, 1])
-                
-                with col1:
-                    button_style = "primary" if is_current else "secondary"
-                    if st.button(display_title, key=f"conv_{conv.get('id')}", use_container_width=True, type=button_style):
-                        if st.session_state.current_conversation_id != conv.get('id'):
-                            st.session_state.chat_history = []
-                            st.session_state.chat_history_loaded = False
-                            
-                            response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
-                            if response and response.status_code == 200:
-                                loaded_conv = response.json()
-                                st.session_state.chat_history = [
-                                    {
-                                        "role": msg.get("role"),
-                                        "content": msg.get("content"),
-                                        "sources": msg.get("sources", [])
-                                    }
-                                    for msg in loaded_conv.get("messages", [])
-                                ]
-                                st.session_state.current_conversation_id = conv.get('id')
-                                st.session_state.current_conversation = loaded_conv
+                for conv in conversations[:20]:
+                    conv_title = conv.get('title', 'Untitled')
+                    display_title = conv_title[:30] + "..." if len(conv_title) > 30 else conv_title
+                    is_current = conv.get('id') == st.session_state.current_conversation_id
+                    
+                    col1, col2 = st.columns([8, 1])
+                    
+                    with col1:
+                        button_style = "primary" if is_current else "secondary"
+                        if st.button(display_title, key=f"conv_{conv.get('id')}", use_container_width=True, type=button_style):
+                            if st.session_state.current_conversation_id != conv.get('id'):
+                                st.session_state.chat_history = []
+                                st.session_state.chat_history_loaded = False
+                                
+                                response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
+                                if response and response.status_code == 200:
+                                    loaded_conv = response.json()
+                                    st.session_state.chat_history = [
+                                        {
+                                            "role": msg.get("role"),
+                                            "content": msg.get("content"),
+                                            "sources": msg.get("sources", [])
+                                        }
+                                        for msg in loaded_conv.get("messages", [])
+                                    ]
+                                    st.session_state.current_conversation_id = conv.get('id')
+                                    st.session_state.current_conversation = loaded_conv
 
-                                # Force Streamlit to treat the uploader as a fresh widget per chat
-                                # (prevents previous chat attachments leaking into this chat)
-                                st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
-                                st.session_state.chat_history_loaded = True
-                                logger.info(f"✅ Loaded conversation {conv.get('id')} with {len(st.session_state.chat_history)} messages")
-                            else:
-                                st.session_state.chat_history = []
-                                st.session_state.current_conversation_id = conv.get('id')
-                                st.session_state.current_conversation = conv
-                                st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
-                                st.session_state.chat_history_loaded = True
-                            st.rerun()
-                
-                with col2:
-                    if st.button("⋮", key=f"conv_menu_{conv.get('id')}", help="Options"):
-                        st.session_state[f"show_menu_{conv.get('id')}"] = not st.session_state.get(f"show_menu_{conv.get('id')}", False)
-                        st.rerun()
-                
-                # Show menu options when menu button is clicked - OUTSIDE columns
-                if st.session_state.get(f"show_menu_{conv.get('id')}", False):
-                    st.markdown("---")
-                    if st.button("✏️ Rename", key=f"rename_{conv.get('id')}", use_container_width=True):
-                        st.session_state[f"renaming_{conv.get('id')}"] = True
-                        st.session_state[f"show_menu_{conv.get('id')}"] = False
-                        st.rerun()
-                    
-                    if st.button("📦 Archive", key=f"archive_{conv.get('id')}", use_container_width=True):
-                        if archive_conversation(conv.get('id')):
-                            st.success("Conversation archived!")
-                            st.session_state[f"show_menu_{conv.get('id')}"] = False
-                            # Refresh conversations list
-                            cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
-                            try:
-                                conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
-                                st.session_state[cache_key] = conversations
-                                st.session_state.conversations = conversations
-                            except:
-                                pass
-                            st.rerun()
-                    
-                    if st.button("🗑️ Delete", key=f"delete_{conv.get('id')}", use_container_width=True):
-                        if delete_conversation(conv.get('id')):
-                            st.success("Conversation deleted!")
-                            st.session_state[f"show_menu_{conv.get('id')}"] = False
-                            # Clear current conversation if it was deleted
-                            if st.session_state.current_conversation_id == conv.get('id'):
-                                st.session_state.current_conversation_id = None
-                                st.session_state.chat_history = []
-                            # Refresh conversations list
-                            cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
-                            try:
-                                conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
-                                st.session_state[cache_key] = conversations
-                                st.session_state.conversations = conversations
-                            except:
-                                pass
-                            st.rerun()
-                    
-                    if st.button("✕ Close", key=f"close_menu_{conv.get('id')}", use_container_width=True):
-                        st.session_state[f"show_menu_{conv.get('id')}"] = False
-                        st.rerun()
-                    
-                    if st.session_state.get(f"renaming_{conv.get('id')}", False):
-                        new_title = st.text_input("New name:", value=conv_title, key=f"rename_input_{conv.get('id')}")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if st.button("✓", key=f"save_rename_{conv.get('id')}"):
-                                if new_title and new_title.strip():
-                                    if rename_conversation(conv.get('id'), new_title.strip()):
-                                        st.success("Renamed!")
-                                        st.session_state[f"renaming_{conv.get('id')}"] = False
-                                        st.rerun()
-                        with col2:
-                            if st.button("✕", key=f"cancel_rename_{conv.get('id')}"):
-                                st.session_state[f"renaming_{conv.get('id')}"] = False
+                                    # Force Streamlit to treat the uploader as a fresh widget per chat
+                                    # (prevents previous chat attachments leaking into this chat)
+                                    st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
+                                    st.session_state.chat_history_loaded = True
+                                    logger.info(f"✅ Loaded conversation {conv.get('id')} with {len(st.session_state.chat_history)} messages")
+                                else:
+                                    st.session_state.chat_history = []
+                                    st.session_state.current_conversation_id = conv.get('id')
+                                    st.session_state.current_conversation = conv
+                                    st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
+                                    st.session_state.chat_history_loaded = True
                                 st.rerun()
-                    st.markdown("---")
+                    
+                    with col2:
+                        if st.button("⋮", key=f"conv_menu_{conv.get('id')}", help="Options"):
+                            st.session_state[f"show_menu_{conv.get('id')}"] = not st.session_state.get(f"show_menu_{conv.get('id')}", False)
+                            st.rerun()
+                    
+                    # Show menu options when menu button is clicked - OUTSIDE columns
+                    if st.session_state.get(f"show_menu_{conv.get('id')}", False):
+                        st.markdown("---")
+                        if st.button("✏️ Rename", key=f"rename_{conv.get('id')}", use_container_width=True):
+                            st.session_state[f"renaming_{conv.get('id')}"] = True
+                            st.session_state[f"show_menu_{conv.get('id')}"] = False
+                            st.rerun()
+                        
+                        if st.button("📦 Archive", key=f"archive_{conv.get('id')}", use_container_width=True):
+                            if archive_conversation(conv.get('id')):
+                                st.success("Conversation archived!")
+                                st.session_state[f"show_menu_{conv.get('id')}"] = False
+                                # Refresh conversations list
+                                cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+                                try:
+                                    conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                                    st.session_state[cache_key] = conversations
+                                    st.session_state.conversations = conversations
+                                except:
+                                    pass
+                                st.rerun()
+                        
+                        if st.button("🗑️ Delete", key=f"delete_{conv.get('id')}", use_container_width=True):
+                            if delete_conversation(conv.get('id')):
+                                st.success("Conversation deleted!")
+                                st.session_state[f"show_menu_{conv.get('id')}"] = False
+                                # Clear current conversation if it was deleted
+                                if st.session_state.current_conversation_id == conv.get('id'):
+                                    st.session_state.current_conversation_id = None
+                                    st.session_state.chat_history = []
+                                # Refresh conversations list
+                                cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+                                try:
+                                    conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                                    st.session_state[cache_key] = conversations
+                                    st.session_state.conversations = conversations
+                                except:
+                                    pass
+                                st.rerun()
+                        
+                        if st.button("✕ Close", key=f"close_menu_{conv.get('id')}", use_container_width=True):
+                            st.session_state[f"show_menu_{conv.get('id')}"] = False
+                            st.rerun()
+                        
+                        if st.session_state.get(f"renaming_{conv.get('id')}", False):
+                            new_title = st.text_input("New name:", value=conv_title, key=f"rename_input_{conv.get('id')}")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("✓", key=f"save_rename_{conv.get('id')}"):
+                                    if new_title and new_title.strip():
+                                        if rename_conversation(conv.get('id'), new_title.strip()):
+                                            st.success("Renamed!")
+                                            st.session_state[f"renaming_{conv.get('id')}"] = False
+                                            st.rerun()
+                            with col2:
+                                if st.button("✕", key=f"cancel_rename_{conv.get('id')}"):
+                                    st.session_state[f"renaming_{conv.get('id')}"] = False
+                                    st.rerun()
+                        st.markdown("---")
             else:
                 st.info("No conversations yet. Start chatting!")
         else:
