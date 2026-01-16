@@ -958,7 +958,7 @@ def initialize_app_state():
 
 
 def render_edit_gpt_panel():
-    """Render edit GPT panel."""
+    """Render edit GPT panel with all sections: Name, Description, Instructions, and Documents."""
     gpt_id = st.session_state.editing_gpt_id
     if not gpt_id:
         st.session_state.show_edit_gpt = False
@@ -974,22 +974,99 @@ def render_edit_gpt_panel():
     
     st.markdown('<div class="main-header">✏️ Edit GPT</div>', unsafe_allow_html=True)
     
+    # Section 1: Basic Information
+    st.markdown("### 📝 Basic Information")
     with st.form("edit_gpt_form"):
         name = st.text_input("Name", value=gpt.get("name", ""), key="edit_gpt_name")
-        description = st.text_area("Description", value=gpt.get("description", ""), key="edit_gpt_description")
+        description = st.text_area("Description", value=gpt.get("description", ""), key="edit_gpt_description", height=100)
         
-        if st.form_submit_button("Save"):
+        if st.form_submit_button("💾 Save Basic Info", use_container_width=True):
             if update_business(gpt_id, name=name, description=description):
-                st.success("GPT updated!")
-                st.session_state.show_edit_gpt = False
-                st.session_state.editing_gpt_id = None
-                # Refresh GPTs list
+                st.success("✅ GPT basic information updated!")
                 st.session_state.gpts = get_businesses()
                 st.rerun()
             else:
                 st.error("Failed to update GPT")
     
-    if st.button("← Back"):
+    st.markdown("---")
+    
+    # Section 2: Instructions
+    st.markdown("### 🎯 Instructions")
+    gpt_settings = gpt.get("settings", {}) if isinstance(gpt.get("settings"), dict) else {}
+    current_instructions = gpt_settings.get("instructions", "")
+    
+    with st.form("edit_gpt_instructions_form"):
+        instructions = st.text_area(
+            "Instructions for this GPT",
+            value=current_instructions,
+            key="edit_gpt_instructions",
+            height=150,
+            help="Provide specific instructions for how this GPT should behave and respond"
+        )
+        
+        if st.form_submit_button("💾 Save Instructions", use_container_width=True):
+            settings = gpt_settings.copy()
+            settings["instructions"] = instructions.strip() if instructions.strip() else ""
+            if update_business(gpt_id, settings=settings):
+                st.success("✅ Instructions updated!")
+                st.rerun()
+            else:
+                st.error("Failed to update instructions")
+    
+    st.markdown("---")
+    
+    # Section 3: Documents
+    st.markdown("### 📚 Documents")
+    
+    # Load existing documents
+    try:
+        documents = get_documents(gpt_id)
+    except Exception as e:
+        logger.error(f"Error loading documents: {e}")
+        documents = []
+    
+    # Display existing documents
+    if documents:
+        st.markdown("**Uploaded Documents:**")
+        for doc in documents:
+            col1, col2 = st.columns([8, 1])
+            with col1:
+                st.text(f"📄 {doc.get('filename', doc.get('name', 'Unknown'))}")
+            with col2:
+                if st.button("🗑️", key=f"delete_doc_{doc.get('id')}", help="Delete document"):
+                    if delete_document(gpt_id, doc.get('id')):
+                        st.success("✅ Document deleted!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to delete document")
+    else:
+        st.info("No documents uploaded yet.")
+    
+    # Upload new documents
+    st.markdown("**Upload New Document:**")
+    uploaded_files = st.file_uploader(
+        "Choose file(s) to upload",
+        type=["pdf", "docx", "txt", "xlsx", "doc", "xls", "pptx", "csv"],
+        key=f"gpt_doc_upload_{gpt_id}",
+        accept_multiple_files=True,
+        help="Upload documents that this GPT can reference"
+    )
+    
+    if uploaded_files:
+        with st.spinner("📤 Uploading documents..."):
+            for file in uploaded_files:
+                result = upload_document(gpt_id, file)
+                if result and "error" not in result:
+                    st.success(f"✅ {file.name} uploaded successfully!")
+                else:
+                    error_msg = result.get("error", "Upload failed") if result else "Upload failed"
+                    st.error(f"❌ Failed to upload {file.name}: {error_msg}")
+        st.rerun()
+    
+    st.markdown("---")
+    
+    # Back button
+    if st.button("← Back", use_container_width=True):
         st.session_state.show_edit_gpt = False
         st.session_state.editing_gpt_id = None
         st.rerun()
@@ -1142,34 +1219,26 @@ with st.sidebar:
                         st.session_state.gpt_dropdown_open[gpt_id] = False
                         st.rerun()
                     if st.button("🗑️ Delete", key=f"gpt_delete_{gpt_id}", use_container_width=True):
-                        # Confirm deletion
-                        if st.session_state.get(f"confirm_delete_gpt_{gpt_id}", False):
-                            # Actually delete the GPT
-                            if delete_business(gpt_id):
-                                st.success("✅ GPT deleted!")
-                                # If this was the selected GPT, clear selection
-                                if st.session_state.selected_gpt == gpt_id:
-                                    st.session_state.selected_gpt = None
-                                    st.session_state.current_conversation_id = None
-                                    st.session_state.chat_history = []
-                                    st.session_state.conversations = []
-                                    # Clear cache for this GPT
-                                    cache_key = f"conversations_cache_{gpt_id}"
-                                    if cache_key in st.session_state:
-                                        del st.session_state[cache_key]
-                                # Refresh GPTs list
-                                st.session_state.gpts = get_businesses()
-                                st.session_state.gpt_dropdown_open[gpt_id] = False
-                                st.session_state[f"confirm_delete_gpt_{gpt_id}"] = False
-                                st.rerun()
-                            else:
-                                st.error("Failed to delete GPT. Please try again.")
-                                st.session_state[f"confirm_delete_gpt_{gpt_id}"] = False
-                        else:
-                            st.session_state[f"confirm_delete_gpt_{gpt_id}"] = True
-                            st.warning("⚠️ Click again to confirm deletion. This cannot be undone!")
                         st.session_state.gpt_dropdown_open[gpt_id] = False
-                        st.rerun()
+                        # Actually delete the GPT - simplified, no confirmation needed
+                        if delete_business(gpt_id):
+                            st.success("✅ GPT deleted!")
+                            # If this was the selected GPT, clear selection
+                            if st.session_state.selected_gpt == gpt_id:
+                                st.session_state.selected_gpt = None
+                                st.session_state.current_conversation_id = None
+                                st.session_state.chat_history = []
+                                st.session_state.conversations = []
+                                # Clear cache for this GPT
+                                cache_key = f"conversations_cache_{gpt_id}"
+                                if cache_key in st.session_state:
+                                    del st.session_state[cache_key]
+                            # Refresh GPTs list
+                            st.session_state.gpts = get_businesses()
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to delete GPT. Please try again.")
+                            st.rerun()
                     if st.button("✕ Close", key=f"gpt_close_{gpt_id}", use_container_width=True):
                         st.session_state.gpt_dropdown_open[gpt_id] = False
                         st.rerun()
@@ -1746,6 +1815,34 @@ else:
                             api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
                                       json={"role": "assistant", "content": assistant_msg["content"], "sources": assistant_msg.get("sources", [])})
                             logger.info(f"✅ Saved assistant message to conversation {st.session_state.current_conversation_id}")
+                            
+                            # AUTO-RENAME: If this is the first exchange and title is still "New Chat", rename based on user query
+                            if len(st.session_state.chat_history) == 2:  # User message + Assistant response
+                                # Get current conversation to check title
+                                conv_response = api_request("GET", f"/api/v1/conversations/{st.session_state.current_conversation_id}")
+                                if conv_response and conv_response.status_code == 200:
+                                    current_conv = conv_response.json()
+                                    current_title = current_conv.get("title", "")
+                                    # Check if title is still generic
+                                    if current_title.startswith("New Chat") or current_title.startswith("Chat "):
+                                        # Generate new title from user query (first message)
+                                        new_title = user_query.strip()
+                                        # Clean and truncate title
+                                        new_title = new_title.replace('\n', ' ').replace('\r', ' ')
+                                        new_title = ' '.join(new_title.split())  # Remove extra spaces
+                                        if len(new_title) > 60:
+                                            new_title = new_title[:57] + "..."
+                                        # Rename conversation
+                                        if rename_conversation(st.session_state.current_conversation_id, new_title):
+                                            logger.info(f"✅ Auto-renamed conversation to: {new_title}")
+                                            # Refresh conversations list in sidebar
+                                            cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
+                                            try:
+                                                conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                                                st.session_state[cache_key] = conversations
+                                                st.session_state.conversations = conversations
+                                            except:
+                                                pass
                         except Exception as e:
                             logger.warning(f"Could not save assistant message to backend: {e}")
                 else:
