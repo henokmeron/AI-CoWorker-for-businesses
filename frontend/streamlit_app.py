@@ -330,6 +330,12 @@ def update_business(business_id: str, name: Optional[str] = None, description: O
     return None
 
 
+def delete_business(business_id: str) -> bool:
+    """Delete a business (GPT)."""
+    response = api_request("DELETE", f"/api/v1/businesses/{business_id}")
+    return response and response.status_code == 200
+
+
 def create_business(name: str, description: Optional[str] = None, settings: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """Create a new business (GPT)."""
     data = {"name": name}
@@ -922,17 +928,21 @@ def initialize_app_state():
             st.session_state.gpts = []
     
     # Load conversations for selected GPT if GPT is selected
+    # CRITICAL: Always preserve conversations when switching - don't reload unnecessarily
     if st.session_state.selected_gpt:
         cache_key = f"conversations_cache_{st.session_state.selected_gpt}"
         last_gpt_key = "last_gpt_for_conversations"
         
-        # Check if we need to reload conversations
+        # Check if we need to reload conversations (only if GPT changed or no cache)
         gpt_changed = st.session_state.get(last_gpt_key) != st.session_state.selected_gpt
         has_cache = cache_key in st.session_state and len(st.session_state.get(cache_key, [])) > 0
         
         if not has_cache or gpt_changed:
             try:
+                # Load conversations from backend - they should have titles preserved
                 conversations = get_conversations(business_id=st.session_state.selected_gpt, archived=False)
+                # Sort by most recent first (assuming backend returns them sorted, but ensure)
+                conversations = sorted(conversations, key=lambda x: x.get('created_at', ''), reverse=True) if conversations else []
                 st.session_state[cache_key] = conversations
                 st.session_state[last_gpt_key] = st.session_state.selected_gpt
                 st.session_state.conversations = conversations
@@ -941,9 +951,10 @@ def initialize_app_state():
                 logger.error(f"Error loading conversations: {e}")
                 st.session_state.conversations = []
         else:
-            # Use cached conversations
+            # Use cached conversations - PRESERVE them
             conversations = st.session_state.get(cache_key, [])
             st.session_state.conversations = conversations
+            logger.info(f"✅ Using cached {len(conversations)} conversations for GPT: {st.session_state.selected_gpt}")
 
 
 def render_edit_gpt_panel():
@@ -1077,14 +1088,14 @@ with st.sidebar:
                             # Set the last_gpt key immediately to prevent reload on rerun
                             st.session_state["last_gpt_for_conversations"] = gpt_id
                             
-                            # Load conversations for this GPT
+                            # Load conversations for this GPT - PRESERVE existing conversations
                             try:
                                 existing_convs = get_conversations(business_id=gpt_id, archived=False)
                                 cache_key = f"conversations_cache_{gpt_id}"
                                 st.session_state[cache_key] = existing_convs
                                 st.session_state.conversations = existing_convs
                                 
-                                # Switch to most recent conversation if available
+                                # Switch to most recent conversation if available - DO NOT auto-create
                                 if existing_convs:
                                     # Load the most recent conversation
                                     most_recent = existing_convs[0]
@@ -1106,19 +1117,10 @@ with st.sidebar:
                                         st.session_state.chat_history = []
                                         st.session_state.chat_history_loaded = True
                                 else:
-                                    # No conversations yet - create one
-                                    new_conv = create_conversation(gpt_id, title="New Chat")
-                                    if new_conv and "error" not in new_conv:
-                                        st.session_state.current_conversation_id = new_conv.get('id')
-                                        st.session_state.chat_history = []
-                                        st.session_state.chat_history_loaded = True
-                                        cache_key = f"conversations_cache_{gpt_id}"
-                                        st.session_state[cache_key] = [new_conv]
-                                        st.session_state.conversations = [new_conv]
-                                    else:
-                                        st.session_state.current_conversation_id = None
-                                        st.session_state.chat_history = []
-                                        st.session_state.chat_history_loaded = False
+                                    # No conversations yet - DO NOT auto-create, just clear current
+                                    st.session_state.current_conversation_id = None
+                                    st.session_state.chat_history = []
+                                    st.session_state.chat_history_loaded = False
                             except Exception as e:
                                 logger.error(f"Error loading conversations for GPT {gpt_id}: {e}", exc_info=True)
                                 st.session_state.current_conversation_id = None
@@ -1140,8 +1142,32 @@ with st.sidebar:
                         st.session_state.gpt_dropdown_open[gpt_id] = False
                         st.rerun()
                     if st.button("🗑️ Delete", key=f"gpt_delete_{gpt_id}", use_container_width=True):
-                        # Delete functionality would go here
-                        st.info("Delete feature coming soon")
+                        # Confirm deletion
+                        if st.session_state.get(f"confirm_delete_gpt_{gpt_id}", False):
+                            # Actually delete the GPT
+                            if delete_business(gpt_id):
+                                st.success("✅ GPT deleted!")
+                                # If this was the selected GPT, clear selection
+                                if st.session_state.selected_gpt == gpt_id:
+                                    st.session_state.selected_gpt = None
+                                    st.session_state.current_conversation_id = None
+                                    st.session_state.chat_history = []
+                                    st.session_state.conversations = []
+                                    # Clear cache for this GPT
+                                    cache_key = f"conversations_cache_{gpt_id}"
+                                    if cache_key in st.session_state:
+                                        del st.session_state[cache_key]
+                                # Refresh GPTs list
+                                st.session_state.gpts = get_businesses()
+                                st.session_state.gpt_dropdown_open[gpt_id] = False
+                                st.session_state[f"confirm_delete_gpt_{gpt_id}"] = False
+                                st.rerun()
+                            else:
+                                st.error("Failed to delete GPT. Please try again.")
+                                st.session_state[f"confirm_delete_gpt_{gpt_id}"] = False
+                        else:
+                            st.session_state[f"confirm_delete_gpt_{gpt_id}"] = True
+                            st.warning("⚠️ Click again to confirm deletion. This cannot be undone!")
                         st.session_state.gpt_dropdown_open[gpt_id] = False
                         st.rerun()
                     if st.button("✕ Close", key=f"gpt_close_{gpt_id}", use_container_width=True):
