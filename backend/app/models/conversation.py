@@ -24,6 +24,10 @@ class Conversation(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     archived: bool = Field(default=False)
     tags: List[str] = Field(default_factory=list)
+    # Context state for follow-up questions
+    last_local_authority: Optional[str] = Field(default=None, description="Last local authority mentioned")
+    last_framework: Optional[str] = Field(default=None, description="Last framework mentioned")
+    last_fee_type: Optional[str] = Field(default=None, description="Last fee type mentioned")
 
 
 class ConversationCreate(BaseModel):

@@ -1764,11 +1764,14 @@ else:
         except Exception as e:
             logger.warning(f"Could not save user message to backend: {e}")
         
-        # Get response IMMEDIATELY - CRITICAL: Use conversation_id as business_id
+        # Get response IMMEDIATELY - CRITICAL: Use selected_gpt as business_id (not conversation_id)
         with st.spinner("Thinking..."):
             try:
-                # CRITICAL FIX: Use conversation_id as business_id for document isolation
-                business_id_for_query = st.session_state.current_conversation_id
+                # CRITICAL FIX: Use selected_gpt as business_id - documents are stored per GPT/business
+                business_id_for_query = st.session_state.selected_gpt
+                if not business_id_for_query:
+                    st.error("Please select a GPT first")
+                    st.rerun()
                 
                 logger.info(f"🔍 Making chat query with business_id={business_id_for_query}, query={user_query[:50]}")
                 response = chat_query(

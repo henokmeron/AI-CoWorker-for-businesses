@@ -58,51 +58,9 @@ async def root():
 
 
 @app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    # Verify critical services are available
-    from app.services.vector_store import get_vector_store
-    from app.services.document_processor import get_document_processor
-    
-    checks = {
-        "status": "healthy",
-        "version": settings.APP_VERSION,
-        "checks": {}
-    }
-    
-    # Check vector store
-    try:
-        vector_store = get_vector_store()
-        if vector_store.client is None:
-            checks["checks"]["vector_store"] = "unavailable"
-            checks["status"] = "degraded"
-        else:
-            checks["checks"]["vector_store"] = "available"
-    except Exception as e:
-        checks["checks"]["vector_store"] = f"error: {str(e)}"
-        checks["status"] = "unhealthy"
-    
-    # Check document processor
-    try:
-        processor = get_document_processor()
-        checks["checks"]["document_processor"] = f"available ({len(processor.handlers)} handlers)"
-    except Exception as e:
-        checks["checks"]["document_processor"] = f"error: {str(e)}"
-        checks["status"] = "unhealthy"
-    
-    # Check storage
-    try:
-        storage_path = Path(settings.UPLOAD_DIR)
-        storage_path.mkdir(parents=True, exist_ok=True)
-        test_file = storage_path / ".test_write"
-        test_file.write_text("test")
-        test_file.unlink()
-        checks["checks"]["storage"] = "writable"
-    except Exception as e:
-        checks["checks"]["storage"] = f"error: {str(e)}"
-        checks["status"] = "unhealthy"
-    
-    return checks
+def health():
+    """Health check endpoint for Fly.io."""
+    return {"ok": True}
 
 
 @app.get("/debug")

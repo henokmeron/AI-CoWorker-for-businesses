@@ -204,6 +204,41 @@ async def chat(
         if request.conversation_id:
             try:
                 conversation_service = get_conversation_service()
+                
+                # Get conversation to check stored context for follow-ups
+                conversation = conversation_service.get_conversation(request.conversation_id)
+                
+                # Extract context from query/response for follow-up questions
+                # Extract local authority
+                last_local_authority = None
+                if conversation and conversation.last_local_authority:
+                    # Use stored context if user says "that one" or similar
+                    if any(phrase in request.query.lower() for phrase in ["that one", "same", "for that", "for it"]):
+                        last_local_authority = conversation.last_local_authority
+                
+                # Extract from query if not using stored context
+                if not last_local_authority:
+                    from ...services.table_reasoning_service import get_table_reasoning_service
+                    table_service = get_table_reasoning_service()
+                    last_local_authority = table_service._extract_entity_from_query(request.query)
+                
+                # Extract framework from metadata if available
+                last_framework = None
+                if result.get("metadata") and result["metadata"].get("framework"):
+                    last_framework = result["metadata"]["framework"]
+                
+                # Extract fee type from query
+                last_fee_type = None
+                query_lower = request.query.lower()
+                if "solo" in query_lower:
+                    last_fee_type = "solo"
+                elif "standard" in query_lower or "core" in query_lower:
+                    last_fee_type = "standard"
+                elif "enhanced" in query_lower:
+                    last_fee_type = "enhanced"
+                elif "complex" in query_lower:
+                    last_fee_type = "complex"
+                
                 # Save user message BEFORE LLM response
                 user_msg = Message(
                     role="user",
@@ -219,6 +254,16 @@ async def chat(
                     sources=result.get("sources", [])
                 )
                 conversation_service.add_message(request.conversation_id, assistant_msg)
+                
+                # Update conversation context state
+                if last_local_authority or last_framework or last_fee_type:
+                    conversation_service.update_conversation_context(
+                        request.conversation_id,
+                        last_local_authority=last_local_authority,
+                        last_framework=last_framework,
+                        last_fee_type=last_fee_type
+                    )
+                
                 logger.info(f"✅ Saved messages to conversation {request.conversation_id}")
             except Exception as e:
                 # Log error but don't fail the request - conversation history is important but not critical

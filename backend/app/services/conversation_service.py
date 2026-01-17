@@ -84,7 +84,10 @@ class ConversationService:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         archived BOOLEAN DEFAULT FALSE,
-                        tags JSONB DEFAULT '[]'::jsonb
+                        tags JSONB DEFAULT '[]'::jsonb,
+                        last_local_authority TEXT,
+                        last_framework TEXT,
+                        last_fee_type TEXT
                     )
                 """)
                 
@@ -165,9 +168,9 @@ class ConversationService:
                 try:
                     with conn.cursor() as cur:
                         cur.execute("""
-                            INSERT INTO conversations (id, business_id, title, created_at, updated_at)
-                            VALUES (%s, %s, %s, %s, %s)
-                        """, (conv_id, business_id, title, conversation.created_at, conversation.updated_at))
+                            INSERT INTO conversations (id, business_id, title, created_at, updated_at, last_local_authority, last_framework, last_fee_type)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (conv_id, business_id, title, conversation.created_at, conversation.updated_at, None, None, None))
                         conn.commit()
                     conn.close()
                 except Exception as e:
@@ -250,7 +253,10 @@ class ConversationService:
                         created_at=conv_row['created_at'],
                         updated_at=conv_row['updated_at'],
                         archived=conv_row['archived'],
-                        tags=conv_row['tags'] if isinstance(conv_row['tags'], list) else json.loads(conv_row['tags'])
+                        tags=conv_row['tags'] if isinstance(conv_row['tags'], list) else json.loads(conv_row['tags']),
+                        last_local_authority=conv_row.get('last_local_authority'),
+                        last_framework=conv_row.get('last_framework'),
+                        last_fee_type=conv_row.get('last_fee_type')
                     )
                     conn.close()
                     return result
@@ -464,6 +470,13 @@ class ConversationService:
         conversations = self._load_all_json_conversations()
         for conv_data in conversations:
             if conv_data['id'] == conversation_id:
+                # Ensure context fields exist (for backward compatibility)
+                if 'last_local_authority' not in conv_data:
+                    conv_data['last_local_authority'] = None
+                if 'last_framework' not in conv_data:
+                    conv_data['last_framework'] = None
+                if 'last_fee_type' not in conv_data:
+                    conv_data['last_fee_type'] = None
                 return Conversation(**conv_data)
         return None
     
@@ -530,6 +543,72 @@ class ConversationService:
         conversations = [c for c in conversations if c['id'] != conversation_id]
         with open(self.storage_path, 'w') as f:
             json.dump(conversations, f, indent=2, default=str)
+    
+    def update_conversation_context(
+        self, 
+        conversation_id: str, 
+        last_local_authority: Optional[str] = None,
+        last_framework: Optional[str] = None,
+        last_fee_type: Optional[str] = None
+    ):
+        """Update conversation context state for follow-up questions."""
+        if self.use_database:
+            conn = self._get_connection()
+            if conn:
+                try:
+                    with conn.cursor() as cur:
+                        updates = []
+                        params = []
+                        if last_local_authority is not None:
+                            updates.append("last_local_authority = %s")
+                            params.append(last_local_authority)
+                        if last_framework is not None:
+                            updates.append("last_framework = %s")
+                            params.append(last_framework)
+                        if last_fee_type is not None:
+                            updates.append("last_fee_type = %s")
+                            params.append(last_fee_type)
+                        if updates:
+                            params.append(conversation_id)
+                            cur.execute(f"""
+                                UPDATE conversations SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP
+                                WHERE id = %s
+                            """, params)
+                            conn.commit()
+                    conn.close()
+                except Exception as e:
+                    logger.error(f"Error updating conversation context: {e}")
+                    if conn:
+                        conn.close()
+                    self._update_json_conversation_context(conversation_id, last_local_authority, last_framework, last_fee_type)
+            else:
+                self._update_json_conversation_context(conversation_id, last_local_authority, last_framework, last_fee_type)
+        else:
+            self._update_json_conversation_context(conversation_id, last_local_authority, last_framework, last_fee_type)
+    
+    def _update_json_conversation_context(
+        self, 
+        conversation_id: str,
+        last_local_authority: Optional[str] = None,
+        last_framework: Optional[str] = None,
+        last_fee_type: Optional[str] = None
+    ):
+        """Update conversation context in JSON storage."""
+        import json
+        conversations = self._load_all_json_conversations()
+        for conv in conversations:
+            if conv['id'] == conversation_id:
+                if last_local_authority is not None:
+                    conv['last_local_authority'] = last_local_authority
+                if last_framework is not None:
+                    conv['last_framework'] = last_framework
+                if last_fee_type is not None:
+                    conv['last_fee_type'] = last_fee_type
+                conv['updated_at'] = datetime.utcnow().isoformat()
+                with open(self.storage_path, 'w') as f:
+                    json.dump(conversations, f, indent=2, default=str)
+                return
+        logger.warning(f"Conversation {conversation_id} not found for context update")
     
     def _load_all_json_conversations(self) -> List[Dict]:
         """Load all conversations from JSON file."""

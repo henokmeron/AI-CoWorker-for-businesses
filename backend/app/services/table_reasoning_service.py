@@ -185,6 +185,9 @@ class TableReasoningService:
                         # Index schema embedding (includes coverage entities)
                         embed_text = self._schema_to_embed_text(schema)
                         logger.info(f"   🔍 Indexing schema embedding for sheet '{sheet_name}' in vector store...")
+                        # Extract framework from sheet name for metadata
+                        framework_name = sheet_name.strip() if sheet_name else None
+                        
                         self.vector_store.upsert_table_sheet(
                             business_id=business_id,
                             text=embed_text,
@@ -192,6 +195,7 @@ class TableReasoningService:
                                 "document_id": document_id,
                                 "filename": filename,
                                 "sheet_name": sheet_name,
+                                "framework": framework_name,  # Store framework in metadata
                                 "parquet_path": str(parquet_path),
                                 "schema_path": str(schema_path),
                             }
@@ -1062,9 +1066,13 @@ class TableReasoningService:
     
     def _infer_schema(self, df: pd.DataFrame, filename: str, sheet: str) -> Dict[str, Any]:
         """Infer schema from DataFrame."""
+        # Extract framework name from sheet name (sheet name is typically the framework)
+        framework_name = sheet.strip() if sheet else None
+        
         schema = {
             "filename": filename,
             "sheet_name": sheet,
+            "framework": framework_name,  # Store framework name from sheet
             "row_count": int(len(df)),
             "columns": [],
             "coverage_entities": self._extract_coverage_entities(df, sheet_name=sheet)
@@ -1098,6 +1106,11 @@ class TableReasoningService:
     def _schema_to_embed_text(self, schema: Dict[str, Any]) -> str:
         """Convert schema to text for embedding."""
         parts = [f"FILE: {schema['filename']}", f"SHEET: {schema['sheet_name']}"]
+        
+        # Include framework name if available
+        framework = schema.get("framework")
+        if framework:
+            parts.append(f"FRAMEWORK: {framework}")
         
         # Include coverage entities
         coverage = schema.get("coverage_entities", [])
