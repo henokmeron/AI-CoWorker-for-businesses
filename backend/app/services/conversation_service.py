@@ -76,10 +76,11 @@ class ConversationService:
         try:
             with conn.cursor() as cur:
                 # Create conversations table
+                # CRITICAL: business_id must be nullable to allow chats without GPT
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS conversations (
                         id VARCHAR(255) PRIMARY KEY,
-                        business_id VARCHAR(255) NOT NULL,
+                        business_id VARCHAR(255),
                         title TEXT NOT NULL,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -147,10 +148,13 @@ class ConversationService:
     
     def create_conversation(self, business_id: Optional[str] = None, title: Optional[str] = None) -> Conversation:
         """Create a new conversation."""
-        # Use default business_id if not provided
-        if business_id is None:
-            business_id = settings.DEFAULT_BUSINESS_ID
-        conv_id = f"conv_{business_id}_{int(datetime.utcnow().timestamp())}"
+        # CRITICAL: Allow None business_id for normal chats (chats without GPT)
+        # Only use default if explicitly needed, but prefer None for normal chats
+        # Generate unique ID based on whether business_id exists
+        if business_id:
+            conv_id = f"conv_{business_id}_{int(datetime.utcnow().timestamp())}"
+        else:
+            conv_id = f"conv_normal_{int(datetime.utcnow().timestamp())}"
         title = title or f"Chat {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
         
         conversation = Conversation(

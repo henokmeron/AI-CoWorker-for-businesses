@@ -17,7 +17,7 @@ class Message(BaseModel):
 class Conversation(BaseModel):
     """Conversation/chat session."""
     id: str = Field(..., description="Conversation ID")
-    business_id: str = Field(..., description="Business ID")
+    business_id: Optional[str] = Field(None, description="Business/GPT ID (nullable - chats can exist without GPT)")
     title: str = Field(..., description="Conversation title")
     messages: List[Message] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)

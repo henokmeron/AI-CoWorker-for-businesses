@@ -31,13 +31,12 @@ async def chat(
     and provide an answer with source citations.
     """
     try:
-        # CRITICAL: Reject missing business_id - no fallback to "temp_chat"
-        if not request.business_id:
-            raise HTTPException(
-                status_code=400,
-                detail="business_id is required. Each conversation must have its own document collection."
-            )
+        # CRITICAL: Allow None business_id for normal chats (chats without GPT)
+        # Normal chats won't have document context but can still work
         business_id = request.business_id
+        if not business_id:
+            # Normal chat without GPT - can still answer general questions
+            logger.info(f"💬 Normal chat (no GPT): {request.query[:100]}")
         logger.info(f"💬 Chat request for business_id='{business_id}': {request.query[:100]}")
         
         # Validate OpenAI API key
@@ -137,46 +136,48 @@ async def chat(
                 table_result = None  # Ensure we fall back to RAG
         
         # Fall back to normal RAG
-        logger.info(f"💬 Falling back to RAG service for business_id='{business_id}'")
+        if business_id:
+            logger.info(f"💬 Falling back to RAG service for business_id='{business_id}'")
+            
+            # CRITICAL DIAGNOSTIC: Check if documents exist for this business_id
+            try:
+                from ...services.vector_store import get_vector_store
+                vector_store = get_vector_store()
+                collection = vector_store.get_collection(business_id)
+                if collection:
+                    doc_count = collection.count()
+                    logger.info(f"📊 DIAGNOSTIC: Collection 'business_{business_id}' has {doc_count} documents")
+                    if doc_count == 0:
+                        logger.warning(f"⚠️  Collection 'business_{business_id}' is EMPTY - no documents uploaded for this GPT")
+                else:
+                    logger.warning(f"⚠️  Could not get collection for business_id='{business_id}'")
+            except Exception as e:
+                logger.warning(f"⚠️  Could not check collection status: {e}")
+        else:
+            logger.info(f"💬 Normal chat (no GPT) - answering without document context")
         
-        # CRITICAL DIAGNOSTIC: Check if documents exist for this business_id
         try:
-            from ...services.vector_store import get_vector_store
-            vector_store = get_vector_store()
-            collection = vector_store.get_collection(business_id)
-            if collection:
-                doc_count = collection.count()
-                logger.info(f"📊 DIAGNOSTIC: Collection 'business_{business_id}' has {doc_count} documents")
-                if doc_count == 0:
-                    logger.error(f"❌ CRITICAL: Collection 'business_{business_id}' is EMPTY!")
-                    logger.error(f"   This means no documents were uploaded for this conversation")
-                    logger.error(f"   OR documents were uploaded to a different business_id")
-                    logger.error(f"   Check if upload used the same business_id: '{business_id}'")
-                    # List all documents to see what business_ids exist
-                    try:
-                        all_docs = load_documents()
-                        matching_docs = [d for d in all_docs if d.business_id == business_id]
-                        logger.error(f"   Documents in DB with business_id='{business_id}': {len(matching_docs)}")
-                        if len(matching_docs) > 0:
-                            logger.error(f"   Document IDs: {[d.id for d in matching_docs[:5]]}")
-                            logger.error(f"   ⚠️  Documents exist in DB but NOT in vector store - storage may have failed!")
-                        else:
-                            logger.error(f"   ⚠️  No documents in DB with business_id='{business_id}' - upload may have failed!")
-                    except Exception as e:
-                        logger.error(f"   Could not check documents: {e}")
+            # Only use RAG if business_id is provided (has documents)
+            if business_id:
+                result = rag_service.query(
+                    business_id=business_id,
+                    query=request.query,
+                    conversation_history=request.conversation_history or [],
+                    max_sources=request.max_sources,
+                    reply_as_me=request.reply_as_me
+                )
             else:
-                logger.error(f"❌ CRITICAL: Could not get collection for business_id='{business_id}'")
-        except Exception as e:
-            logger.error(f"❌ Could not check collection status: {e}", exc_info=True)
-        
-        try:
-            result = rag_service.query(
-                business_id=business_id,
-                query=request.query,
-                conversation_history=request.conversation_history or [],
-                max_sources=request.max_sources,
-                reply_as_me=request.reply_as_me
-            )
+                # Normal chat without GPT - provide general response
+                result = {
+                    "answer": "I'm a general assistant. To get document-specific answers, please create or select a GPT with uploaded documents.",
+                    "sources": [],
+                    "tokens_used": 0,
+                    "response_time": 0,
+                    "metadata": {
+                        "model": "general",
+                        "provider": "system"
+                    }
+                }
             
             if not result:
                 logger.error("RAG service returned None - no answer generated")
