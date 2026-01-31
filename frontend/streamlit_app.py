@@ -1321,7 +1321,7 @@ with st.sidebar:
         conversations = st.session_state.get("conversations", [])
         
         if conversations:
-                for conv in conversations[:20]:
+            for conv in conversations[:20]:
                     conv_title = conv.get('title', 'Untitled')
                     display_title = conv_title[:30] + "..." if len(conv_title) > 30 else conv_title
                     is_current = conv.get('id') == st.session_state.current_conversation_id
@@ -1426,10 +1426,8 @@ with st.sidebar:
                                     st.session_state[f"renaming_{conv.get('id')}"] = False
                                     st.rerun()
                         st.markdown("---")
-            else:
-                st.info("No conversations yet. Start chatting!")
         else:
-            st.info("Please select a GPT to view conversations")
+            st.info("No conversations yet. Start chatting!")
     except Exception as e:
         logger.error(f"Error loading conversations: {e}")
         st.warning("Error loading conversations")
