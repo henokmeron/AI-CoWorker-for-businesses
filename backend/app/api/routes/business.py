@@ -3,6 +3,7 @@ Business/Tenant management API routes.
 """
 import json
 import logging
+import uuid
 from typing import List
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Depends
@@ -11,6 +12,7 @@ from ...core.config import settings
 from ...core.security import verify_api_key
 from ...utils.file_utils import ensure_directory
 from ...api.dependencies import get_vector_db
+from ...services.conversation_service import get_conversation_service
 
 logger = logging.getLogger(__name__)
 
@@ -52,16 +54,8 @@ async def create_business(
     try:
         businesses = load_businesses()
         
-        # Generate ID from name (sanitize)
-        business_id = business.name.lower().replace(' ', '_').replace('-', '_')
-        # Remove special characters
-        business_id = ''.join(c for c in business_id if c.isalnum() or c == '_')
-        if not business_id:
-            business_id = "business_" + str(len(businesses) + 1)
-        
-        # Check if already exists
-        if any(b.id == business_id for b in businesses):
-            raise HTTPException(status_code=400, detail="Business with this name already exists")
+        # Stable unique ID - never reused (ChatGPT parity)
+        business_id = f"gpt_{uuid.uuid4().hex[:12]}"
         
         # Create business
         new_business = Business(
@@ -178,15 +172,20 @@ async def delete_business(
     business_id: str,
     api_key: str = Depends(verify_api_key)
 ):
-    """Delete a business (WARNING: This will delete all documents)."""
+    """Delete a GPT and its derived conversations. Does not affect other chats."""
     businesses = load_businesses()
     
     for i, business in enumerate(businesses):
         if business.id == business_id:
-            # Remove from list
+            # Delete all conversations bound to this GPT first (ChatGPT parity)
+            try:
+                conv_service = get_conversation_service()
+                conv_service.delete_conversations_by_business_id(business_id)
+            except Exception as e:
+                logger.warning(f"Could not delete conversations for GPT {business_id}: {e}")
+            # Remove GPT from list
             businesses.pop(i)
             save_businesses(businesses)
-            
             logger.info(f"Deleted business: {business_id}")
             return {"message": "Business deleted successfully"}
     

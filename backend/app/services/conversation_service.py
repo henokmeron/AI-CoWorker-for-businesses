@@ -4,6 +4,7 @@ Uses PostgreSQL (Neon) for persistence.
 """
 import logging
 import json
+import uuid
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import os
@@ -148,14 +149,9 @@ class ConversationService:
     
     def create_conversation(self, business_id: Optional[str] = None, title: Optional[str] = None) -> Conversation:
         """Create a new conversation."""
-        # CRITICAL: Allow None business_id for normal chats (chats without GPT)
-        # Only use default if explicitly needed, but prefer None for normal chats
-        # Generate unique ID based on whether business_id exists
-        if business_id:
-            conv_id = f"conv_{business_id}_{int(datetime.utcnow().timestamp())}"
-        else:
-            conv_id = f"conv_normal_{int(datetime.utcnow().timestamp())}"
-        title = title or f"Chat {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+        # Stable unique conversation ID - never reused (ChatGPT parity)
+        conv_id = f"conv_{uuid.uuid4().hex[:14]}"
+        title = title or "New Chat"
         
         conversation = Conversation(
             id=conv_id,
@@ -425,6 +421,31 @@ class ConversationService:
                 return self._update_json_conversation(conversation_id, update)
         else:
             return self._update_json_conversation(conversation_id, update)
+    
+    def delete_conversations_by_business_id(self, business_id: str):
+        """Delete all conversations bound to a GPT (when GPT is deleted)."""
+        if self.use_database:
+            conn = self._get_connection()
+            if conn:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE business_id = %s)", (business_id,))
+                        cur.execute("DELETE FROM conversations WHERE business_id = %s", (business_id,))
+                        conn.commit()
+                    conn.close()
+                    logger.info(f"Deleted conversations for GPT {business_id}")
+                except Exception as e:
+                    logger.error(f"Error deleting conversations for GPT {business_id}: {e}")
+                    if conn:
+                        conn.close()
+        self._delete_json_conversations_by_business_id(business_id)
+    
+    def _delete_json_conversations_by_business_id(self, business_id: str):
+        """Remove all conversations for a GPT from JSON storage."""
+        conversations = self._load_all_json_conversations()
+        conversations = [c for c in conversations if c.get('business_id') != business_id]
+        with open(self.storage_path, 'w') as f:
+            json.dump(conversations, f, indent=2, default=str)
     
     def delete_conversation(self, conversation_id: str):
         """Delete a conversation permanently."""

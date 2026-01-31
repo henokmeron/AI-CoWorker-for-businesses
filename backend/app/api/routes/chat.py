@@ -11,7 +11,7 @@ from ...api.dependencies import get_rag
 from ...services.table_reasoning_service import get_table_reasoning_service
 from ...api.routes.documents import load_documents
 from ...services.conversation_service import get_conversation_service
-from ...models.conversation import Message
+from ...models.conversation import Message, ConversationUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +247,18 @@ async def chat(
                     sources=[]
                 )
                 conversation_service.add_message(request.conversation_id, user_msg)
+                
+                # Auto-title from first user message (ChatGPT parity)
+                if conversation:
+                    t = (conversation.title or "").strip()
+                    if t == "New Chat" or (t.startswith("New Chat ") and len(t) < 30):
+                        new_title = (request.query[:50].strip() or "New Chat")
+                        if len(request.query) > 50:
+                            new_title += "..."
+                        conversation_service.update_conversation(
+                            request.conversation_id,
+                            ConversationUpdate(title=new_title)
+                        )
                 
                 # Save assistant message AFTER LLM response
                 assistant_msg = Message(
