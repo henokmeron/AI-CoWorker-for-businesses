@@ -1497,11 +1497,24 @@ else:
                     st.error("Please start a conversation first before uploading documents.")
                     st.stop()
                 
-                # Documents belong to GPT (business), not conversation
-                business_id = st.session_state.selected_gpt
-                if not business_id:
-                    st.warning("Select a GPT first to upload documents to it.")
+                # Documents: attach to GPT if GPT-derived chat, else to conversation itself
+                # ChatGPT parity: allow upload to any conversation
+                if not st.session_state.current_conversation_id:
+                    st.warning("Start a conversation first to upload documents.")
                     st.stop()
+                
+                # Get conversation to determine where documents should go
+                conv_response = api_request("GET", f"/api/v1/conversations/{st.session_state.current_conversation_id}")
+                if conv_response and conv_response.status_code == 200:
+                    conv = conv_response.json()
+                    # Use business_id if GPT-derived, else use conversation_id as namespace
+                    business_id = conv.get('business_id') or st.session_state.current_conversation_id
+                else:
+                    # Conversation doesn't exist in backend—likely creation failed
+                    st.error("Conversation not found. Creating a new one...")
+                    st.session_state.current_conversation_id = None
+                    st.session_state.hydrated = False
+                    st.rerun()
                 
                 # Track processed files per GPT
                 if "processed_files_by_chat" not in st.session_state:
@@ -1635,12 +1648,10 @@ else:
                     answer_text = re.sub(r'\s{3,}', ' ', answer_text)  # Multiple spaces to single
                     answer_text = answer_text.strip()
                     
-                    assistant_msg = {
-                        "role": "assistant",
-                        "content": answer_text,
-                        "sources": response.get("sources", [])
-                    }
-                    st.session_state.chat_history.append(assistant_msg)
+                    assistant_msg = {"role": "assistant", "content": answer_text, "sources": response.get("sources", [])}
+                    # Guard: prevent duplicate assistant response
+                    if not st.session_state.chat_history or st.session_state.chat_history[-1] != assistant_msg:
+                        st.session_state.chat_history.append(assistant_msg)
                     
                     # Save assistant message to backend immediately
                     if st.session_state.current_conversation_id:

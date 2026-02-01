@@ -177,12 +177,14 @@ class ConversationService:
                     logger.error(f"Error saving conversation to database: {e}")
                     if conn:
                         conn.close()
+                    # Fallback to JSON—but raise if that fails too
                     self._save_json_conversation(conversation)
             else:
                 self._save_json_conversation(conversation)
         else:
             self._save_json_conversation(conversation)
         
+        logger.info(f"✅ Conversation {conversation.id} persisted to storage")
         return conversation
     
     def add_message(self, conversation_id: str, message: Message):
@@ -473,10 +475,14 @@ class ConversationService:
     def _save_json_conversation(self, conversation: Conversation):
         """Save conversation to JSON file."""
         import json
-        conversations = self._load_all_json_conversations()
-        conversations.append(conversation.dict())
-        with open(self.storage_path, 'w') as f:
-            json.dump(conversations, f, indent=2, default=str)
+        try:
+            conversations = self._load_all_json_conversations()
+            conversations.append(conversation.dict())
+            with open(self.storage_path, 'w') as f:
+                json.dump(conversations, f, indent=2, default=str)
+        except Exception as e:
+            logger.error(f"CRITICAL: Failed to save conversation to JSON: {e}")
+            raise RuntimeError(f"Cannot save conversation to storage: {e}")
     
     def _add_json_message(self, conversation_id: str, message: Message):
         """Add message to JSON storage."""
