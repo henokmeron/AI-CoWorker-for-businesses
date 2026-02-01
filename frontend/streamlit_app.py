@@ -908,27 +908,32 @@ def render_settings():
         st.rerun()
 
 
-def initialize_app_state():
-    """Source of truth: backend. Always refetch GPTs and all conversations."""
+def hydrate_from_backend():
+    """SINGLE SOURCE OF TRUTH: Backend. Hydrate once per session."""
+    if "hydrated" in st.session_state and st.session_state.hydrated:
+        return  # Already hydrated this session
+    
+    logger.info("🔄 Hydrating state from backend...")
     try:
         gpts = get_businesses()
         st.session_state.gpts = gpts if gpts else []
-        logger.info(f"✅ Refetched {len(st.session_state.gpts)} GPTs from backend")
+        logger.info(f"✅ Hydrated {len(st.session_state.gpts)} GPTs")
     except Exception as e:
-        logger.error(f"Error loading GPTs: {e}")
+        logger.error(f"Error hydrating GPTs: {e}")
         st.session_state.gpts = []
     
     try:
-        # Always list ALL conversations (normal + GPT-derived)
         all_conversations = get_conversations(business_id=None, archived=False)
         st.session_state.conversations = (
             sorted(all_conversations, key=lambda x: x.get('updated_at', '') or x.get('created_at', ''), reverse=True)
             if all_conversations else []
         )
-        logger.info(f"✅ Refetched {len(st.session_state.conversations)} conversations from backend")
+        logger.info(f"✅ Hydrated {len(st.session_state.conversations)} conversations")
     except Exception as e:
-        logger.error(f"Error loading conversations: {e}")
+        logger.error(f"Error hydrating conversations: {e}")
         st.session_state.conversations = []
+    
+    st.session_state.hydrated = True
 
 
 def render_edit_gpt_panel():
@@ -957,7 +962,7 @@ def render_edit_gpt_panel():
         if st.form_submit_button("💾 Save Basic Info", use_container_width=True):
             if update_business(gpt_id, name=name, description=description):
                 st.success("✅ GPT basic information updated!")
-                st.session_state.gpts = get_businesses()
+                st.session_state.hydrated = False
                 st.rerun()
             else:
                 st.error("Failed to update GPT")
@@ -1046,8 +1051,8 @@ def render_edit_gpt_panel():
         st.rerun()
 
 
-# Initialize app state - CRITICAL for persistence
-initialize_app_state()
+# SINGLE HYDRATION POINT - only runs once per session
+hydrate_from_backend()
 
 # Sidebar
 with st.sidebar:
@@ -1094,6 +1099,8 @@ with st.sidebar:
                                 # Auto-select the new GPT
                                 if new_gpt.get("id"):
                                     st.session_state.selected_gpt = new_gpt.get("id")
+                                # Invalidate: force rehydration
+                                st.session_state.hydrated = False
                                 st.rerun()
                     else:
                         st.error("Please enter a GPT name")
@@ -1116,49 +1123,10 @@ with st.sidebar:
                 with col1:
                     button_style = "primary" if is_selected else "secondary"
                     if st.button(gpt_name, key=f"gpt_{gpt_id}", use_container_width=True, type=button_style):
-                        # CRITICAL: Clicking GPT should create or open chat bound to that GPT
+                        # Pure: ONLY set selected GPT. Nothing else.
                         st.session_state.selected_gpt = gpt_id
-                        
-                        # Check if there's an existing chat for this GPT
-                        try:
-                            existing_convs = get_conversations(business_id=gpt_id, archived=False)
-                            if existing_convs:
-                                # Open most recent conversation for this GPT
-                                most_recent = existing_convs[0]
-                                st.session_state.current_conversation_id = most_recent.get('id')
-                                # Load its chat history
-                                response = api_request("GET", f"/api/v1/conversations/{most_recent.get('id')}")
-                                if response and response.status_code == 200:
-                                    loaded_conv = response.json()
-                                    st.session_state.chat_history = [
-                                        {
-                                            "role": msg.get("role"),
-                                            "content": msg.get("content"),
-                                            "sources": msg.get("sources", [])
-                                        }
-                                        for msg in loaded_conv.get("messages", [])
-                                    ]
-                                    st.session_state.chat_history_loaded = True
-                                else:
-                                    st.session_state.chat_history = []
-                                    st.session_state.chat_history_loaded = True
-                            else:
-                                # No existing chat - create new one bound to this GPT
-                                new_conv_title = f"Chat with {gpt_name}"
-                                new_conv = create_conversation(business_id=gpt_id, title=new_conv_title)
-                                if new_conv and "error" not in new_conv:
-                                    st.session_state.current_conversation_id = new_conv.get('id')
-                                    st.session_state.chat_history = []
-                                    st.session_state.chat_history_loaded = False
-                                    logger.info(f"✅ Created new chat bound to GPT {gpt_id}")
-                                else:
-                                    st.error("Failed to create chat")
-                                    st.session_state.current_conversation_id = None
-                                    st.session_state.chat_history = []
-                        except Exception as e:
-                            logger.error(f"Error handling GPT click {gpt_id}: {e}", exc_info=True)
-                            st.session_state.current_conversation_id = None
-                            st.session_state.chat_history = []
+                        st.session_state.current_conversation_id = None
+                        st.session_state.chat_history = []
                         st.rerun()
                 
                 with col2:
@@ -1177,12 +1145,12 @@ with st.sidebar:
                         st.session_state.gpt_dropdown_open[gpt_id] = False
                         # Actually delete the GPT - simplified, no confirmation needed
                         if delete_business(gpt_id):
-                            st.success("✅ GPT deleted!")
                             if st.session_state.selected_gpt == gpt_id:
                                 st.session_state.selected_gpt = None
                                 st.session_state.current_conversation_id = None
                                 st.session_state.chat_history = []
-                            # Rerun: initialize_app_state will refetch GPTs and conversations from backend
+                            # Invalidate: force rehydration on next rerun
+                            st.session_state.hydrated = False
                             st.rerun()
                         else:
                             st.error("❌ Failed to delete GPT. Please try again.")
@@ -1284,18 +1252,18 @@ with st.sidebar:
                     
                     if st.button("📦 Archive", key=f"archive_{conv.get('id')}", use_container_width=True):
                         if archive_conversation(conv.get('id')):
-                            st.success("Conversation archived!")
-                            st.session_state[f"show_menu_{conv.get('id')}"] = False
-                            st.rerun()
+                                st.session_state[f"show_menu_{conv.get('id')}"] = False
+                                st.session_state.hydrated = False
+                                st.rerun()
                     
                     if st.button("🗑️ Delete", key=f"delete_{conv.get('id')}", use_container_width=True):
-                        if delete_conversation(conv.get('id')):
-                            st.success("Conversation deleted!")
-                            st.session_state[f"show_menu_{conv.get('id')}"] = False
-                            if st.session_state.current_conversation_id == conv.get('id'):
-                                st.session_state.current_conversation_id = None
-                                st.session_state.chat_history = []
-                            st.rerun()
+                            if delete_conversation(conv.get('id')):
+                                st.session_state[f"show_menu_{conv.get('id')}"] = False
+                                if st.session_state.current_conversation_id == conv.get('id'):
+                                    st.session_state.current_conversation_id = None
+                                    st.session_state.chat_history = []
+                                st.session_state.hydrated = False
+                                st.rerun()
                     
                     if st.button("✕ Close", key=f"close_menu_{conv.get('id')}", use_container_width=True):
                         st.session_state[f"show_menu_{conv.get('id')}"] = False
@@ -1308,8 +1276,8 @@ with st.sidebar:
                             if st.button("✓", key=f"save_rename_{conv.get('id')}"):
                                 if new_title and new_title.strip():
                                     if rename_conversation(conv.get('id'), new_title.strip()):
-                                        st.success("Renamed!")
                                         st.session_state[f"renaming_{conv.get('id')}"] = False
+                                        st.session_state.hydrated = False
                                         st.rerun()
                         with col2:
                             if st.button("✕", key=f"cancel_rename_{conv.get('id')}"):
@@ -1605,21 +1573,21 @@ else:
     
     # Handle chat input
     if user_query:
-        # Create conversation on first message if none (backend will auto-title from this message)
+        # Create conversation on first message if none (backend auto-titles from this message)
         if not st.session_state.current_conversation_id:
             conv = create_conversation(business_id=st.session_state.selected_gpt, title="New Chat")
             if not conv or conv.get("error"):
-                st.error(conv.get("error", "Failed to create conversation. Please try again.") if conv else "Failed to create conversation.")
-                st.rerun()
+                st.error(conv.get("error", "Failed") if conv else "Failed")
+                st.stop()
             st.session_state.current_conversation_id = conv.get("id")
+            st.session_state.hydrated = False
             logger.info(f"✅ Created conversation {conv.get('id')}")
         
-        # CRITICAL FIX: Add user message IMMEDIATELY (no rerun in middle)
-        user_msg = {
-            "role": "user",
-            "content": user_query
-        }
-        st.session_state.chat_history.append(user_msg)
+        # Optimistic append: user message appears immediately (deduplication guard)
+        user_msg = {"role": "user", "content": user_query}
+        # Guard: prevent duplicate if already appended
+        if not st.session_state.chat_history or st.session_state.chat_history[-1] != user_msg:
+            st.session_state.chat_history.append(user_msg)
         
         # Save user message to backend
         try:
