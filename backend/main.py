@@ -63,6 +63,45 @@ def health():
     return {"ok": True}
 
 
+@app.get("/storage-status")
+async def storage_status():
+    """Diagnostic: check storage paths and file counts."""
+    from pathlib import Path
+    data_dir = Path(settings.DATA_DIR)
+    businesses_path = data_dir / "businesses.json"
+    conversations_path = data_dir / "conversations.json"
+    
+    status = {
+        "data_dir": str(data_dir),
+        "data_dir_exists": data_dir.exists(),
+        "data_dir_writable": data_dir.exists() and os.access(str(data_dir), os.W_OK),
+        "businesses_file_exists": businesses_path.exists(),
+        "conversations_file_exists": conversations_path.exists(),
+    }
+    
+    if businesses_path.exists():
+        try:
+            with open(businesses_path) as f:
+                import json
+                businesses = json.load(f)
+                status["businesses_count"] = len(businesses)
+                status["business_ids"] = [b.get("id") for b in businesses[:5]]
+        except Exception as e:
+            status["businesses_error"] = str(e)
+    
+    if conversations_path.exists():
+        try:
+            with open(conversations_path) as f:
+                import json
+                conversations = json.load(f)
+                status["conversations_count"] = len(conversations)
+                status["conversation_ids"] = [c.get("id") for c in conversations[:5]]
+        except Exception as e:
+            status["conversations_error"] = str(e)
+    
+    return status
+
+
 @app.get("/debug")
 async def debug_info():
     """Debug endpoint to check configuration."""
