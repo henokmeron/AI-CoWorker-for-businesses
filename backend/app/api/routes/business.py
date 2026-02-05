@@ -25,24 +25,31 @@ BUSINESS_DB_PATH = Path(settings.DATA_DIR) / "businesses.json"
 def load_businesses() -> List[Business]:
     """Load businesses from JSON file."""
     if not BUSINESS_DB_PATH.exists():
+        logger.info(f"📁 No existing GPTs file at {BUSINESS_DB_PATH}, starting fresh")
         return []
     
     try:
         with open(BUSINESS_DB_PATH, 'r') as f:
             data = json.load(f)
-            return [Business(**b) for b in data]
+            businesses = [Business(**b) for b in data]
+            logger.info(f"✅ Loaded {len(businesses)} GPTs from {BUSINESS_DB_PATH}")
+            return businesses
     except Exception as e:
-        logger.error(f"Error loading businesses: {str(e)}")
+        logger.error(f"❌ Error loading GPTs: {str(e)}")
         return []
 
 
 def save_businesses(businesses: List[Business]):
     """Save businesses to JSON file."""
-    ensure_directory(str(BUSINESS_DB_PATH.parent))
-    
-    with open(BUSINESS_DB_PATH, 'w') as f:
-        data = [b.dict() for b in businesses]
-        json.dump(data, f, indent=2, default=str)
+    try:
+        ensure_directory(str(BUSINESS_DB_PATH.parent))
+        with open(BUSINESS_DB_PATH, 'w') as f:
+            data = [b.dict() for b in businesses]
+            json.dump(data, f, indent=2, default=str)
+        logger.info(f"✅ Saved {len(businesses)} GPTs to {BUSINESS_DB_PATH}")
+    except Exception as e:
+        logger.error(f"❌ CRITICAL: Failed to save GPTs: {e}")
+        raise RuntimeError(f"Cannot save GPTs to storage: {e}")
 
 
 @router.post("", response_model=Business)

@@ -131,6 +131,9 @@ class ConversationService:
         
         # Use persistent data directory - /app/data on Fly.io
         self.storage_path = Path(settings.DATA_DIR) / "conversations.json"
+        logger.info(f"📁 Conversation storage path: {self.storage_path}")
+        
+        # Create directory if needed
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Verify directory is writable
@@ -138,14 +141,25 @@ class ConversationService:
             test_file = self.storage_path.parent / ".test_write"
             test_file.write_text("test")
             test_file.unlink()
+            logger.info(f"✅ Storage directory {self.storage_path.parent} is writable")
         except Exception as e:
-            logger.error(f"Storage directory not writable: {e}")
-            raise RuntimeError(f"Cannot write to storage directory: {e}")
+            logger.error(f"❌ Storage directory not writable: {e}")
+            raise RuntimeError(f"Cannot write to storage directory {self.storage_path.parent}: {e}")
         
+        # Initialize file if it doesn't exist
         if not self.storage_path.exists():
             with open(self.storage_path, 'w') as f:
                 json.dump([], f)
-            logger.info(f"Initialized conversation storage at {self.storage_path}")
+            logger.info(f"✅ Initialized conversation storage at {self.storage_path}")
+        else:
+            # Verify file is readable
+            try:
+                with open(self.storage_path) as f:
+                    existing = json.load(f)
+                logger.info(f"✅ Existing conversation storage found with {len(existing)} conversations")
+            except Exception as e:
+                logger.error(f"❌ Cannot read existing storage: {e}")
+                raise RuntimeError(f"Corrupted storage file: {e}")
     
     def create_conversation(self, business_id: Optional[str] = None, title: Optional[str] = None) -> Conversation:
         """Create a new conversation."""
