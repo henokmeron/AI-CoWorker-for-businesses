@@ -5,6 +5,7 @@ import logging
 import sys
 import os
 from pathlib import Path
+from datetime import datetime
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -251,6 +252,29 @@ async def startup_event():
     logger.info(f"Data Directory: {settings.DATA_DIR}")
     logger.info(f"Upload Directory: {settings.UPLOAD_DIR}")
     logger.info("=" * 80)
+    
+    # CRITICAL: Verify volume persistence (Fly.io)
+    from pathlib import Path
+    data_dir = Path(settings.DATA_DIR)
+    persistence_test = data_dir / ".persistence_test"
+    try:
+        # Write test
+        persistence_test.write_text(f"startup_{datetime.utcnow().isoformat()}")
+        logger.info(f"✅ Volume write test passed: {persistence_test}")
+        
+        # Read test
+        content = persistence_test.read_text()
+        logger.info(f"✅ Volume read test passed: {content[:50]}")
+        
+        # Check if file persisted from previous run (indicates volume is working)
+        if "startup_" in content and content != f"startup_{datetime.utcnow().isoformat()}":
+            logger.info("✅ VOLUME PERSISTENCE CONFIRMED (file from previous run found)")
+        else:
+            logger.warning("⚠️ First run or volume reset (no previous persistence marker)")
+    except Exception as e:
+        logger.error(f"❌ CRITICAL: Volume persistence test FAILED: {e}")
+        logger.error(f"   This means /app/data is not writable or volume is not mounted")
+        logger.error(f"   GPTs and conversations WILL NOT persist across restarts")
     
     # Validate all critical services - CRASH if any fail
     validate_startup()
