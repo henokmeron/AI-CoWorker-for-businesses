@@ -933,6 +933,21 @@ def hydrate_from_backend():
         logger.error(f"Error hydrating conversations: {e}")
         st.session_state.conversations = []
     
+    # Validation: if current_conversation_id is set but not in backend list, clear it (stale)
+    if st.session_state.get("current_conversation_id"):
+        conv_ids = {c.get('id') for c in st.session_state.conversations}
+        if st.session_state.current_conversation_id not in conv_ids:
+            logger.warning(f"⚠️ Stale conversation ID {st.session_state.current_conversation_id} not in backend—clearing")
+            st.session_state.current_conversation_id = None
+            st.session_state.chat_history = []
+    
+    # Validation: if selected_gpt is set but not in backend list, clear it
+    if st.session_state.get("selected_gpt"):
+        gpt_ids = {g.get('id') for g in st.session_state.gpts}
+        if st.session_state.selected_gpt not in gpt_ids:
+            logger.warning(f"⚠️ Stale GPT ID {st.session_state.selected_gpt} not in backend—clearing")
+            st.session_state.selected_gpt = None
+    
     st.session_state.hydrated = True
 
 
@@ -1123,10 +1138,35 @@ with st.sidebar:
                 with col1:
                     button_style = "primary" if is_selected else "secondary"
                     if st.button(gpt_name, key=f"gpt_{gpt_id}", use_container_width=True, type=button_style):
-                        # Pure: ONLY set selected GPT. Nothing else.
+                        # Clicking GPT: create/open chat for that GPT (ChatGPT parity)
                         st.session_state.selected_gpt = gpt_id
-                        st.session_state.current_conversation_id = None
-                        st.session_state.chat_history = []
+                        
+                        # Find latest conversation for this GPT from current list
+                        gpt_convs = [c for c in st.session_state.conversations if c.get('business_id') == gpt_id]
+                        
+                        if gpt_convs:
+                            # Open latest conversation
+                            latest = gpt_convs[0]
+                            st.session_state.current_conversation_id = latest.get('id')
+                            # Load messages
+                            response = api_request("GET", f"/api/v1/conversations/{latest.get('id')}")
+                            if response and response.status_code == 200:
+                                loaded_conv = response.json()
+                                st.session_state.chat_history = [
+                                    {"role": msg.get("role"), "content": msg.get("content"), "sources": msg.get("sources", [])}
+                                    for msg in loaded_conv.get("messages", [])
+                                ]
+                            else:
+                                st.session_state.chat_history = []
+                        else:
+                            # Create new conversation bound to this GPT
+                            new_conv = create_conversation(business_id=gpt_id, title=f"Chat with {gpt_name}")
+                            if new_conv and "error" not in new_conv:
+                                st.session_state.current_conversation_id = new_conv.get('id')
+                                st.session_state.chat_history = []
+                                st.session_state.hydrated = False  # Rehydrate to show new conv in list
+                            else:
+                                st.error(new_conv.get("error", "Failed to create conversation") if new_conv else "Failed")
                         st.rerun()
                 
                 with col2:
@@ -1211,31 +1251,25 @@ with st.sidebar:
                     button_style = "primary" if is_current else "secondary"
                     if st.button(display_title, key=f"conv_{conv.get('id')}", use_container_width=True, type=button_style):
                         if st.session_state.current_conversation_id != conv.get('id'):
-                            st.session_state.chat_history = []
-                            st.session_state.chat_history_loaded = False
+                            # Sync selected_gpt with conversation's GPT (so both highlight together)
+                            st.session_state.selected_gpt = conv.get('business_id')  # None for normal chats
                             
+                            # Load conversation messages
                             response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
                             if response and response.status_code == 200:
                                 loaded_conv = response.json()
                                 st.session_state.chat_history = [
-                                    {
-                                        "role": msg.get("role"),
-                                        "content": msg.get("content"),
-                                        "sources": msg.get("sources", [])
-                                    }
+                                    {"role": msg.get("role"), "content": msg.get("content"), "sources": msg.get("sources", [])}
                                     for msg in loaded_conv.get("messages", [])
                                 ]
                                 st.session_state.current_conversation_id = conv.get('id')
-                                st.session_state.current_conversation = loaded_conv
-                                st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
-                                st.session_state.chat_history_loaded = True
-                                logger.info(f"✅ Loaded conversation {conv.get('id')} with {len(st.session_state.chat_history)} messages")
+                                logger.info(f"✅ Loaded conversation {conv.get('id')}")
                             else:
+                                # Conversation not found (404) - clear it
+                                st.error(f"Conversation not found (backend may have restarted)")
+                                st.session_state.current_conversation_id = None
                                 st.session_state.chat_history = []
-                                st.session_state.current_conversation_id = conv.get('id')
-                                st.session_state.current_conversation = conv
-                                st.session_state.upload_counter = st.session_state.get("upload_counter", 0) + 1
-                                st.session_state.chat_history_loaded = True
+                                st.session_state.hydrated = False  # Rehydrate to get fresh list
                             st.rerun()
                 
                 with col2:
