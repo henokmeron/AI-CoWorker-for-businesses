@@ -64,6 +64,9 @@ if "gpt_dropdown_open" not in st.session_state:
     st.session_state.gpt_dropdown_open = {}
 if "chat_history_loaded" not in st.session_state:
     st.session_state.chat_history_loaded = False
+# Which conversation id the current chat_history was loaded from (None = needs sync)
+if "_synced_conversation_id" not in st.session_state:
+    st.session_state._synced_conversation_id = None
 if "upload_counter" not in st.session_state:
     st.session_state.upload_counter = 0
 if "user_settings" not in st.session_state:
@@ -456,6 +459,20 @@ def get_conversations(business_id: Optional[str] = None, archived: Optional[bool
     else:
         logger.warning("get_conversations failed: no response")
     return None
+
+
+def refresh_sidebar_lists() -> None:
+    """Refresh MY GPTS + Conversations from API without toggling hydration (reduces flicker)."""
+    gpts = get_businesses()
+    if gpts is not None:
+        st.session_state.gpts = gpts
+    convs = get_conversations(business_id=None, archived=False)
+    if convs is not None:
+        st.session_state.conversations = sorted(
+            convs,
+            key=lambda x: x.get("updated_at", "") or x.get("created_at", ""),
+            reverse=True,
+        )
 
 
 def create_conversation(business_id: Optional[str], title: str) -> Optional[Dict[str, Any]]:
@@ -990,6 +1007,7 @@ def hydrate_from_backend():
                 logger.warning(f"⚠️ Stale conversation ID {cid} not in backend—clearing")
                 st.session_state.current_conversation_id = None
                 st.session_state.chat_history = []
+                st.session_state._synced_conversation_id = None
     
     if gpts is not None and st.session_state.get("selected_gpt"):
         gpt_ids = {g.get('id') for g in st.session_state.gpts}
@@ -1031,7 +1049,7 @@ def render_edit_gpt_panel():
         if st.form_submit_button("💾 Save Basic Info", use_container_width=True):
             if update_business(gpt_id, name=name, description=description):
                 st.success("✅ GPT basic information updated!")
-                st.session_state.hydrated = False
+                refresh_sidebar_lists()
                 st.rerun()
             else:
                 st.error("Failed to update GPT")
@@ -1170,8 +1188,7 @@ with st.sidebar:
                                 # Auto-select the new GPT
                                 if new_gpt.get("id"):
                                     st.session_state.selected_gpt = new_gpt.get("id")
-                                # Invalidate: force rehydration
-                                st.session_state.hydrated = False
+                                refresh_sidebar_lists()
                                 st.rerun()
                     else:
                         st.error("Please enter a GPT name")
@@ -1194,35 +1211,25 @@ with st.sidebar:
                 with col1:
                     button_style = "primary" if is_selected else "secondary"
                     if st.button(gpt_name, key=f"gpt_{gpt_id}", use_container_width=True, type=button_style):
-                        # Clicking GPT: create/open chat for that GPT (ChatGPT parity)
+                        # Clicking GPT: open latest chat for this GPT, or create one (main area loads messages)
                         st.session_state.selected_gpt = gpt_id
-                        
-                        # Find latest conversation for this GPT from current list
-                        gpt_convs = [c for c in st.session_state.conversations if c.get('business_id') == gpt_id]
-                        
+                        gpt_convs = sorted(
+                            [c for c in st.session_state.conversations if c.get("business_id") == gpt_id],
+                            key=lambda x: x.get("updated_at", "") or x.get("created_at", ""),
+                            reverse=True,
+                        )
                         if gpt_convs:
-                            # Open latest conversation
-                            latest = gpt_convs[0]
-                            st.session_state.current_conversation_id = latest.get('id')
-                            # Load messages
-                            response = api_request("GET", f"/api/v1/conversations/{latest.get('id')}")
-                            if response and response.status_code == 200:
-                                loaded_conv = response.json()
-                                st.session_state.chat_history = [
-                                    {"role": msg.get("role"), "content": msg.get("content"), "sources": msg.get("sources", [])}
-                                    for msg in loaded_conv.get("messages", [])
-                                ]
-                            else:
-                                st.session_state.chat_history = []
+                            st.session_state.current_conversation_id = gpt_convs[0].get("id")
                         else:
-                            # Create new conversation bound to this GPT
                             new_conv = create_conversation(business_id=gpt_id, title=f"Chat with {gpt_name}")
                             if new_conv and "error" not in new_conv:
-                                st.session_state.current_conversation_id = new_conv.get('id')
-                                st.session_state.chat_history = []
-                                st.session_state.hydrated = False  # Rehydrate to show new conv in list
+                                st.session_state.current_conversation_id = new_conv.get("id")
+                                refresh_sidebar_lists()
                             else:
                                 st.error(new_conv.get("error", "Failed to create conversation") if new_conv else "Failed")
+                                st.stop()
+                        st.session_state.chat_history = []
+                        st.session_state._synced_conversation_id = None
                         st.rerun()
                 
                 with col2:
@@ -1245,8 +1252,8 @@ with st.sidebar:
                                 st.session_state.selected_gpt = None
                                 st.session_state.current_conversation_id = None
                                 st.session_state.chat_history = []
-                            # Invalidate: force rehydration on next rerun
-                            st.session_state.hydrated = False
+                                st.session_state._synced_conversation_id = None
+                            refresh_sidebar_lists()
                             st.rerun()
                         else:
                             st.error("❌ Failed to delete GPT. Please try again.")
@@ -1281,8 +1288,8 @@ with st.sidebar:
             if new_conv and "error" not in new_conv:
                 st.session_state.current_conversation_id = new_conv.get('id')
                 st.session_state.chat_history = []
-                st.session_state.chat_history_loaded = False
-                # Refetch happens on rerun via initialize_app_state
+                st.session_state._synced_conversation_id = None
+                refresh_sidebar_lists()
             else:
                 error_msg = new_conv.get("error", "Failed to create conversation") if new_conv else "Failed to create conversation"
                 st.error(f"Could not create conversation: {error_msg}")
@@ -1306,27 +1313,12 @@ with st.sidebar:
                 with col1:
                     button_style = "primary" if is_current else "secondary"
                     if st.button(display_title, key=f"conv_{conv.get('id')}", use_container_width=True, type=button_style):
-                        if st.session_state.current_conversation_id != conv.get('id'):
-                            # Sync selected_gpt with conversation's GPT (so both highlight together)
-                            st.session_state.selected_gpt = conv.get('business_id')  # None for normal chats
-                            
-                            # Load conversation messages
-                            response = api_request("GET", f"/api/v1/conversations/{conv.get('id')}")
-                            if response and response.status_code == 200:
-                                loaded_conv = response.json()
-                                st.session_state.chat_history = [
-                                    {"role": msg.get("role"), "content": msg.get("content"), "sources": msg.get("sources", [])}
-                                    for msg in loaded_conv.get("messages", [])
-                                ]
-                                st.session_state.current_conversation_id = conv.get('id')
-                                logger.info(f"✅ Loaded conversation {conv.get('id')}")
-                            else:
-                                # Conversation not found (404) - clear it
-                                st.error(f"Conversation not found (backend may have restarted)")
-                                st.session_state.current_conversation_id = None
-                                st.session_state.chat_history = []
-                                st.session_state.hydrated = False  # Rehydrate to get fresh list
-                            st.rerun()
+                        st.session_state.selected_gpt = conv.get("business_id")
+                        st.session_state.current_conversation_id = conv.get("id")
+                        st.session_state.chat_history = []
+                        st.session_state._synced_conversation_id = None
+                        logger.info(f"✅ Switching to conversation {conv.get('id')}")
+                        st.rerun()
                 
                 with col2:
                     if st.button("⋮", key=f"conv_menu_{conv.get('id')}", help="Options"):
@@ -1343,7 +1335,7 @@ with st.sidebar:
                     if st.button("📦 Archive", key=f"archive_{conv.get('id')}", use_container_width=True):
                         if archive_conversation(conv.get('id')):
                                 st.session_state[f"show_menu_{conv.get('id')}"] = False
-                                st.session_state.hydrated = False
+                                refresh_sidebar_lists()
                                 st.rerun()
                     
                     if st.button("🗑️ Delete", key=f"delete_{conv.get('id')}", use_container_width=True):
@@ -1352,7 +1344,8 @@ with st.sidebar:
                                 if st.session_state.current_conversation_id == conv.get('id'):
                                     st.session_state.current_conversation_id = None
                                     st.session_state.chat_history = []
-                                st.session_state.hydrated = False
+                                    st.session_state._synced_conversation_id = None
+                                refresh_sidebar_lists()
                                 st.rerun()
                     
                     if st.button("✕ Close", key=f"close_menu_{conv.get('id')}", use_container_width=True):
@@ -1367,7 +1360,7 @@ with st.sidebar:
                                 if new_title and new_title.strip():
                                     if rename_conversation(conv.get('id'), new_title.strip()):
                                         st.session_state[f"renaming_{conv.get('id')}"] = False
-                                        st.session_state.hydrated = False
+                                        refresh_sidebar_lists()
                                         st.rerun()
                         with col2:
                             if st.button("✕", key=f"cancel_rename_{conv.get('id')}"):
@@ -1480,34 +1473,37 @@ else:
         st.error(f"⚠️ Cannot connect to backend: {e}")
         st.stop()
     
-    # CRITICAL: Load chat history on page load/refresh if we have a conversation_id
-    if st.session_state.current_conversation_id and (not st.session_state.get("chat_history_loaded", False) or len(st.session_state.chat_history) == 0):
-        try:
-            logger.info(f"🔄 Loading conversation {st.session_state.current_conversation_id}")
-            response = api_request("GET", f"/api/v1/conversations/{st.session_state.current_conversation_id}")
-            if response and response.status_code == 200:
-                loaded_conv = response.json()
-                messages = loaded_conv.get("messages", [])
-                if messages:
+    # Single source of truth: load messages for current_conversation_id when switching threads
+    if st.session_state.current_conversation_id:
+        cid = st.session_state.current_conversation_id
+        if st.session_state.get("_synced_conversation_id") != cid:
+            try:
+                logger.info(f"🔄 Syncing chat history for conversation {cid}")
+                response = api_request("GET", f"/api/v1/conversations/{cid}")
+                if response and response.status_code == 200:
+                    loaded_conv = response.json()
                     st.session_state.chat_history = [
                         {
                             "role": msg.get("role"),
                             "content": msg.get("content"),
-                            "sources": msg.get("sources", [])
+                            "sources": msg.get("sources", []),
                         }
-                        for msg in messages
+                        for msg in loaded_conv.get("messages", [])
                     ]
-                    st.session_state.chat_history_loaded = True
-                    logger.info(f"✅ Loaded conversation with {len(st.session_state.chat_history)} messages")
+                    st.session_state._synced_conversation_id = cid
+                    logger.info(f"✅ Loaded {len(st.session_state.chat_history)} messages for {cid}")
                 else:
-                    st.session_state.chat_history_loaded = True
-                    logger.info(f"ℹ️  Conversation {st.session_state.current_conversation_id} is empty")
-            else:
-                logger.warning(f"⚠️  Could not load conversation {st.session_state.current_conversation_id}")
-                st.session_state.chat_history_loaded = True
-        except Exception as e:
-            logger.error(f"❌ Failed to load conversation: {e}", exc_info=True)
-            st.session_state.chat_history_loaded = True
+                    logger.warning(f"⚠️ Could not load conversation {cid}")
+                    st.error("Could not load this conversation. It may have been deleted.")
+                    st.session_state.current_conversation_id = None
+                    st.session_state.chat_history = []
+                    st.session_state._synced_conversation_id = None
+                    refresh_sidebar_lists()
+                    st.stop()
+            except Exception as e:
+                logger.error(f"❌ Failed to load conversation: {e}", exc_info=True)
+                st.error(f"Failed to load conversation: {e}")
+                st.stop()
     
     # ✅ RULE A: Gate chat UI - no conversation selected = no chat input, no upload
     if not st.session_state.current_conversation_id:
@@ -1603,18 +1599,19 @@ else:
                     # Conversation doesn't exist in backend—likely creation failed
                     st.error("Conversation not found. Creating a new one...")
                     st.session_state.current_conversation_id = None
-                    st.session_state.hydrated = False
+                    st.session_state._synced_conversation_id = None
+                    refresh_sidebar_lists()
                     st.rerun()
                 
-                # Track processed files per GPT
-                if "processed_files_by_chat" not in st.session_state:
-                    st.session_state.processed_files_by_chat = {}
-                st.session_state.processed_files_by_chat.setdefault(business_id, set())
+                conv_id = st.session_state.current_conversation_id
+                if "processed_files_by_conversation" not in st.session_state:
+                    st.session_state.processed_files_by_conversation = {}
+                st.session_state.processed_files_by_conversation.setdefault(conv_id, set())
                 
                 with st.spinner("📤 Uploading and processing files..."):
                     for f in uploaded_files:
                         file_sig = f"{f.name}:{f.size}"
-                        if file_sig in st.session_state.processed_files_by_chat.get(business_id, set()):
+                        if file_sig in st.session_state.processed_files_by_conversation.get(conv_id, set()):
                             continue  # already processed in this chat
                         
                         try:
@@ -1622,7 +1619,7 @@ else:
                             result = upload_document(business_id, f)
                             
                             if result and isinstance(result, dict) and "error" not in result:
-                                st.session_state.processed_files_by_chat[business_id].add(file_sig)
+                                st.session_state.processed_files_by_conversation[conv_id].add(file_sig)
                                 
                                 confirmation = {
                                     "role": "assistant",
@@ -1631,11 +1628,11 @@ else:
                                 }
                                 st.session_state.chat_history.append(confirmation)
                                 
-                                # Persist confirmation message
+                                # Persist confirmation message (must use conversation id, not business id)
                                 try:
                                     api_request(
                                         "POST",
-                                        f"/api/v1/conversations/{business_id}/messages",
+                                        f"/api/v1/conversations/{conv_id}/messages",
                                         json={"role": "assistant", "content": confirmation["content"], "sources": []}
                                     )
                                 except:
@@ -1683,7 +1680,8 @@ else:
                 st.error(conv.get("error", "Failed") if conv else "Failed")
                 st.stop()
             st.session_state.current_conversation_id = conv.get("id")
-            st.session_state.hydrated = False
+            st.session_state._synced_conversation_id = conv.get("id")
+            refresh_sidebar_lists()
             logger.info(f"✅ Created conversation {conv.get('id')}")
         
         # Optimistic append: user message appears immediately (deduplication guard)
