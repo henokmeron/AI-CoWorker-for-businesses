@@ -298,12 +298,16 @@ def api_request(method: str, endpoint: str, **kwargs) -> Optional[requests.Respo
         return None
 
 
-def get_businesses() -> List[Dict[str, Any]]:
-    """Get all businesses (GPTs)."""
+def get_businesses() -> Optional[List[Dict[str, Any]]]:
+    """Get all businesses (GPTs). Returns None if the request failed (do not treat as empty list)."""
     response = api_request("GET", "/api/v1/businesses")
     if response and response.status_code == 200:
         return response.json()
-    return []
+    if response:
+        logger.warning(f"get_businesses failed: HTTP {response.status_code}")
+    else:
+        logger.warning("get_businesses failed: no response")
+    return None
 
 
 def get_business(business_id: str) -> Optional[Dict[str, Any]]:
@@ -436,8 +440,8 @@ def chat_query(business_id: Optional[str], query: str, conversation_history: Lis
     return {"error": "No response from server"}
 
 
-def get_conversations(business_id: Optional[str] = None, archived: Optional[bool] = False) -> List[Dict[str, Any]]:
-    """Get conversations."""
+def get_conversations(business_id: Optional[str] = None, archived: Optional[bool] = False) -> Optional[List[Dict[str, Any]]]:
+    """Get conversations. Returns None if the request failed (do not treat as empty list)."""
     params = {}
     if business_id:
         params["business_id"] = business_id
@@ -447,7 +451,11 @@ def get_conversations(business_id: Optional[str] = None, archived: Optional[bool
     response = api_request("GET", "/api/v1/conversations", params=params)
     if response and response.status_code == 200:
         return response.json()
-    return []
+    if response:
+        logger.warning(f"get_conversations failed: HTTP {response.status_code}")
+    else:
+        logger.warning("get_conversations failed: no response")
+    return None
 
 
 def create_conversation(business_id: Optional[str], title: str) -> Optional[Dict[str, Any]]:
@@ -458,7 +466,15 @@ def create_conversation(business_id: Optional[str], title: str) -> Optional[Dict
     response = api_request("POST", "/api/v1/conversations", json=data)
     if response and response.status_code == 200:
         return response.json()
-    return None
+    if response:
+        try:
+            err = response.json().get("detail", response.text)
+        except Exception:
+            err = response.text
+        logger.error(f"create_conversation failed: {response.status_code} {err}")
+        return {"error": str(err)}
+    logger.error("create_conversation failed: no response")
+    return {"error": "No response from server"}
 
 
 def rename_conversation(conversation_id: str, new_title: str) -> bool:
@@ -650,8 +666,12 @@ def render_settings():
         # Get list of GPTs
         gpts = st.session_state.get("gpts", [])
         if not gpts:
-            gpts = get_businesses()
-            st.session_state.gpts = gpts
+            fetched = get_businesses()
+            if fetched is not None:
+                st.session_state.gpts = fetched
+                gpts = fetched
+            else:
+                gpts = st.session_state.get("gpts", [])
         
         if gpts:
             selected_gpt_id = st.selectbox(
@@ -770,6 +790,9 @@ def render_settings():
                     # Delete all conversations
                     try:
                         conversations = get_conversations(business_id=st.session_state.selected_gpt)
+                        if conversations is None:
+                            st.error("Could not load conversations from the server. Try again.")
+                            st.stop()
                         deleted_count = 0
                         for conv in conversations:
                             if delete_conversation(conv.get("id")):
@@ -914,39 +937,70 @@ def hydrate_from_backend():
         return  # Already hydrated this session
     
     logger.info("🔄 Hydrating state from backend...")
+    gpts = None
+    all_conversations = None
     try:
         gpts = get_businesses()
-        st.session_state.gpts = gpts if gpts else []
-        logger.info(f"✅ Hydrated {len(st.session_state.gpts)} GPTs")
+        if gpts is not None:
+            st.session_state.gpts = gpts
+            st.session_state.backend_gpts_unreachable = False
+            logger.info(f"✅ Hydrated {len(st.session_state.gpts)} GPTs")
+        else:
+            st.session_state.backend_gpts_unreachable = True
+            if "gpts" not in st.session_state:
+                st.session_state.gpts = []
+            logger.warning("⚠️ Could not refresh GPT list; keeping existing session data")
     except Exception as e:
         logger.error(f"Error hydrating GPTs: {e}")
-        st.session_state.gpts = []
+        st.session_state.backend_gpts_unreachable = True
+        if "gpts" not in st.session_state:
+            st.session_state.gpts = []
     
     try:
         all_conversations = get_conversations(business_id=None, archived=False)
-        st.session_state.conversations = (
-            sorted(all_conversations, key=lambda x: x.get('updated_at', '') or x.get('created_at', ''), reverse=True)
-            if all_conversations else []
-        )
-        logger.info(f"✅ Hydrated {len(st.session_state.conversations)} conversations")
+        if all_conversations is not None:
+            st.session_state.conversations = sorted(
+                all_conversations,
+                key=lambda x: x.get('updated_at', '') or x.get('created_at', ''),
+                reverse=True,
+            )
+            st.session_state.backend_conversations_unreachable = False
+            logger.info(f"✅ Hydrated {len(st.session_state.conversations)} conversations")
+        else:
+            st.session_state.backend_conversations_unreachable = True
+            if "conversations" not in st.session_state:
+                st.session_state.conversations = []
+            logger.warning("⚠️ Could not refresh conversations; keeping existing session data")
     except Exception as e:
         logger.error(f"Error hydrating conversations: {e}")
-        st.session_state.conversations = []
+        st.session_state.backend_conversations_unreachable = True
+        if "conversations" not in st.session_state:
+            st.session_state.conversations = []
     
-    # Validation: if current_conversation_id is set but not in backend list, clear it (stale)
-    if st.session_state.get("current_conversation_id"):
+    # Validation: only when we successfully fetched lists (None = fetch failed, do not clear selections)
+    if all_conversations is not None and st.session_state.get("current_conversation_id"):
         conv_ids = {c.get('id') for c in st.session_state.conversations}
-        if st.session_state.current_conversation_id not in conv_ids:
-            logger.warning(f"⚠️ Stale conversation ID {st.session_state.current_conversation_id} not in backend—clearing")
-            st.session_state.current_conversation_id = None
-            st.session_state.chat_history = []
+        cid = st.session_state.current_conversation_id
+        if cid not in conv_ids:
+            verify = api_request("GET", f"/api/v1/conversations/{cid}")
+            if verify and verify.status_code == 200:
+                logger.info(f"Conversation {cid} exists but was missing from list; merging into sidebar data")
+                st.session_state.conversations = [verify.json()] + st.session_state.conversations
+            else:
+                logger.warning(f"⚠️ Stale conversation ID {cid} not in backend—clearing")
+                st.session_state.current_conversation_id = None
+                st.session_state.chat_history = []
     
-    # Validation: if selected_gpt is set but not in backend list, clear it
-    if st.session_state.get("selected_gpt"):
+    if gpts is not None and st.session_state.get("selected_gpt"):
         gpt_ids = {g.get('id') for g in st.session_state.gpts}
-        if st.session_state.selected_gpt not in gpt_ids:
-            logger.warning(f"⚠️ Stale GPT ID {st.session_state.selected_gpt} not in backend—clearing")
-            st.session_state.selected_gpt = None
+        sid = st.session_state.selected_gpt
+        if sid not in gpt_ids:
+            verify_g = api_request("GET", f"/api/v1/businesses/{sid}")
+            if verify_g and verify_g.status_code == 200:
+                logger.info(f"GPT {sid} exists but was missing from list; keeping selection")
+            else:
+                logger.warning(f"⚠️ Stale GPT ID {sid} not in backend—clearing")
+                st.session_state.selected_gpt = None
     
     st.session_state.hydrated = True
 
@@ -1110,7 +1164,9 @@ with st.sidebar:
                                 st.success("✅ GPT created!")
                                 st.session_state.show_create_gpt = False
                                 # Refresh GPTs list from backend to ensure consistency
-                                st.session_state.gpts = get_businesses()
+                                fetched_gpts = get_businesses()
+                                if fetched_gpts is not None:
+                                    st.session_state.gpts = fetched_gpts
                                 # Auto-select the new GPT
                                 if new_gpt.get("id"):
                                     st.session_state.selected_gpt = new_gpt.get("id")
@@ -1524,7 +1580,7 @@ else:
                 if not st.session_state.current_conversation_id:
                     conv_title = f"Chat {datetime.now().strftime('%I:%M %p')}"
                     conv = create_conversation(st.session_state.selected_gpt, title=conv_title)
-                    if conv:
+                    if conv and "error" not in conv:
                         st.session_state.current_conversation_id = conv.get("id")
                 
                 if not st.session_state.current_conversation_id:
