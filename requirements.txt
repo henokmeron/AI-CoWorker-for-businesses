@@ -1,0 +1,5 @@
+# Streamlit Cloud installs from the repo root by default.
+# Keep in sync with frontend/requirements.txt.
+streamlit>=1.39.0,<2
+requests>=2.31.0,<3
+python-dotenv>=1.0.0,<2
