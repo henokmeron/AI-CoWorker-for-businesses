@@ -23,6 +23,16 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _dedupe_consecutive_messages(messages: List[Message]) -> List[Message]:
+    """Remove consecutive duplicate role+content pairs (legacy double-save bug)."""
+    out: List[Message] = []
+    for m in messages or []:
+        if out and out[-1].role == m.role and (out[-1].content or "") == (m.content or ""):
+            continue
+        out.append(m)
+    return out
+
+
 class ConversationService:
     """Service for managing conversation history."""
     
@@ -251,7 +261,7 @@ class ConversationService:
                     """, (conversation_id,))
                     msg_rows = cur.fetchall()
                     
-                    messages = [
+                    messages = _dedupe_consecutive_messages([
                         Message(
                             role=msg['role'],
                             content=msg['content'],
@@ -259,7 +269,7 @@ class ConversationService:
                             timestamp=msg['timestamp']
                         )
                         for msg in msg_rows
-                    ]
+                    ])
                     
                     result = Conversation(
                         id=conv_row['id'],
@@ -464,7 +474,7 @@ class ConversationService:
             json.dump(conversations, f, indent=2, default=str)
     
     def delete_conversation(self, conversation_id: str):
-        """Delete a conversation permanently."""
+        """Delete a conversation permanently (database and JSON stay in sync)."""
         if self.use_database:
             conn = self._get_connection()
             if conn:
@@ -476,6 +486,8 @@ class ConversationService:
                         cur.execute("DELETE FROM conversations WHERE id = %s", (conversation_id,))
                         conn.commit()
                     conn.close()
+                    # Always remove from JSON too so fallback listing never resurrects ghosts
+                    self._delete_json_conversation(conversation_id)
                 except Exception as e:
                     logger.error(f"Error deleting conversation: {e}")
                     if conn:
@@ -522,7 +534,9 @@ class ConversationService:
                     conv_data['last_framework'] = None
                 if 'last_fee_type' not in conv_data:
                     conv_data['last_fee_type'] = None
-                return Conversation(**conv_data)
+                conv = Conversation(**conv_data)
+                deduped = _dedupe_consecutive_messages(list(conv.messages))
+                return conv.model_copy(update={"messages": deduped})
         return None
     
     def _list_json_conversations(self, business_id: Optional[str] = None, archived: Optional[bool] = None) -> List[Conversation]:

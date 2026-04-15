@@ -167,17 +167,12 @@ async def chat(
                     reply_as_me=request.reply_as_me
                 )
             else:
-                # Normal chat without GPT - provide general response
-                result = {
-                    "answer": "I'm a general assistant. To get document-specific answers, please create or select a GPT with uploaded documents.",
-                    "sources": [],
-                    "tokens_used": 0,
-                    "response_time": 0,
-                    "metadata": {
-                        "model": "general",
-                        "provider": "system"
-                    }
-                }
+                # Normal chat without a GPT: real LLM answers (geography, explanations, etc.)
+                result = rag_service.answer_general_knowledge(
+                    query=request.query,
+                    conversation_history=request.conversation_history or [],
+                    reply_as_me=request.reply_as_me,
+                )
             
             if not result:
                 logger.error("RAG service returned None - no answer generated")

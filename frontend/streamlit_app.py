@@ -273,7 +273,7 @@ st.markdown("""
 
 
 # Helper functions
-def api_request(method: str, endpoint: str, **kwargs) -> Optional[requests.Response]:
+def api_request(method: str, endpoint: str, timeout: int = 60, **kwargs) -> Optional[requests.Response]:
     """Make an API request to the backend."""
     url = f"{BACKEND_URL}{endpoint}"
     headers = kwargs.pop("headers", {})
@@ -289,7 +289,7 @@ def api_request(method: str, endpoint: str, **kwargs) -> Optional[requests.Respo
             method=method,
             url=url,
             headers=headers,
-            timeout=60,
+            timeout=timeout,
             **kwargs
         )
         return response
@@ -420,6 +420,16 @@ def delete_document(business_id: str, document_id: str) -> bool:
     return response and response.status_code == 200
 
 
+def dedupe_consecutive_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Drop consecutive duplicate role+content pairs (fixes double-persisted history)."""
+    out: List[Dict[str, Any]] = []
+    for m in messages or []:
+        if out and out[-1].get("role") == m.get("role") and (out[-1].get("content") or "") == (m.get("content") or ""):
+            continue
+        out.append(m)
+    return out
+
+
 def chat_query(business_id: Optional[str], query: str, conversation_history: List[Dict[str, Any]], conversation_id: Optional[str] = None, reply_as_me: bool = False) -> Optional[Dict[str, Any]]:
     """Send a chat query."""
     data = {
@@ -431,7 +441,8 @@ def chat_query(business_id: Optional[str], query: str, conversation_history: Lis
     if business_id:
         data["business_id"] = business_id
     
-    response = api_request("POST", "/api/v1/chat", json=data)
+    # RAG + LLM can exceed 60s on large documents
+    response = api_request("POST", "/api/v1/chat", json=data, timeout=180)
     if response and response.status_code == 200:
         return response.json()
     elif response:
@@ -1482,7 +1493,7 @@ else:
                 response = api_request("GET", f"/api/v1/conversations/{cid}")
                 if response and response.status_code == 200:
                     loaded_conv = response.json()
-                    st.session_state.chat_history = [
+                    raw_msgs = [
                         {
                             "role": msg.get("role"),
                             "content": msg.get("content"),
@@ -1490,11 +1501,15 @@ else:
                         }
                         for msg in loaded_conv.get("messages", [])
                     ]
+                    st.session_state.chat_history = dedupe_consecutive_messages(raw_msgs)
                     st.session_state._synced_conversation_id = cid
                     logger.info(f"✅ Loaded {len(st.session_state.chat_history)} messages for {cid}")
                 else:
                     logger.warning(f"⚠️ Could not load conversation {cid}")
                     st.error("Could not load this conversation. It may have been deleted.")
+                    st.session_state.conversations = [
+                        c for c in st.session_state.get("conversations", []) if c.get("id") != cid
+                    ]
                     st.session_state.current_conversation_id = None
                     st.session_state.chat_history = []
                     st.session_state._synced_conversation_id = None
@@ -1690,13 +1705,7 @@ else:
         if not st.session_state.chat_history or st.session_state.chat_history[-1] != user_msg:
             st.session_state.chat_history.append(user_msg)
         
-        # Save user message to backend
-        try:
-            api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
-                      json={"role": "user", "content": user_query, "sources": []})
-        except Exception as e:
-            logger.warning(f"Could not save user message to backend: {e}")
-        
+        # Persistence: /api/v1/chat saves user + assistant to the conversation — do not POST messages here (avoids duplicates)
         # Get response IMMEDIATELY - CRITICAL: Use selected_gpt as business_id (not conversation_id)
         with st.spinner("Thinking..."):
             try:
@@ -1741,13 +1750,8 @@ else:
                     if not st.session_state.chat_history or st.session_state.chat_history[-1] != assistant_msg:
                         st.session_state.chat_history.append(assistant_msg)
                     
-                    # Save assistant message to backend immediately
                     if st.session_state.current_conversation_id:
                         try:
-                            api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
-                                      json={"role": "assistant", "content": assistant_msg["content"], "sources": assistant_msg.get("sources", [])})
-                            logger.info(f"✅ Saved assistant message to conversation {st.session_state.current_conversation_id}")
-                            
                             # AUTO-RENAME: If this is the first exchange and title is still "New Chat", rename based on user query
                             if len(st.session_state.chat_history) == 2:  # User message + Assistant response
                                 # Get current conversation to check title
@@ -1768,7 +1772,7 @@ else:
                                         if rename_conversation(st.session_state.current_conversation_id, new_title):
                                             logger.info(f"✅ Auto-renamed conversation to: {new_title}")
                         except Exception as e:
-                            logger.warning(f"Could not save assistant message to backend: {e}")
+                            logger.warning(f"Could not auto-rename conversation: {e}")
                 else:
                     error_msg = "Sorry, I encountered an error. Please check the backend logs or try again."
                     if response and isinstance(response, dict) and "error" in response:
@@ -1783,13 +1787,6 @@ else:
                         "sources": []
                     }
                     st.session_state.chat_history.append(assistant_msg)
-                    
-                    if st.session_state.current_conversation_id:
-                        try:
-                            api_request("POST", f"/api/v1/conversations/{st.session_state.current_conversation_id}/messages",
-                                      json={"role": "assistant", "content": error_msg, "sources": []})
-                        except:
-                            pass
             except Exception as e:
                 logger.error(f"Chat error: {e}", exc_info=True)
                 error_msg = f"Error: {str(e)}"

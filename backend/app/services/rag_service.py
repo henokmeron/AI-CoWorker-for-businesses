@@ -539,6 +539,64 @@ class RAGService:
     # Public API
     # -----------------------------
 
+    def answer_general_knowledge(
+        self,
+        query: str,
+        conversation_history: Optional[List[ChatMessage]] = None,
+        reply_as_me: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Answer without document retrieval (ChatGPT-style general chat).
+        Used for conversations with no GPT, or GPTs with no indexed documents yet.
+        """
+        start_time = time.time()
+        conversation_history = conversation_history or []
+        system = (
+            "You are a helpful, accurate assistant (similar to ChatGPT).\n"
+            "Use your general knowledge to answer clearly and concisely.\n"
+            "If the user asks something that clearly depends on a specific file they uploaded, "
+            "say you do not see that file in this thread and suggest they confirm the file uploaded successfully.\n"
+            "Do not refuse simple factual questions (geography, definitions, math, etc.).\n"
+            "Do NOT output raw HTML or source-box markup."
+        )
+        if reply_as_me:
+            system = (
+                "Write as the user would: first person, natural tone. "
+                "Use general knowledge where appropriate."
+            )
+        messages: List = [SystemMessage(content=system)]
+        for msg in conversation_history[-12:]:
+            if isinstance(msg, dict):
+                role = msg.get("role", "user")
+                content = msg.get("content", "") or ""
+            elif hasattr(msg, "role"):
+                role = msg.role
+                content = msg.content or ""
+            else:
+                continue
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                messages.append(AIMessage(content=content))
+        messages.append(HumanMessage(content=query))
+        resp = self.llm.invoke(messages)
+        answer = resp.content if hasattr(resp, "content") else str(resp)
+        answer = self._strip_html_source_boxes(answer)
+        response_time = time.time() - start_time
+        tokens_used = self._estimate_tokens(messages, answer)
+        return {
+            "answer": answer,
+            "sources": [],
+            "tokens_used": tokens_used,
+            "response_time": response_time,
+            "metadata": {
+                "model": self.model,
+                "provider": self.provider,
+                "retrieved_docs": 0,
+                "mode": "general_knowledge",
+            },
+        }
+
     def query(
         self,
         business_id: str,
@@ -563,27 +621,16 @@ class RAGService:
             
             # CRITICAL DIAGNOSTIC: Check if we got any documents
             if len(raw_docs) == 0:
-                logger.error(f"❌ CRITICAL: No documents retrieved for business_id='{business_id}'")
-                logger.error(f"❌ This means either:")
-                logger.error(f"   1. No documents were uploaded for this business_id")
-                logger.error(f"   2. Documents were uploaded but not stored in vector DB")
-                logger.error(f"   3. Collection 'business_{business_id}' doesn't exist or is empty")
-                # Check collection status
-                try:
-                    collection = self.vector_store.get_collection(business_id)
-                    doc_count = collection.count() if collection else 0
-                    logger.error(f"   Collection 'business_{business_id}' has {doc_count} documents")
-                except Exception as e:
-                    logger.error(f"   Could not check collection: {e}")
+                logger.warning(f"No chunks retrieved for business_id='{business_id}' — falling back to general knowledge")
             
             # 3) Dedup/filter/rerank
             top_docs = self._dedup_filter_rerank(raw_docs, qinfo, max_sources=max_sources)
             logger.info(f"✅ After rerank: {len(top_docs)}")
             
-            # CRITICAL DIAGNOSTIC: Check if we have context after reranking
             if len(top_docs) == 0:
-                logger.error(f"❌ CRITICAL: No documents after reranking - LLM will have no context!")
-                logger.error(f"   Raw docs: {len(raw_docs)}, After rerank: {len(top_docs)}")
+                return self.answer_general_knowledge(
+                    query, conversation_history=conversation_history, reply_as_me=reply_as_me
+                )
             
             context = self._format_context_grouped(top_docs) if top_docs else ""
             
