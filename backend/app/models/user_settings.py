@@ -13,7 +13,7 @@ class UserSettingsBase(BaseModel):
     theme: str = Field("Dark", description="UI theme (Dark, Light, Auto)")
     font_size: int = Field(14, description="Font size (12-20)")
     auto_save_conversations: bool = Field(True, description="Auto-save conversations")
-    default_model: str = Field("gpt-4-turbo-preview", description="Default AI model")
+    default_model: str = Field("gpt-4o-mini", description="Default AI model")
     
     # Personalization
     custom_instructions: str = Field("", description="Custom instructions for AI")

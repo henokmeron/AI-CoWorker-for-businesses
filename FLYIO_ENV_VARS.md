@@ -33,7 +33,7 @@ These are the **minimum required** environment variables for the app to run:
 
 ### LLM Configuration
 - `LLM_PROVIDER`: Default `openai` (options: `openai`, `anthropic`, `ollama`)
-- `OPENAI_MODEL`: Default `gpt-4-turbo-preview`
+- `OPENAI_MODEL`: Default `gpt-4o-mini`
 - `ANTHROPIC_API_KEY`: Required if using Anthropic
 - `ANTHROPIC_MODEL`: Default `claude-3-sonnet-20240229`
 

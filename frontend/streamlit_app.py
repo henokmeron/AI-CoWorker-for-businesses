@@ -610,7 +610,7 @@ def render_settings():
                 "theme": "Dark",
                 "font_size": 14,
                 "auto_save_conversations": True,
-                "default_model": "gpt-4-turbo-preview",
+                "default_model": "gpt-4o-mini",
                 "custom_instructions": "",
                 "response_style": "Professional",
                 "email_notifications": False,
@@ -661,8 +661,8 @@ def render_settings():
                 )
                 default_model = st.selectbox(
                     "Default Model",
-                    ["gpt-4-turbo-preview", "gpt-4", "gpt-3.5-turbo", "gpt-4o", "gpt-4o-mini"],
-                    index=["gpt-4-turbo-preview", "gpt-4", "gpt-3.5-turbo", "gpt-4o", "gpt-4o-mini"].index(settings.get("default_model", "gpt-4-turbo-preview")) if settings.get("default_model", "gpt-4-turbo-preview") in ["gpt-4-turbo-preview", "gpt-4", "gpt-3.5-turbo", "gpt-4o", "gpt-4o-mini"] else 0,
+                    ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"],
+                    index=["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"].index(settings.get("default_model", "gpt-4o-mini")) if settings.get("default_model", "gpt-4o-mini") in ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"] else 0,
                     key="setting_model"
                 )
             
@@ -1473,6 +1473,8 @@ elif st.session_state.show_edit_gpt:
 else:
     # Normal chat view
     st.markdown('<div class="main-header">💬 Chat</div>', unsafe_allow_html=True)
+    if st.session_state.get("conversation_load_error"):
+        st.error(st.session_state.pop("conversation_load_error"))
     
     # Check backend connection
     try:
@@ -1506,15 +1508,19 @@ else:
                     logger.info(f"✅ Loaded {len(st.session_state.chat_history)} messages for {cid}")
                 else:
                     logger.warning(f"⚠️ Could not load conversation {cid}")
-                    st.error("Could not load this conversation. It may have been deleted.")
+                    st.session_state.conversation_load_error = "That conversation no longer exists, so it was removed from the sidebar."
                     st.session_state.conversations = [
                         c for c in st.session_state.get("conversations", []) if c.get("id") != cid
                     ]
+                    try:
+                        delete_conversation(cid)
+                    except Exception:
+                        pass
                     st.session_state.current_conversation_id = None
                     st.session_state.chat_history = []
                     st.session_state._synced_conversation_id = None
                     refresh_sidebar_lists()
-                    st.stop()
+                    st.rerun()
             except Exception as e:
                 logger.error(f"❌ Failed to load conversation: {e}", exc_info=True)
                 st.error(f"Failed to load conversation: {e}")

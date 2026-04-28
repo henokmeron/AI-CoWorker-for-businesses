@@ -68,8 +68,8 @@ flyctl secrets set DATABASE_URL=your-postgres-connection-string -a ai-coworker-f
 # Change LLM provider (default: openai)
 flyctl secrets set LLM_PROVIDER=openai -a ai-coworker-for-businesses
 
-# Change OpenAI model (default: gpt-4-turbo-preview)
-flyctl secrets set OPENAI_MODEL=gpt-4-turbo-preview -a ai-coworker-for-businesses
+# Change OpenAI model (default: gpt-4o-mini)
+flyctl secrets set OPENAI_MODEL=gpt-4o-mini -a ai-coworker-for-businesses
 
 # If using Anthropic instead
 flyctl secrets set ANTHROPIC_API_KEY=your-key -a ai-coworker-for-businesses

@@ -19,6 +19,12 @@ from ..models.chat import ChatMessage, Source
 
 logger = logging.getLogger(__name__)
 
+OPENAI_MODEL_FALLBACKS = {
+    # This model is no longer available to many OpenAI accounts and caused production 404s.
+    "gpt-4-turbo-preview": "gpt-4o-mini",
+    "gpt-4-turbo": "gpt-4o-mini",
+}
+
 
 class RAGService:
     """
@@ -36,9 +42,22 @@ class RAGService:
 
     def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         self.provider = llm_provider or settings.LLM_PROVIDER
-        self.model = model or self._get_default_model()
+        self.model = self._normalize_model(model or self._get_default_model())
         self.llm = self._initialize_llm()
         self.vector_store = get_vector_store()
+
+    def _normalize_model(self, model: Optional[str]) -> str:
+        """Avoid known retired/unavailable model names from env vars."""
+        selected = model or "gpt-4o-mini"
+        if self.provider == "openai" and selected in OPENAI_MODEL_FALLBACKS:
+            replacement = OPENAI_MODEL_FALLBACKS[selected]
+            logger.warning(
+                "Configured OpenAI model '%s' is unavailable/retired; using '%s'",
+                selected,
+                replacement,
+            )
+            return replacement
+        return selected
 
     def _get_default_model(self) -> str:
         if self.provider == "openai":
@@ -47,7 +66,7 @@ class RAGService:
             return settings.ANTHROPIC_MODEL
         elif self.provider == "ollama":
             return settings.OLLAMA_MODEL
-        return "gpt-4-turbo-preview"
+        return "gpt-4o-mini"
 
     def _initialize_llm(self):
         if self.provider == "openai":
@@ -83,6 +102,27 @@ class RAGService:
             )
         else:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")
+
+    def _invoke_llm(self, messages: List):
+        """Invoke the LLM; recover from OpenAI model_not_found by retrying with fallback."""
+        try:
+            return self.llm.invoke(messages)
+        except Exception as e:
+            msg = str(e)
+            if self.provider == "openai" and (
+                "model_not_found" in msg
+                or "does not exist" in msg
+                or "do not have access" in msg
+            ) and self.model != "gpt-4o-mini":
+                logger.error(
+                    "OpenAI model '%s' failed (%s). Retrying once with gpt-4o-mini.",
+                    self.model,
+                    msg,
+                )
+                self.model = "gpt-4o-mini"
+                self.llm = self._initialize_llm()
+                return self.llm.invoke(messages)
+            raise
 
     # -----------------------------
     # Advanced RAG helpers
@@ -161,7 +201,7 @@ class RAGService:
         ))
         user = HumanMessage(content=f"User question:\n{query}\n\nReturn JSON now.")
         try:
-            resp = self.llm.invoke([system, user])
+            resp = self._invoke_llm([system, user])
             raw = resp.content if hasattr(resp, "content") else str(resp)
             raw = raw.strip()
             # Strip accidental code fences
@@ -526,7 +566,7 @@ class RAGService:
             system = SystemMessage(content=correction_instruction)
             user = HumanMessage(content=f"CONTEXT:\n{c}\n\nANSWER TO FIX:\n{a}\n\nReturn corrected answer only.")
             try:
-                resp = self.llm.invoke([system, user])
+                resp = self._invoke_llm([system, user])
                 fixed = resp.content if hasattr(resp, "content") else str(resp)
                 fixed = self._strip_html_source_boxes(fixed)
                 return (True, fixed)
@@ -579,7 +619,7 @@ class RAGService:
             elif role == "assistant":
                 messages.append(AIMessage(content=content))
         messages.append(HumanMessage(content=query))
-        resp = self.llm.invoke(messages)
+        resp = self._invoke_llm(messages)
         answer = resp.content if hasattr(resp, "content") else str(resp)
         answer = self._strip_html_source_boxes(answer)
         response_time = time.time() - start_time
@@ -643,7 +683,7 @@ class RAGService:
             messages = self._build_synthesis_messages(query, context, conversation_history, reply_as_me=reply_as_me)
 
             # 4) Generate answer
-            resp = self.llm.invoke(messages)
+            resp = self._invoke_llm(messages)
             answer = resp.content if hasattr(resp, "content") else str(resp)
             answer = self._strip_html_source_boxes(answer)
 

@@ -148,7 +148,7 @@ API_KEY=any-secret-password     # For API access
 **Optional:**
 ```env
 LLM_PROVIDER=openai            # or anthropic, ollama
-OPENAI_MODEL=gpt-4-turbo-preview
+OPENAI_MODEL=gpt-4o-mini
 MAX_FILE_SIZE_MB=50
 ```
 

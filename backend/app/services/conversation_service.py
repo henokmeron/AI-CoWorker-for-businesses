@@ -33,6 +33,22 @@ def _dedupe_consecutive_messages(messages: List[Message]) -> List[Message]:
     return out
 
 
+def _as_list(value: Any) -> List[Any]:
+    """Safely coerce JSON/JSONB values to a list."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, list) else []
+        except Exception:
+            logger.warning("Could not parse list JSON value; using []")
+            return []
+    return []
+
+
 class ConversationService:
     """Service for managing conversation history."""
     
@@ -265,7 +281,7 @@ class ConversationService:
                         Message(
                             role=msg['role'],
                             content=msg['content'],
-                            sources=msg['sources'] if isinstance(msg['sources'], list) else json.loads(msg['sources']),
+                            sources=_as_list(msg.get('sources') if hasattr(msg, "get") else msg['sources']),
                             timestamp=msg['timestamp']
                         )
                         for msg in msg_rows
@@ -279,7 +295,7 @@ class ConversationService:
                         created_at=conv_row['created_at'],
                         updated_at=conv_row['updated_at'],
                         archived=conv_row['archived'],
-                        tags=conv_row['tags'] if isinstance(conv_row['tags'], list) else json.loads(conv_row['tags']),
+                        tags=_as_list(conv_row.get('tags') if hasattr(conv_row, "get") else conv_row['tags']),
                         last_local_authority=conv_row.get('last_local_authority'),
                         last_framework=conv_row.get('last_framework'),
                         last_fee_type=conv_row.get('last_fee_type')
@@ -346,7 +362,7 @@ class ConversationService:
                             created_at=row['created_at'],
                             updated_at=row['updated_at'],
                             archived=row['archived'],
-                            tags=row['tags'] if isinstance(row['tags'], list) else json.loads(row['tags'])
+                            tags=_as_list(row.get('tags') if hasattr(row, "get") else row['tags'])
                         ))
                     
                     conn.close()

@@ -158,7 +158,7 @@ docker-compose up -d
 ```env
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-xxx
-OPENAI_MODEL=gpt-4-turbo-preview
+OPENAI_MODEL=gpt-4o-mini
 ```
 
 **Anthropic (Claude):**
