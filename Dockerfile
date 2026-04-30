@@ -31,5 +31,5 @@ RUN mkdir -p /app/data/businesses /app/data/chromadb && chmod -R 755 /app/data
 
 EXPOSE 8080
 
-# Use PORT env var if set, otherwise default to 8080 (matches fly.toml)
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}
+# Use explicit shell exec form so uvicorn receives only intended args.
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
