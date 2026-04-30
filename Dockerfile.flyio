@@ -37,6 +37,6 @@ RUN mkdir -p /app/data
 # Expose Fly default internal port
 EXPOSE 8080
 
-# Run the application on Fly's PORT when provided
-CMD sh -c "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"
+# Fly proxies to fly.toml's internal_port, so keep the backend fixed on 8080.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
 
